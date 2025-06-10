@@ -29,7 +29,7 @@ pub fn run() {
 fn select_directory(app: tauri::AppHandle) -> Result<String, String> {
     use std::sync::mpsc;
     let (tx, rx) = mpsc::channel();
-    let dialog = app.dialog();
+    let dialog = app.dialog().clone();
     FileDialogBuilder::new(dialog).pick_folder(move |folder| {
         let _ = tx.send(folder);
     });
@@ -43,7 +43,7 @@ fn select_directory(app: tauri::AppHandle) -> Result<String, String> {
 fn select_file(app: tauri::AppHandle) -> Result<String, String> {
     use std::sync::mpsc;
     let (tx, rx) = mpsc::channel();
-    let dialog = app.dialog();
+    let dialog = app.dialog().clone();
     FileDialogBuilder::new(dialog).pick_file(move |file| {
         let _ = tx.send(file);
     });

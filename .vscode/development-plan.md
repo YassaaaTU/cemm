@@ -248,6 +248,40 @@
 4. **Error Handling**: Every operation should have proper error states
 5. **User Feedback**: Always show what's happening during operations
 
+## Logging & Diagnostics (Pino)
+
+### Logging Guidelines
+- Use [Pino](https://getpino.io/) for all application logging in the Nuxt frontend. Do not use `console.log`, `console.error`, etc. in production or development code.
+- The logger is provided globally via a Nuxt plugin as `$logger` (see `app/plugins/logger.ts`).
+- Use structured logging: always log objects or context, not just strings.
+- Log at appropriate levels: `logger.info`, `logger.warn`, `logger.error`, `logger.debug`.
+- Example usage:
+  ```ts
+  const logger = useNuxtApp().$logger
+  logger.info('Manifest loaded', { manifest })
+  logger.error('Failed to read file', { error })
+  ```
+- For composables, stores, and utilities, import the logger directly from `~/utils/logger` if needed.
+- Do not log sensitive data (e.g., GitHub tokens, user secrets).
+- Use logging for:
+  - File operation results (success/failure)
+  - API/network errors
+  - User actions (mode switch, manifest load/save, etc.)
+  - Unexpected conditions or recoverable errors
+- For Tauri backend (Rust), continue to use `tauri-plugin-log` for backend logging.
+
+### Pino Integration Steps
+1. Install Pino with Bun: `bun add pino`
+2. Create a logger utility at `app/utils/logger.ts`:
+   ```ts
+   import pino from 'pino'
+   const logger = pino({ browser: { asObject: true }, level: import.meta.dev ? 'debug' : 'info' })
+   export default logger
+   ```
+3. Add a Nuxt plugin at `app/plugins/logger.ts` to provide `$logger` globally.
+4. Add type augmentation in `app/types/global.d.ts` for `$logger`.
+5. Replace all `console.log` usage with `$logger` calls.
+
 ## Success Criteria
 - Admin can create and upload updates with UUID
 - User can install updates using UUID code

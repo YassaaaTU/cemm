@@ -44,7 +44,8 @@ export default withNuxt(
 			'no-var': 'error',
 			'prefer-const': 'error'
 		}
-	},	// Import/Export rules configuration
+	},
+	// Import/Export rules configuration
 	{
 		files: ['**/*.{js,ts,vue}'],
 		plugins: {
