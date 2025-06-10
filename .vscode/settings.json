@@ -1,0 +1,69 @@
+{
+	// Tailwind compatibility
+	"tailwindCSS.validate": true,
+	// "tailwindCSS.experimental.classRegex": [
+	// 	[
+	// 		"ui:\\s*{([^)]*)\\s*}",
+	// 		"[\"'`]([^\"'`]*).*?[\"'`]"
+	// 	],
+	// 	[
+	// 		"/\\*\\s?ui\\s?\\*/\\s*{([^;]*)}",
+	// 		":\\s*[\"'`]([^\"'`]*).*?[\"'`]"
+	// 	]
+	// ],
+
+	"files.associations": {
+	"*.css": "tailwindcss"
+	},
+	"editor.quickSuggestions": {
+	"strings": "on"
+	},
+	"tailwindCSS.classAttributes": ["class", "ui"],
+	"tailwindCSS.experimental.classRegex": [
+	["ui:\\s*{([^)]*)\\s*}", "(?:'|\"|`)([^']*)(?:'|\"|`)"],
+	["tw`(.*?)`", "tw\\('(.*?)'\\)", "tw\\(\\s*('(.*?)'|\"(.*?)\")\\s*\\)"]
+	],	
+	// Enable eslint for all supported languages
+	"eslint.validate": [
+		"javascript",
+		"typescript",
+		"vue",
+		"html",
+		"markdown",
+		"json",
+		"jsonc",
+		"yaml",
+		"toml"
+	],
+
+	// ESLint as formatter with flat config
+	"eslint.useFlatConfig": true,
+	"eslint.workingDirectories": [{ "mode": "auto" }],
+	"editor.codeActionsOnSave": {
+		"source.fixAll": "never",
+		"source.fixAll.eslint": "explicit"
+	},
+	"editor.formatOnSave": false,
+	"[javascript][javascriptreact][json][typescript][typescriptreact][vue]": {
+		"editor.defaultFormatter": "dbaeumer.vscode-eslint"
+	},
+
+	// Copilot Chat
+	"github.copilot.chat.codeGeneration.instructions": [
+    {
+		"file": "./.vscode/daisyui.md"
+    },
+	{
+		"file": "./.vscode/eslint.instructions.md"
+	},
+	{
+		"file": "./.vscode/nuxtjs.instructions.md"
+	},
+	{
+		"file": "./.vscode/development-plan.md"
+	},
+	{
+		"file": "./.vscode/tauri.instructions.md"
+	}
+  ]
+}

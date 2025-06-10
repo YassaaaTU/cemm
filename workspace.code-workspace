@@ -1,0 +1,98 @@
+{
+  "folders": [
+    {
+      "name": "🍀Nuxt + TailwindV4 + TS-Eslint Rules + Sylistic🍀",
+      "path": "."
+    },
+  ],
+  "extensions": {
+    "recommendations": [
+      "formulahendry.auto-close-tag",
+      "steoates.autoimport",
+      "formulahendry.auto-rename-tag",
+      "aaron-bond.better-comments",
+      "vivaxy.vscode-conventional-commits",
+      "fill-labs.dependi",
+      "mikestead.dotenv",
+      "mikestead.dotenv",
+      "dbaeumer.vscode-eslint",
+      "antfu.file-nesting",
+      "github.vscode-github-actions",
+      "heybourn.headwind",
+      "lokalise.i18n-ally",      "antfu.iconify",
+      "VisualStudioExptTeam.vscodeintellicode",
+      "VisualStudioExptTeam.intellicode-api-usage-examples",
+      "xabikos.JavaScriptSnippets",
+      "ms-vscode.vscode-typescript-next",
+      "unifiedjs.vscode-mdx",
+      "folke.vscode-monorepo-workspace",
+      "christian-kohler.npm-intellisense",
+      "christian-kohler.path-intellisense",
+      "Nuxtr.nuxt-vscode-extentions",
+      "YoavBls.pretty-ts-errors",
+      "dustypomerleau.rust-syntax",
+      "rust-lang.rust-analyzer",
+      "syler.sass-indented",
+      "bradlc.vscode-tailwindcss",
+      "vitest.explorer"
+    ]
+  },  "settings": {
+    "editor.tabSize": 2,
+    "[javascript][javascriptreact][json][typescript][typescriptreact][vue]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "editor.formatOnSave": false,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit"
+    },
+    "editor.quickSuggestions": {
+      "strings": true
+    },
+    "eslint.workingDirectories": [
+      {
+        "pattern": "./app/*"
+      }
+    ],
+    "workbench.editor.labelFormat": "short",
+    "files.associations": {
+      "*.css": "tailwindcss"
+    },
+    "tailwindCSS.emmetCompletions": true,
+    "tailwindCSS.classAttributes": ["class", "ui"],
+    "tailwindCSS.experimental.classRegex": [
+      ["ui:\\s*{([^)]*)\\s*}", "(?:'|\"|`)([^']*)(?:'|\"|`)"]
+      ],
+    "typescript.tsdk": "./node_modules/typescript/lib",
+    "typescript.enablePromptUseWorkspaceTsdk": true,
+    "conventionalCommits.scopes": ["all", "nuxt", "config"],
+    "files.exclude": {
+      ".nuxt": true,
+      ".output": true,
+      ".vscode": true,
+      "node_modules": true,
+      ".github": true,
+    },
+    "search.exclude": {
+      ".nuxt": true,
+      ".output": true,
+      ".vscode": true,
+      "node_modules": true,
+      ".github": true,
+    },
+    // DaisyUI
+    "github.copilot.chat.codeGeneration.instructions": [
+      {
+        "file": "./.vscode/daisyui.md"
+      },
+      {
+        "file": "./.vscode/eslint.instructions.md"
+      },
+      {
+        "file": "./.vscode/nuxtjs.instructions.md"
+      },
+      {
+        "file": "./.vscode/tauri.instructions.md"
+      }
+    ]
+  }
+}
