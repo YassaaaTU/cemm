@@ -1,40 +1,5 @@
 use std::fs;
-use tauri_plugin_dialog::{FileDialogBuilder};
-
-#[tauri::command]
-pub async fn select_directory(app: tauri::AppHandle) -> Result<String, String> {
-    let file_path = FileDialogBuilder::new()
-        .pick_folder(&app)
-        .await;
-    
-    match file_path {
-        Some(path) => Ok(path.to_string_lossy().to_string()),
-        None => Err("No directory selected".to_string()),
-    }
-}
-
-#[tauri::command]
-pub async fn select_file(app: tauri::AppHandle) -> Result<String, String> {
-    let file_path = FileDialogBuilder::new()
-        .add_filter("JSON files", &["json"])
-        .pick_file(&app)
-        .await;
-    
-    match file_path {
-        Some(path) => Ok(path.to_string_lossy().to_string()),
-        None => Err("No file selected".to_string()),
-    }
-}
-
-#[tauri::command]
-pub fn read_file(path: String) -> Result<String, String> {
-    fs::read_to_string(&path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn write_file(path: String, content: String) -> Result<(), String> {
-    fs::write(&path, content).map_err(|e| e.to_string())
-}
+use tauri_plugin_dialog::{FileDialogBuilder, DialogExt};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -58,4 +23,42 @@ pub fn run() {
     })
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
+}
+
+#[tauri::command]
+fn select_directory(app: tauri::AppHandle) -> Result<String, String> {
+    use std::sync::mpsc;
+    let (tx, rx) = mpsc::channel();
+    let dialog = app.dialog();
+    FileDialogBuilder::new(dialog).pick_folder(move |folder| {
+        let _ = tx.send(folder);
+    });
+    match rx.recv() {
+        Ok(Some(path)) => Ok(path.to_string()),
+        _ => Err("No directory selected".to_string()),
+    }
+}
+
+#[tauri::command]
+fn select_file(app: tauri::AppHandle) -> Result<String, String> {
+    use std::sync::mpsc;
+    let (tx, rx) = mpsc::channel();
+    let dialog = app.dialog();
+    FileDialogBuilder::new(dialog).pick_file(move |file| {
+        let _ = tx.send(file);
+    });
+    match rx.recv() {
+        Ok(Some(path)) => Ok(path.to_string()),
+        _ => Err("No file selected".to_string()),
+    }
+}
+
+#[tauri::command]
+fn read_file(path: String) -> Result<String, String> {
+    fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_file(path: String, content: String) -> Result<(), String> {
+    fs::write(&path, content).map_err(|e| e.to_string())
 }

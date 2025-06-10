@@ -21,9 +21,11 @@
 		"typecheck:fix": "tsc --noEmit --skipLibCheck",
 		"tauri": "tauri",
 		"tauri:dev": "tauri dev",
-		"tauri:build": "tauri build"
+		"tauri:build": "tauri build",
+		"cargo:fix": "cd src-tauri; cargo fix"
 	},
 	"dependencies": {
+		"@tauri-apps/plugin-dialog": "~2",
 		"nuxt": "^3.16.0",
 		"vue": "^3.5.13",
 		"vue-router": "^4.5.0"
