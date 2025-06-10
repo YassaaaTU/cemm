@@ -12,6 +12,15 @@ export default defineNuxtConfig({
 		'pinia-plugin-persistedstate'
 	],
 
+	imports: {
+		presets: [
+			{
+				from: 'pino',
+				imports: ['pino']
+			}
+		]
+	},
+
 	devtools: {
 		enabled: true
 	},

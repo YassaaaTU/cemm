@@ -40,9 +40,14 @@ export default withNuxt(
 			'eqeqeq': ['error', 'always', { null: 'ignore' }],
 			'prefer-arrow-callback': 'error',
 			'object-shorthand': 'error',
-			'no-console': 'warn',
+			// Use custom pino logger rule instead of no-console
+			'pino-logger/no-console-to-pino-logger': 'warn',
+			'no-console': 'off',
 			'no-var': 'error',
 			'prefer-const': 'error'
+		},
+		plugins: {
+			'pino-logger': (await import('eslint-plugin-pino-logger/index.js')).default || (await import('eslint-plugin-pino-logger/index.js'))
 		}
 	},
 	// Import/Export rules configuration
