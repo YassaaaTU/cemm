@@ -67,7 +67,7 @@ export default withNuxt(
 		} },
 	// Ignore patterns
 	{
-		ignores: ['.nuxt/**', 'node_modules/**', '.output/**']
+		ignores: ['.nuxt/**', 'node_modules/**', '.output/**', 'src-tauri/target/**', 'dist/**']
 	}
 ).override('nuxt/typescript/rules', {
 	files: ['**/*.ts', '**/*.tsx', '**/*.vue'],

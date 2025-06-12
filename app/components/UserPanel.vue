@@ -31,6 +31,20 @@
       </button>
     </div>
     <manifest-preview class="mt-4" />
+    <div
+      v-if="manifest && manifest.datapacks && manifest.datapacks.length > 0"
+      class="mt-4"
+    >
+      <strong>Datapacks:</strong>
+      <ul class="list-disc ml-6">
+        <li
+          v-for="datapack in manifest.datapacks"
+          :key="datapack.addon_project_id"
+        >
+          {{ datapack.addon_name }} ({{ datapack.version }})
+        </li>
+      </ul>
+    </div>
     <addon-list class="mt-4" />
     <div class="mt-6 flex flex-col gap-2">
       <progress-bar :progress="progress" />

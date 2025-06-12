@@ -11,4 +11,9 @@ export const useAppStore = defineStore('app', () =>
 		githubRepo,
 		modpackPath
 	}
+}, {
+	persist: {
+		storage: typeof window !== 'undefined' ? localStorage : undefined,
+		key: 'cemm-app-store'
+	}
 })

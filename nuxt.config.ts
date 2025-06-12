@@ -2,6 +2,8 @@ import tailwindcss from '@tailwindcss/vite'
 import { defineNuxtConfig } from 'nuxt/config'
 
 export default defineNuxtConfig({
+	// Enable static generation for Tauri
+
 	modules: [
 		'nuxt-svgo',
 		'@nuxt/eslint',
@@ -10,7 +12,7 @@ export default defineNuxtConfig({
 		'@nuxt/icon',
 		'@pinia/nuxt',
 		'pinia-plugin-persistedstate'
-	],
+	],	ssr: false,
 
 	imports: {
 		presets: [
@@ -67,6 +69,9 @@ export default defineNuxtConfig({
 	},
 
 	compatibilityDate: '2025-03-01',
+	nitro: {
+		preset: 'static'
+	},
 
 	vite: {
 		plugins: [

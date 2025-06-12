@@ -7,5 +7,5 @@
 </template>
 
 <script setup lang="ts">
-const props = defineProps<{ progress: number }>()
+defineProps<{ progress: number }>()
 </script>

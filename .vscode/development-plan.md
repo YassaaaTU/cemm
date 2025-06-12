@@ -152,6 +152,24 @@
    - Show diff between versions
    - Maintain update history
 
+### Phase 3.5: Secure Storage & Settings Polish
+**Objective**: Enhance security for GitHub token storage and improve settings management
+
+**Tasks**:
+1. **Secure Storage Integration**:
+   - Implement Stronghold plugin for secure GitHub token storage
+   - Ensure tokens are never exposed in the frontend code or logs
+   - Provide a fallback for development environments
+
+2. **Settings Management Improvements**:
+   - Refactor `GitHubSettings.vue` for better reactivity and performance
+   - Add debug logging and timing for settings load/save operations
+   - Resolve any performance issues related to settings management
+
+3. **Pinia Persistence**:
+   - Configure Pinia to persist non-sensitive state (e.g., GitHub repo name)
+   - Ensure sensitive data is never persisted or exposed
+
 ### Phase 4: GitHub Integration
 **Objective**: Upload/download functionality with GitHub
 
@@ -293,8 +311,62 @@
 
 ---
 
+## Development Progress Status
+
+### ✅ Completed Features (June 2025)
+
+#### Phase 1: UI Foundation & Core Interface - **COMPLETED**
+- [x] Main Layout & Navigation: `app/layouts/default.vue` with mode toggle
+- [x] Core Pages: `index.vue` (dashboard), `settings.vue` (GitHub config)
+- [x] Key Components: All core UI components implemented and functional
+- [x] Pinia stores for app, manifest, and theme
+- [x] TypeScript types complete
+
+#### Phase 2: Basic Tauri Integration - **COMPLETED**
+- [x] Tauri commands for file operations (select, read, write)
+- [x] Frontend composable for Tauri integration
+- [x] Directory selection, file reading, and validation working
+
+#### Phase 3: Manifest Generation & Management - **COMPLETED**
+- [x] Rust backend parses minecraftinstance.json and generates manifest
+- [x] Addon management, diffing, and UUID generation working
+- [x] Addon links open in browser via Tauri opener
+- [x] Manifest store preserves webSiteURL
+
+#### Phase 3.5: Secure Storage & Settings Polish - **COMPLETED**
+- [x] Stronghold plugin for secure GitHub token storage (frontend + backend)
+- [x] Pinia store persistence for GitHub repo name (non-sensitive)
+- [x] GitHubSettings.vue refactored for security, reactivity, and performance
+- [x] Debug logging and timing for settings load/save
+- [x] Performance issues resolved (slow dev only, fast in production)
+
+### 🚧 Current Status (June 12, 2025)
+- Phase 3 is COMPLETE - Core manifest functionality working
+- Secure storage and Pinia persistence are production-ready
+- GitHub repo name now persists correctly in all environments
+- UI is responsive and error states are handled
+- Ready to proceed to Phase 4 - GitHub Integration
+
+### 📋 Next Steps (Phase 4: GitHub Integration)
+1. Implement backend GitHub client: `upload_update()` and `download_update()`
+2. Connect upload/download UI to backend
+3. Add progress tracking and error feedback for GitHub operations
+
+### 📊 Overall Progress: ~70% Complete
+- ✅ Core UI and UX
+- ✅ File operations and manifest parsing
+- ✅ Addon management and preview
+- ✅ Secure storage and settings
+- 🚧 GitHub integration (next)
+- ⏳ User installation system
+- ⏳ Final polish and testing
+
+---
+
 **Recent Architectural Changes (June 2025):**
 - Switched to a single-page, component-driven UI for mode selection and workflow.
 - Mode switching is handled by `ModeSelector` and dynamic rendering of `AdminPanel`/`UserPanel` components.
 - Removed separate `/admin` and `/user` pages for a more seamless, app-like experience.
 - Settings remain accessible at all times.
+
+_Last updated: 2025-06-12_

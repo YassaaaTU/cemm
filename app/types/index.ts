@@ -6,6 +6,8 @@ export interface Addon
 	cdn_download_url: string
 	mod_folder_path: string
 	version: string
+	thumbnailUrl?: string // optional, for UI only
+	webSiteURL?: string // optional, CurseForge or homepage URL
 }
 
 export interface Manifest
@@ -13,6 +15,7 @@ export interface Manifest
 	mods: Addon[]
 	resourcepacks: Addon[]
 	shaderpacks: Addon[]
+	datapacks: Addon[]
 }
 
 export interface UpdateInfo

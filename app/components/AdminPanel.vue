@@ -3,13 +3,12 @@
     <h2 class="text-2xl font-bold mb-4">
       Admin Mode
     </h2>
-    <file-selector />
     <div class="flex gap-2 mt-4">
       <button
         class="btn btn-primary"
-        @click="openManifest"
+        @click="loadInstance"
       >
-        Open Manifest
+        Load Instance
       </button>
       <button
         class="btn btn-secondary"
@@ -21,7 +20,6 @@
     </div>
     <addon-list class="mt-4" />
     <manifest-preview class="mt-4" />
-    <git-hub-settings class="mt-4" />
     <div class="mt-6 flex flex-col gap-2">
       <progress-bar :progress="progress" />
       <status-alert
@@ -34,8 +32,6 @@
 
 <script setup lang="ts">
 import AddonList from '~/components/AddonList.vue'
-import FileSelector from '~/components/FileSelector.vue'
-import GitHubSettings from '~/components/GitHubSettings.vue'
 import ManifestPreview from '~/components/ManifestPreview.vue'
 import ProgressBar from '~/components/ProgressBar.vue'
 import StatusAlert from '~/components/StatusAlert.vue'
@@ -46,13 +42,15 @@ const progress = ref(0)
 const statusMessage = ref('')
 const statusType = ref<'success' | 'error' | 'info' | 'warning'>('info')
 
-const { selectFile, writeFile, readFile } = useTauri()
+const { selectFile, selectSaveFile, writeFile, parseMinecraftInstance, compareManifests, readFile } = useTauri()
 const manifestStore = useManifestStore()
 const manifest = computed(() => manifestStore.manifest)
 
-async function openManifest()
+// Load a minecraftinstance.json and convert to manifest
+async function loadInstance()
 {
 	statusMessage.value = ''
+	// Select minecraftinstance.json
 	const filePath = await selectFile()
 	if (filePath == null || filePath.length === 0)
 	{
@@ -60,27 +58,35 @@ async function openManifest()
 		statusType.value = 'warning'
 		return
 	}
-	const content = await readFile(filePath)
-	if (content == null || content.length === 0)
+	// Parse minecraftinstance.json to Manifest
+	const parsed = await parseMinecraftInstance(filePath)
+	if (parsed == null)
 	{
-		statusMessage.value = 'Failed to read file.'
+		statusMessage.value = 'Failed to parse minecraftinstance.json.'
 		statusType.value = 'error'
 		return
 	}
-	try
+	// Save previous manifest for diffing (store in Pinia)
+	if (manifest.value != null)
 	{
-		const parsed = JSON.parse(content)
-		manifestStore.setManifest(parsed)
-		statusMessage.value = 'Manifest loaded.'
-		statusType.value = 'success'
+		manifestStore.setPreviousManifest(manifest.value)
 	}
-	catch (_err)
+	manifestStore.setManifest(parsed)
+	statusMessage.value = 'Manifest generated from minecraftinstance.json.'
+	statusType.value = 'success'
+	// If previous manifest exists, show diff (store in Pinia)
+	if (manifestStore.previousManifest != null)
 	{
-		statusMessage.value = 'Invalid manifest format.'
-		statusType.value = 'error'
+		const diff = await compareManifests(manifestStore.previousManifest, parsed)
+		manifestStore.setUpdateInfo(diff)
+	}
+	else
+	{
+		manifestStore.setUpdateInfo(null)
 	}
 }
 
+// Save/export the generated manifest
 async function saveManifest()
 {
 	statusMessage.value = ''
@@ -88,22 +94,42 @@ async function saveManifest()
 	{
 		return
 	}
-	const filePath = await selectFile()
+	// Prompt user for save location (Save As dialog)
+	const filePath = await selectSaveFile()
 	if (filePath == null || filePath.length === 0)
 	{
 		statusMessage.value = 'No file selected.'
 		statusType.value = 'warning'
 		return
 	}
+	// Check if file exists (optional, for user feedback)
+	let fileExists = false
+	try
+	{
+		const existing = await readFile(filePath)
+		if (typeof existing === 'string' && existing.length > 0)
+		{
+			fileExists = true
+		}
+	}
+	catch (_err)
+	{
+		// File does not exist, proceed
+	}
+	if (fileExists)
+	{
+		statusMessage.value = 'File already exists. Overwriting.'
+		statusType.value = 'warning'
+	}
 	const ok = await writeFile(filePath, JSON.stringify(manifest.value, null, 2))
 	if (ok)
 	{
-		statusMessage.value = 'Manifest saved.'
+		statusMessage.value = `Manifest saved as ${filePath}.`
 		statusType.value = 'success'
 	}
 	else
 	{
-		statusMessage.value = 'Failed to save file.'
+		statusMessage.value = 'Failed to save manifest.'
 		statusType.value = 'error'
 	}
 }
