@@ -9,5 +9,9 @@
 		".nuxt/nuxt.d.ts",
 		"env.d.ts",
 		"**/*"
+	],
+	"exclude": [
+		"src-tauri",
+		"**/src-tauri/**"
 	]
 }

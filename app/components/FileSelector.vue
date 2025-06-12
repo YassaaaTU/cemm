@@ -15,8 +15,10 @@
 
 <script setup lang="ts">
 import { useTauri } from '~/composables/useTauri'
+import { useAppStore } from '~/stores/app'
 
-const path = ref('')
+const appStore = useAppStore()
+const path = computed(() => appStore.modpackPath)
 const { selectDirectory } = useTauri()
 
 const select = async () =>
@@ -24,7 +26,7 @@ const select = async () =>
 	const result = await selectDirectory()
 	if (result !== null && result.length > 0)
 	{
-		path.value = result
+		appStore.modpackPath = result
 	}
 }
 </script>

@@ -340,33 +340,22 @@
 - [x] Debug logging and timing for settings load/save
 - [x] Performance issues resolved (slow dev only, fast in production)
 
+#### Phase 4: GitHub Integration - **COMPLETED**
+- [x] Backend GitHub client: `upload_update()` and `download_update()` implemented and tested
+- [x] Frontend upload/download UI fully connected to backend
+- [x] Progress tracking, error handling, and success confirmation in UI
+- [x] User mode: download from GitHub and write to disk works reliably (handles manifest-only and manifest+config files)
+- [x] All edge cases (empty config files, missing directory, etc.) handled gracefully
+
 ### 🚧 Current Status (June 12, 2025)
-- Phase 3 is COMPLETE - Core manifest functionality working
+- Phase 4 is COMPLETE – GitHub upload/download and user install workflow are working
 - Secure storage and Pinia persistence are production-ready
 - GitHub repo name now persists correctly in all environments
 - UI is responsive and error states are handled
-- Ready to proceed to Phase 4 - GitHub Integration
+- Ready to proceed to Phase 5 – User Installation System
 
-### 📋 Next Steps (Phase 4: GitHub Integration)
-1. Implement backend GitHub client: `upload_update()` and `download_update()`
-2. Connect upload/download UI to backend
-3. Add progress tracking and error feedback for GitHub operations
-
-### 📊 Overall Progress: ~70% Complete
-- ✅ Core UI and UX
-- ✅ File operations and manifest parsing
-- ✅ Addon management and preview
-- ✅ Secure storage and settings
-- 🚧 GitHub integration (next)
-- ⏳ User installation system
-- ⏳ Final polish and testing
-
----
-
-**Recent Architectural Changes (June 2025):**
-- Switched to a single-page, component-driven UI for mode selection and workflow.
-- Mode switching is handled by `ModeSelector` and dynamic rendering of `AdminPanel`/`UserPanel` components.
-- Removed separate `/admin` and `/user` pages for a more seamless, app-like experience.
-- Settings remain accessible at all times.
-
-_Last updated: 2025-06-12_
+### 📋 Next Steps (Phase 5: User Installation System)
+1. Implement backend installer logic for applying updates (mod/rp/sp file management)
+2. Add CurseForge CDN download and file integrity checks
+3. Add installation preview, rollback, and progress tracking in UI
+4. Finalize user workflow for applying updates

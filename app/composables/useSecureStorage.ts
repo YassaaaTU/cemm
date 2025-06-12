@@ -9,13 +9,23 @@ let stronghold: Stronghold | null = null
 let client: Awaited<ReturnType<Stronghold['createClient']>> | null = null
 let initPromise: Promise<void> | null = null
 
+async function getVaultPath()
+{
+	if (import.meta.dev)
+	{
+		// Use a fixed path in the project directory for dev
+		return 'D:/Projects/Rust/cemmV3/.dev-cemm-vault.hold'
+	}
+	return `${await appDataDir()}cemm-vault.hold`
+}
+
 async function initStronghold()
 {
 	if (client !== null) return
 	if (initPromise !== null) return initPromise
 	initPromise = (async () =>
 	{
-		const vaultPath = `${await appDataDir()}cemm-vault.hold`
+		const vaultPath = await getVaultPath()
 		stronghold = await Stronghold.load(vaultPath, VAULT_PASSWORD)
 		try
 		{

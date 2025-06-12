@@ -52,11 +52,21 @@ export const useTauri = () =>
 		}
 	}
 
-	const writeFile = async (path: string, content: string): Promise<boolean> =>
+	const writeFile = async (
+		pathOrDir: string,
+		contentOrFiles: string | Array<[string, string]>
+	): Promise<boolean> =>
 	{
 		try
 		{
-			await invoke('write_file', { path, content })
+			if (typeof contentOrFiles === 'string')
+			{
+				await invoke('write_file', { path: pathOrDir, content: contentOrFiles })
+			}
+			else
+			{
+				await invoke('write_file', { dir: pathOrDir, files: contentOrFiles })
+			}
 			return true
 		}
 		catch (_e)

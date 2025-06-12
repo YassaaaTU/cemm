@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
 mod composables {
@@ -16,8 +16,7 @@ pub use composables::manifest::{
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_stronghold::Builder::with_argon2(&PathBuf::from("cemm-stronghold-salt"))
-            .build())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -34,6 +33,15 @@ pub fn run() {
             download_update,
         ])
         .setup(|app| {
+            // Initialize Stronghold with app-specific data directory
+            let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(&app_data_dir).map_err(|e| e.to_string())?;
+            let stronghold_path = app_data_dir.join("cemm-stronghold-salt");
+
+            app.handle()
+                .plugin(tauri_plugin_stronghold::Builder::with_argon2(&stronghold_path).build())
+                .map_err(|e| e.to_string())?;
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -113,18 +121,34 @@ fn read_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn write_file(path: String, content: String) -> Result<(), String> {
-    log::info!("write_file: attempting to write {path}");
-    match fs::write(&path, content) {
-        Ok(_) => {
-            log::info!("write_file: successfully wrote {path}");
-            Ok(())
+fn write_file(path: Option<String>, content: Option<String>, dir: Option<String>, files: Option<Vec<(String, String)>>) -> Result<(), String> {
+    use std::path::Path;
+    // Batch mode
+    if let (Some(dir), Some(files)) = (dir, files) {
+        for (filename, content) in files {
+            let file_path = Path::new(&dir).join(&filename);
+            if let Some(parent) = file_path.parent() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    return Err(format!("Failed to create directory {}: {}", parent.display(), e));
+                }
+            }
+            if let Err(e) = std::fs::write(&file_path, content) {
+                return Err(format!("Failed to write file {}: {}", file_path.display(), e));
+            }
         }
-        Err(e) => {
-            log::error!("write_file: failed to write {path}: {e}");
-            Err(e.to_string())
-        }
+        return Ok(());
     }
+    // Single file mode
+    if let (Some(path), Some(content)) = (path, content) {
+        if let Some(parent) = Path::new(&path).parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                return Err(format!("Failed to create directory {}: {}", parent.display(), e));
+            }
+        }
+        return std::fs::write(&path, content)
+            .map_err(|e| format!("Failed to write file {}: {}", path, e));
+    }
+    Err("Invalid arguments: must provide either (path, content) or (dir, files)".to_string())
 }
 
 #[tauri::command]

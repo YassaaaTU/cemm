@@ -23,11 +23,13 @@
 		"tauri": "tauri",
 		"app": "tauri dev",
 		"app:build": "tauri build",
+		"cargo:clean": "cd src-tauri; cargo clean",
 		"cargo:check": "cd src-tauri; cargo check",
 		"cargo:fix": "cd src-tauri; cargo fix"
 	},
 	"dependencies": {
 		"@tauri-apps/plugin-dialog": "~2",
+		"@tauri-apps/plugin-fs": "~2",
 		"@tauri-apps/plugin-opener": "^2.2.7",
 		"@tauri-apps/plugin-stronghold": "^2.2.0",
 		"nuxt": "^3.16.0",

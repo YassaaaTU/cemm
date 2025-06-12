@@ -115,7 +115,8 @@ onMounted(async () =>
 	}
 	catch (err)
 	{
-		logger.error('Failed to load GitHub settings', { error: err })
+		logger.error('Failed to load GitHub settings')
+		logger.error(err)
 		error.value = 'Failed to load settings'
 	}
 	finally
@@ -172,7 +173,8 @@ const saveSettings = async () =>
 	catch (err)
 	{
 		const errorMsg = err instanceof Error ? err.message : 'Failed to save settings'
-		logger.error('Failed to save GitHub settings', { error: err })
+		logger.error('Failed to save GitHub settings')
+		logger.error(err)
 		error.value = errorMsg
 	}
 	finally

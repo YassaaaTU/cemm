@@ -17,6 +17,14 @@
       >
         Save Manifest
       </button>
+      <button
+        class="btn btn-accent"
+        :disabled="manifest == null || uploading"
+        @click="uploadToGithub"
+      >
+        <span v-if="!uploading">Upload to GitHub</span>
+        <span v-else>Uploading...</span>
+      </button>
     </div>
     <addon-list class="mt-4" />
     <manifest-preview class="mt-4" />
@@ -35,13 +43,20 @@ import AddonList from '~/components/AddonList.vue'
 import ManifestPreview from '~/components/ManifestPreview.vue'
 import ProgressBar from '~/components/ProgressBar.vue'
 import StatusAlert from '~/components/StatusAlert.vue'
+import { type ConfigFile, useGithubApi } from '~/composables/useGithubApi'
+import { useSecureStorage } from '~/composables/useSecureStorage'
 import { useTauri } from '~/composables/useTauri'
+import { useAppStore } from '~/stores/app'
 import { useManifestStore } from '~/stores/manifest'
+
+const { uploadUpdate } = useGithubApi()
+const { getSecure } = useSecureStorage()
+const appStore = useAppStore()
+const uploading = ref(false)
 
 const progress = ref(0)
 const statusMessage = ref('')
 const statusType = ref<'success' | 'error' | 'info' | 'warning'>('info')
-
 const { selectFile, selectSaveFile, writeFile, parseMinecraftInstance, compareManifests, readFile } = useTauri()
 const manifestStore = useManifestStore()
 const manifest = computed(() => manifestStore.manifest)
@@ -131,6 +146,62 @@ async function saveManifest()
 	{
 		statusMessage.value = 'Failed to save manifest.'
 		statusType.value = 'error'
+	}
+}
+
+async function uploadToGithub()
+{
+	if (manifest.value == null)
+	{
+		return
+	}
+	statusMessage.value = ''
+	statusType.value = 'info'
+	progress.value = 0
+	uploading.value = true
+	try
+	{
+		// Get repo and token
+		const repo = appStore.githubRepo
+		const token = await getSecure('cemm_github_token')
+		if (repo.trim().length === 0 || token == null || token.trim().length === 0)
+		{
+			statusMessage.value = 'GitHub repo or token not set.'
+			statusType.value = 'error'
+			uploading.value = false
+			return
+		}
+		// Generate UUID (for now, use Date.now as stub)
+		const uuid = Date.now().toString()
+		// Collect config files if needed (empty for now)
+		const configFiles: ConfigFile[] = []
+		await uploadUpdate({
+			repo,
+			token,
+			uuid,
+			manifest: manifest.value,
+			configFiles,
+			onProgress: (p, msg) =>
+			{
+				progress.value = p
+				if (typeof msg === 'string' && msg.length > 0)
+				{
+					statusMessage.value = msg
+				}
+			}
+		})
+		statusMessage.value = 'Upload successful!'
+		statusType.value = 'success'
+	}
+	catch (err)
+	{
+		statusMessage.value = (err instanceof Error ? err.message : 'Upload failed')
+		statusType.value = 'error'
+	}
+	finally
+	{
+		uploading.value = false
+		progress.value = 100
 	}
 }
 </script>

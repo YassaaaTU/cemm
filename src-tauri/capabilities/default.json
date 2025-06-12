@@ -9,6 +9,7 @@
     "core:default",
     "dialog:default",
     "opener:default",
-    "stronghold:default"
+    "stronghold:default",
+    "fs:default"
   ]
 }

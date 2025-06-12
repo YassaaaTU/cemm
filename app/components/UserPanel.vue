@@ -29,6 +29,17 @@
       >
         Save Manifest
       </button>
+      <button
+        class="btn btn-accent"
+        :disabled="downloading || uuid.trim().length === 0"
+        @click="downloadFromGithub"
+      >
+        <span v-if="!downloading">Download from GitHub</span>
+        <span
+          v-else
+          class="loading loading-spinner"
+        />
+      </button>
     </div>
     <manifest-preview class="mt-4" />
     <div
@@ -62,17 +73,21 @@ import FileSelector from '~/components/FileSelector.vue'
 import ManifestPreview from '~/components/ManifestPreview.vue'
 import ProgressBar from '~/components/ProgressBar.vue'
 import StatusAlert from '~/components/StatusAlert.vue'
+import { useGithubApi } from '~/composables/useGithubApi'
 import { useTauri } from '~/composables/useTauri'
+import { useAppStore } from '~/stores/app'
 import { useManifestStore } from '~/stores/manifest'
 
 const uuid = ref('')
 const progress = ref(0)
 const statusMessage = ref('')
 const statusType = ref<'success' | 'error' | 'info' | 'warning'>('info')
-
 const { selectFile, writeFile, readFile } = useTauri()
 const manifestStore = useManifestStore()
 const manifest = computed(() => manifestStore.manifest)
+const { downloadUpdate } = useGithubApi()
+const appStore = useAppStore()
+const downloading = ref(false)
 
 async function openManifest()
 {
@@ -129,6 +144,93 @@ async function saveManifest()
 	{
 		statusMessage.value = 'Failed to save file.'
 		statusType.value = 'error'
+	}
+}
+
+async function downloadFromGithub()
+{
+	if (uuid.value.trim().length === 0)
+	{
+		statusMessage.value = 'Please enter a valid UUID.'
+		statusType.value = 'warning'
+		return
+	}
+	statusMessage.value = ''
+	statusType.value = 'info'
+	progress.value = 0
+	downloading.value = true
+	try
+	{
+		const repo = appStore.githubRepo
+		if (repo.trim().length === 0)
+		{
+			statusMessage.value = 'GitHub repo not set.'
+			statusType.value = 'error'
+			downloading.value = false
+			return
+		}
+		const result = await downloadUpdate({
+			repo,
+			uuid: uuid.value.trim(),
+			onProgress: (p, msg) =>
+			{
+				progress.value = p
+				if (typeof msg === 'string' && msg.length > 0)
+				{
+					statusMessage.value = msg
+				}
+			}
+		})
+
+		// Update manifest in store for preview
+		manifestStore.setManifest(result.manifest)
+
+		// Write files to disk if modpack path is selected
+		const modpackPath = appStore.modpackPath
+		if (modpackPath && modpackPath.trim().length > 0)
+		{
+			progress.value = 80
+			statusMessage.value = 'Writing files to disk...'
+
+			// Prepare files for batch write
+			const filesToWrite: Array<[string, string]> = []
+
+			// Add manifest.json
+			filesToWrite.push(['manifest.json', JSON.stringify(result.manifest, null, 2)])
+
+			// Add config files
+			for (const configFile of result.configFiles)
+			{
+				filesToWrite.push([configFile.path, configFile.content])
+			}
+
+			// Write all files to modpack directory
+			const writeSuccess = await writeFile(modpackPath, filesToWrite)
+			if (!writeSuccess)
+			{
+				statusMessage.value = 'Download successful, but failed to write files to disk.'
+				statusType.value = 'warning'
+				return
+			}
+
+			statusMessage.value = `Download successful! ${filesToWrite.length} files written to ${modpackPath}`
+			statusType.value = 'success'
+		}
+		else
+		{
+			statusMessage.value = 'Download successful! (No modpack path selected - files not written to disk)'
+			statusType.value = 'warning'
+		}
+	}
+	catch (err)
+	{
+		statusMessage.value = (err instanceof Error ? err.message : 'Download failed')
+		statusType.value = 'error'
+	}
+	finally
+	{
+		downloading.value = false
+		progress.value = 100
 	}
 }
 </script>
