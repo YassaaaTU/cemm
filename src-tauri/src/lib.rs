@@ -12,6 +12,8 @@ pub use composables::manifest::{
     compare_manifests, open_curseforge_url, open_url, parse_minecraft_instance, Addon, Manifest,
     UpdateInfo,
 };
+mod installer;
+pub use installer::{install_update, ConfigFile as InstallerConfigFile};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -31,6 +33,7 @@ pub fn run() {
             open_url,
             upload_update,
             download_update,
+            install_update,
         ])
         .setup(|app| {
             // Initialize Stronghold with app-specific data directory

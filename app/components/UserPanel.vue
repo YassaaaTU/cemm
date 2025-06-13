@@ -40,6 +40,17 @@
           class="loading loading-spinner"
         />
       </button>
+      <button
+        class="btn btn-success"
+        :disabled="!canInstall"
+        @click="showPreview = true"
+      >
+        <span v-if="!installing">Install Update</span>
+        <span
+          v-else
+          class="loading loading-spinner"
+        />
+      </button>
     </div>
     <manifest-preview class="mt-4" />
     <div
@@ -64,19 +75,117 @@
         :type="statusType"
       />
     </div>
+    <!-- Install Preview Modal -->
+    <dialog
+      v-if="showPreview"
+      open
+      class="modal modal-open"
+    >
+      <div class="modal-box max-w-2xl">
+        <h3 class="font-bold text-lg mb-2">
+          Install Preview
+        </h3>
+        <p class="mb-2">
+          The following will be installed to <span class="font-mono">{{ appStore.modpackPath }}</span>:
+        </p>
+        <div class="mb-2">
+          <strong>Mods:</strong>
+          <ul class="list-disc ml-6">
+            <li
+              v-for="mod in manifest?.mods ?? []"
+              :key="mod.addon_project_id"
+            >
+              {{ mod.addon_name }} ({{ mod.version }})
+            </li>
+          </ul>
+        </div>
+        <div class="mb-2">
+          <strong>Resourcepacks:</strong>
+          <ul class="list-disc ml-6">
+            <li
+              v-for="rp in manifest?.resourcepacks ?? []"
+              :key="rp.addon_project_id"
+            >
+              {{ rp.addon_name }} ({{ rp.version }})
+            </li>
+          </ul>
+        </div>
+        <div class="mb-2">
+          <strong>Shaderpacks:</strong>
+          <ul class="list-disc ml-6">
+            <li
+              v-for="sp in manifest?.shaderpacks ?? []"
+              :key="sp.addon_project_id"
+            >
+              {{ sp.addon_name }} ({{ sp.version }})
+            </li>
+          </ul>
+        </div>
+        <div class="mb-2">
+          <strong>Datapacks:</strong>
+          <ul class="list-disc ml-6">
+            <li
+              v-for="dp in manifest?.datapacks ?? []"
+              :key="dp.addon_project_id"
+            >
+              {{ dp.addon_name }} ({{ dp.version }})
+            </li>
+          </ul>
+        </div>
+        <div class="mb-2">
+          <strong>Config files:</strong>
+          <ul class="list-disc ml-6">
+            <li
+              v-for="cf in downloadedConfigFiles"
+              :key="cf.path"
+            >
+              {{ cf.path }}
+            </li>
+          </ul>
+        </div>
+        <div class="modal-action mt-4 flex gap-2">
+          <button
+            class="btn btn-success"
+            :disabled="installing"
+            @click="confirmInstall"
+          >
+            Confirm Install
+          </button>
+          <button
+            class="btn btn-ghost"
+            :disabled="installing"
+            @click="showPreview = false"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </dialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+
 import AddonList from '~/components/AddonList.vue'
 import FileSelector from '~/components/FileSelector.vue'
 import ManifestPreview from '~/components/ManifestPreview.vue'
 import ProgressBar from '~/components/ProgressBar.vue'
 import StatusAlert from '~/components/StatusAlert.vue'
+import type { ConfigFile } from '~/composables/useGithubApi'
 import { useGithubApi } from '~/composables/useGithubApi'
 import { useTauri } from '~/composables/useTauri'
 import { useAppStore } from '~/stores/app'
 import { useManifestStore } from '~/stores/manifest'
+
+interface InstallProgressEvent
+{
+	payload?: {
+		progress?: number
+		message?: string
+	}
+}
 
 const uuid = ref('')
 const progress = ref(0)
@@ -88,6 +197,24 @@ const manifest = computed(() => manifestStore.manifest)
 const { downloadUpdate } = useGithubApi()
 const appStore = useAppStore()
 const downloading = ref(false)
+const installing = ref(false)
+const downloadedConfigFiles = ref<ConfigFile[]>([])
+const logger = usePinoLogger()
+
+const canInstall = computed(() =>
+	manifest.value !== null
+	&& appStore.modpackPath.trim().length > 0
+	&& !installing.value
+	&& !downloading.value
+)
+
+const showPreview = ref(false)
+
+function confirmInstall()
+{
+	showPreview.value = false
+	installUpdate()
+}
 
 async function openManifest()
 {
@@ -184,6 +311,7 @@ async function downloadFromGithub()
 
 		// Update manifest in store for preview
 		manifestStore.setManifest(result.manifest)
+		downloadedConfigFiles.value = result.configFiles
 
 		// Write files to disk if modpack path is selected
 		const modpackPath = appStore.modpackPath
@@ -231,6 +359,52 @@ async function downloadFromGithub()
 	{
 		downloading.value = false
 		progress.value = 100
+	}
+}
+
+async function installUpdate()
+{
+	if (!canInstall.value)
+	{
+		return
+	}
+	installing.value = true
+	statusMessage.value = 'Starting installation...'
+	statusType.value = 'info'
+	progress.value = 0
+	let unlisten: UnlistenFn | null = null
+	try
+	{
+		unlisten = await listen('install-progress', (event) =>
+		{
+			const prog = (event as InstallProgressEvent).payload?.progress
+			const message = (event as InstallProgressEvent).payload?.message
+			if (typeof prog === 'number') progress.value = prog
+			if (typeof message === 'string') statusMessage.value = message
+		})
+
+		await invoke('install_update', {
+			modpackPath: appStore.modpackPath,
+			manifest: manifest.value,
+			configFiles: downloadedConfigFiles.value
+		})
+		statusMessage.value = 'Installation complete!'
+		statusType.value = 'success'
+	}
+	catch (err)
+	{
+		statusMessage.value = (err instanceof Error ? err.message : 'Installation failed')
+		logger.error(err)
+		statusType.value = 'error'
+	}
+	finally
+	{
+		installing.value = false
+		progress.value = 100
+		if (typeof unlisten === 'function')
+		{
+			unlisten()
+		}
 	}
 }
 </script>

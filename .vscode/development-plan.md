@@ -224,6 +224,37 @@
    - Progress tracking
    - Rollback capability
 
+### Phase 5.5: Update Management System
+**Objective**: Handle updating existing installations by removing old files and managing version changes
+
+**Tasks**:
+1. **Manifest Comparison Logic**:
+   - Compare current installed manifest with new manifest
+   - Identify removed addons that need deletion
+   - Identify updated addons where old versions should be removed
+   - Identify completely new addons to install
+
+2. **File Management System**:
+   - Scan existing mod/resourcepack/shaderpack/datapack directories
+   - Match installed files to manifest entries (by addon name/project ID)
+   - Remove old versions before installing new ones
+   - Remove completely deleted addons
+
+3. **Update Preview Enhancement**:
+   - Show users what will be removed, updated, and added
+   - Display before/after version comparisons
+   - Allow users to see the full update diff
+
+4. **Backup & Safety**:
+   - Create backup of removed files before deletion
+   - Implement safer update process with rollback capability
+   - Handle edge cases (file conflicts, permission issues)
+
+5. **Update Installation Flow**:
+   - Extend backend `install_update` to accept "previous manifest"
+   - Implement cleanup phase before installation phase
+   - Update UI to show removal progress alongside installation progress
+
 ### Phase 6: Polish & Error Handling
 **Objective**: Make app production-ready
 
@@ -347,15 +378,41 @@
 - [x] User mode: download from GitHub and write to disk works reliably (handles manifest-only and manifest+config files)
 - [x] All edge cases (empty config files, missing directory, etc.) handled gracefully
 
-### 🚧 Current Status (June 12, 2025)
-- Phase 4 is COMPLETE – GitHub upload/download and user install workflow are working
-- Secure storage and Pinia persistence are production-ready
-- GitHub repo name now persists correctly in all environments
-- UI is responsive and error states are handled
-- Ready to proceed to Phase 5 – User Installation System
+### 🚧 Current Status (June 13, 2025)
+- Phase 5 is COMPLETE – User Installation System works for fresh installs
+- Installation preview, progress tracking, and rollback are implemented
+- Files are installed to correct directories ignoring manifest's hardcoded paths
+- Ready to proceed to Phase 5.5 – Update Management System
 
-### 📋 Next Steps (Phase 5: User Installation System)
-1. Implement backend installer logic for applying updates (mod/rp/sp file management)
-2. Add CurseForge CDN download and file integrity checks
-3. Add installation preview, rollback, and progress tracking in UI
-4. Finalize user workflow for applying updates
+### 📋 Next Steps (Phase 5.5: Update Management System)
+**Objective**: Handle updating existing installations by removing old files and managing version changes
+
+**Tasks**:
+1. **Manifest Comparison Logic**:
+   - Compare current installed manifest with new manifest
+   - Identify removed addons that need deletion
+   - Identify updated addons where old versions should be removed
+   - Identify completely new addons to install
+
+2. **File Management System**:
+   - Scan existing mod/resourcepack/shaderpack/datapack directories
+   - Match installed files to manifest entries (by addon name/project ID)
+   - Remove old versions before installing new ones
+   - Remove completely deleted addons
+
+3. **Update Preview Enhancement**:
+   - Show users what will be removed, updated, and added
+   - Display before/after version comparisons
+   - Allow users to see the full update diff
+
+4. **Backup & Safety**:
+   - Create backup of removed files before deletion
+   - Implement safer update process with rollback capability
+   - Handle edge cases (file conflicts, permission issues)
+
+5. **Update Installation Flow**:
+   - Extend backend `install_update` to accept "previous manifest"
+   - Implement cleanup phase before installation phase
+   - Update UI to show removal progress alongside installation progress
+
+### 📋 After Phase 5.5 (Phase 6: Polish & Error Handling)
