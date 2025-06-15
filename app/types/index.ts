@@ -26,3 +26,24 @@ export interface UpdateInfo
 	removedAddons: string[]
 	configFiles: string[]
 }
+
+export interface UpdateDiff
+{
+	removed_addons: string[] // addon names to remove
+	updated_addons: Array<[string, string]> // [old_version, new_version] pairs
+	new_addons: string[] // completely new addon names
+}
+
+export interface UpdatePreview
+{
+	oldManifest: Manifest | null
+	newManifest: Manifest
+	diff: UpdateDiff
+	hasChanges: boolean
+}
+
+export interface ConfigFile
+{
+	path: string
+	content: string
+}

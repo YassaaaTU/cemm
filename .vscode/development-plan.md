@@ -259,21 +259,41 @@
 **Objective**: Make app production-ready
 
 **Tasks**:
-1. **Comprehensive Error Handling**:
-   - User-friendly error messages
-   - Recovery suggestions
-   - Logging system
+1. **Config File Selection UI** (High Priority):
+   - Add file selector to AdminPanel for config files
+   - Allow users to set relative paths within modpack
+   - Show config files in UpdatePreview component
+   - Basic file validation and upload functionality
 
-2. **UI Polish**:
-   - Loading states
-   - Better visual feedback
-   - Responsive design
-   - Dark mode support
+2. **Comprehensive Error Handling**:
+   - User-friendly error messages for all operations
+   - Recovery suggestions for common failure scenarios
+   - Logging system improvements
+   - Network error handling with retry logic
 
-3. **Final Testing**:
+3. **UI Polish & User Experience**:
+   - Loading states for all async operations
+   - Better visual feedback and animations
+   - Responsive design for different screen sizes
+   - Dark mode support and theme consistency
+   - Improved accessibility (keyboard navigation, screen readers)
+
+4. **Performance Optimization**:
+   - Optimize large manifest handling
+   - Implement proper caching strategies
+   - Reduce bundle size and startup time
+   - Memory usage optimization
+
+5. **Final Testing & Quality Assurance**:
    - End-to-end workflow testing
    - Error scenario testing
-   - Performance optimization
+   - Performance benchmarking
+   - Cross-platform compatibility testing
+
+6. **Documentation & Help**:
+   - In-app help system
+   - User guide and troubleshooting
+   - Developer documentation
 
 ## Key Features Per Mode
 
@@ -378,41 +398,52 @@
 - [x] User mode: download from GitHub and write to disk works reliably (handles manifest-only and manifest+config files)
 - [x] All edge cases (empty config files, missing directory, etc.) handled gracefully
 
-### 🚧 Current Status (June 13, 2025)
-- Phase 5 is COMPLETE – User Installation System works for fresh installs
-- Installation preview, progress tracking, and rollback are implemented
-- Files are installed to correct directories ignoring manifest's hardcoded paths
-- Ready to proceed to Phase 5.5 – Update Management System
+### 🚧 Current Status (June 15, 2025)
+- Phase 5.5 is COMPLETE – Update Management System works with enhanced UI
+- Update preview shows detailed diff with removed, updated, and new addons
+- Backend cleanup functionality removes old files before installing new ones
+- UserPanel now uses new UpdatePreview component with better UX
+- Ready to proceed to Phase 6 – Polish & Error Handling
 
-### 📋 Next Steps (Phase 5.5: Update Management System)
-**Objective**: Handle updating existing installations by removing old files and managing version changes
+### **Phase 5.5: Update Management System** - ✅ **COMPLETE**
+- ✅ Backend `install_update_with_cleanup()` function implemented and working
+- ✅ Frontend `UpdatePreview` component created with modern tabbed UI
+- ✅ Update diff calculation shows removed, updated, and new addons
+- ✅ UserPanel integrated with new preview system and cleanup functionality
+- ✅ Existing manifest loading and comparison working properly
+- ✅ Safe update process with file removal before installation
+
+### 📋 Next Steps (Phase 6: Polish & Error Handling)
+### 📋 Next Steps (Phase 6: Polish & Error Handling)
+**Objective**: Make app production-ready with comprehensive error handling and UI polish
 
 **Tasks**:
-1. **Manifest Comparison Logic**:
-   - Compare current installed manifest with new manifest
-   - Identify removed addons that need deletion
-   - Identify updated addons where old versions should be removed
-   - Identify completely new addons to install
+1. **Comprehensive Error Handling**:
+   - User-friendly error messages for all operations
+   - Recovery suggestions for common failure scenarios
+   - Logging system improvements
+   - Network error handling with retry logic
 
-2. **File Management System**:
-   - Scan existing mod/resourcepack/shaderpack/datapack directories
-   - Match installed files to manifest entries (by addon name/project ID)
-   - Remove old versions before installing new ones
-   - Remove completely deleted addons
+2. **UI Polish & User Experience**:
+   - Loading states for all async operations
+   - Better visual feedback and animations
+   - Responsive design for different screen sizes
+   - Dark mode support and theme consistency
+   - Improved accessibility (keyboard navigation, screen readers)
 
-3. **Update Preview Enhancement**:
-   - Show users what will be removed, updated, and added
-   - Display before/after version comparisons
-   - Allow users to see the full update diff
+3. **Performance Optimization**:
+   - Optimize large manifest handling
+   - Implement proper caching strategies
+   - Reduce bundle size and startup time
+   - Memory usage optimization
 
-4. **Backup & Safety**:
-   - Create backup of removed files before deletion
-   - Implement safer update process with rollback capability
-   - Handle edge cases (file conflicts, permission issues)
+4. **Final Testing & Quality Assurance**:
+   - End-to-end workflow testing
+   - Error scenario testing
+   - Performance benchmarking
+   - Cross-platform compatibility testing
 
-5. **Update Installation Flow**:
-   - Extend backend `install_update` to accept "previous manifest"
-   - Implement cleanup phase before installation phase
-   - Update UI to show removal progress alongside installation progress
-
-### 📋 After Phase 5.5 (Phase 6: Polish & Error Handling)
+5. **Documentation & Help**:
+   - In-app help system
+   - User guide and troubleshooting
+   - Developer documentation

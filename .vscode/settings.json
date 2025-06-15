@@ -64,6 +64,9 @@
 	},
 	{
 		"file": "./.vscode/tauri.instructions.md"
+	},
+	{
+		"file": "./.vscode/syntax.instructions.md"
 	}
   ]
 }
