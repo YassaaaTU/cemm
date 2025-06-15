@@ -64,15 +64,24 @@
           {{ datapack.addon_name }} ({{ datapack.version }})
         </li>
       </ul>
-    </div>
-    <addon-list class="mt-4" />
+    </div>    <addon-list class="mt-4" />
+
+    <!-- Enhanced Error Alert -->
+    <error-alert
+      :error-state="errorState"
+      :retry-operation="retryCurrentOperation"
+      :show-technical-details="true"
+      @close="clearError"
+      @retry="retryCurrentOperation"
+    />
+
     <div class="mt-6 flex flex-col gap-2">
       <progress-bar :progress="progress" />
       <status-alert
         :message="statusMessage"
         :type="statusType"
       />
-    </div>    <!-- Update Preview Modal -->
+    </div><!-- Update Preview Modal -->
     <update-preview
       v-if="showPreview && previewData"
       :preview="previewData"
@@ -88,12 +97,14 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 import AddonList from '~/components/AddonList.vue'
+import ErrorAlert from '~/components/ErrorAlert.vue'
 import FileSelector from '~/components/FileSelector.vue'
 import ManifestPreview from '~/components/ManifestPreview.vue'
 import ProgressBar from '~/components/ProgressBar.vue'
 import StatusAlert from '~/components/StatusAlert.vue'
 import UpdatePreview from '~/components/UpdatePreview.vue'
 import type { ConfigFileWithContent, Manifest } from '~/types'
+import { createErrorHandler, withNetworkRetry } from '~/utils/errorHandler'
 
 interface InstallProgressEvent
 {
@@ -116,6 +127,20 @@ const installing = ref(false)
 const downloadedConfigFiles = ref<ConfigFileWithContent[]>([])
 const logger = usePinoLogger()
 const { installUpdate: tauriInstallUpdate, installUpdateWithCleanup } = useTauri()
+
+// Enhanced error handling
+const errorHandler = createErrorHandler(statusMessage, statusType, logger)
+const { errorState, handleError, retry, clearError, executeWithRecovery } = errorHandler
+
+// Track current operation for retry functionality
+const currentOperation = ref<(() => Promise<void>) | null>(null)
+const retryCurrentOperation = async () =>
+{
+	if (currentOperation.value !== null)
+	{
+		await retry(currentOperation.value)
+	}
+}
 
 const canInstall = computed(() =>
 	manifest.value !== null
@@ -407,24 +432,27 @@ async function downloadFromGithub()
 {
 	if (uuid.value.trim().length === 0)
 	{
-		statusMessage.value = 'Please enter a valid UUID.'
-		statusType.value = 'warning'
+		handleError('INVALID_UUID', 'downloadFromGithub')
 		return
 	}
-	statusMessage.value = ''
+
+	const repo = appStore.githubRepo
+	if (repo.trim().length === 0)
+	{
+		handleError('MISSING_GITHUB_SETTINGS', 'downloadFromGithub')
+		return
+	}
+
+	// Set current operation for retry functionality
+	currentOperation.value = downloadFromGithub
+
+	clearError()
 	statusType.value = 'info'
 	progress.value = 0
 	downloading.value = true
+
 	try
 	{
-		const repo = appStore.githubRepo
-		if (repo.trim().length === 0)
-		{
-			statusMessage.value = 'GitHub repo not set.'
-			statusType.value = 'error'
-			downloading.value = false
-			return
-		}
 		// Debug logging
 		logger.info('Starting manifest download', {
 			repo,
@@ -433,23 +461,28 @@ async function downloadFromGithub()
 			uuidLength: uuid.value.trim().length
 		})
 
-		// Phase 1: Download only the manifest
+		// Phase 1: Download only the manifest with network retry
 		progress.value = 10
 		statusMessage.value = 'Downloading manifest...'
 
 		const { downloadManifest } = useGithubApi()
-		const manifest = await downloadManifest({
-			repo,
-			uuid: uuid.value.trim(),
-			onProgress: (p, msg) =>
-			{
-				progress.value = Math.min(p / 2, 50) // First half of progress
-				if (typeof msg === 'string' && msg.length > 0)
+
+		const manifest = await withNetworkRetry(
+			async () => await downloadManifest({
+				repo,
+				uuid: uuid.value.trim(),
+				onProgress: (p, msg) =>
 				{
-					statusMessage.value = msg
+					progress.value = Math.min(p / 2, 50) // First half of progress
+					if (typeof msg === 'string' && msg.length > 0)
+					{
+						statusMessage.value = msg
+					}
 				}
-			}
-		})
+			}),
+			3, // maxRetries
+			1000 // backoffMs
+		)
 
 		logger.info('Manifest download successful', { manifest })
 
@@ -462,9 +495,9 @@ async function downloadFromGithub()
 		const modpackPath = appStore.modpackPath
 		if (modpackPath && modpackPath.trim().length > 0)
 		{
-			// Enhanced manifest loading logic for update workflow
-			try
+			await executeWithRecovery(async () =>
 			{
+				// Enhanced manifest loading logic for update workflow
 				// Step 1: Try to read existing manifest.json from the modpack directory
 				const manifestPath = `${modpackPath}/manifest.json`
 				const existingManifestContent = await readFile(manifestPath)
@@ -481,18 +514,16 @@ async function downloadFromGithub()
 					// Step 2: No manifest.json found, check for minecraftinstance.json
 					await tryLoadFromMinecraftInstance(modpackPath)
 				}
-			}
-			catch (err)
-			{
-				// Step 3: manifest.json reading failed, try minecraftinstance.json fallback
-				logger.debug('Failed to read manifest.json, trying minecraftinstance.json fallback', { err })
-				await tryLoadFromMinecraftInstance(modpackPath)
-			}
+			}, 'loadExistingManifest')
 
 			// Backup current manifest and write new one using our new system
 			progress.value = 60
 			statusMessage.value = 'Backing up existing manifest...'
-			await backupAndReplaceManifest(modpackPath, manifest)
+
+			await executeWithRecovery(async () =>
+			{
+				await backupAndReplaceManifest(modpackPath, manifest)
+			}, 'backupManifest')
 
 			logger.info('Phase 1 complete: Manifest downloaded and backed up')
 		}
@@ -500,22 +531,14 @@ async function downloadFromGithub()
 		{
 			logger.info('Phase 1 complete: Manifest downloaded (no modpack path selected)')
 		}
+
 		statusMessage.value = 'Manifest ready for preview. Config files will be downloaded after confirmation.'
 		statusType.value = 'success'
+		currentOperation.value = null // Clear operation on success
 	}
 	catch (err)
 	{
-		const errorMessage = err instanceof Error ? err.message : 'Download failed'
-		statusMessage.value = errorMessage
-		statusType.value = 'error'
-		logger.error('Failed to download manifest', {
-			error: err,
-			errorMessage,
-			uuid: uuid.value.trim(),
-			repo: appStore.githubRepo,
-			errorType: typeof err,
-			errorString: String(err)
-		})
+		handleError(err as Error, 'downloadFromGithub')
 	}
 	finally
 	{

@@ -29,10 +29,27 @@
           >
             +{{ selectedConfigFiles.length }} config
           </span>
-        </span>
-        <span v-else>Uploading...</span>
+        </span>        <span v-else>Uploading...</span>
       </button>
-    </div>    <addon-list class="mt-4" />
+    </div>    <!-- Enhanced Error Handling -->
+    <error-alert
+      v-if="errorState.error"
+      class="mt-4"
+      :error-state="errorState"
+      :retry-operation="retryCurrentOperation"
+      @retry="retryCurrentOperation"
+      @close="clearError"
+    />
+
+    <!-- Legacy Status Alert (for non-error messages) -->
+    <status-alert
+      v-else-if="statusMessage"
+      class="mt-4"
+      :message="statusMessage"
+      :type="statusType"
+    />
+
+    <addon-list class="mt-4" />
     <manifest-preview class="mt-4" />
 
     <!-- Config Files Section -->
@@ -191,6 +208,7 @@
 
 <script setup lang="ts">
 import AddonList from '~/components/AddonList.vue'
+import ErrorAlert from '~/components/ErrorAlert.vue'
 import ManifestPreview from '~/components/ManifestPreview.vue'
 import ProgressBar from '~/components/ProgressBar.vue'
 import StatusAlert from '~/components/StatusAlert.vue'
@@ -200,6 +218,7 @@ import { useTauri } from '~/composables/useTauri'
 import { useAppStore } from '~/stores/app'
 import { useManifestStore } from '~/stores/manifest'
 import type { ConfigFileWithContent, Manifest } from '~/types'
+import { AppError, createErrorHandler, withNetworkRetry } from '~/utils/errorHandler'
 
 const { uploadUpdate } = useGithubApi()
 const { getSecure } = useSecureStorage()
@@ -209,6 +228,24 @@ const uploading = ref(false)
 const progress = ref(0)
 const statusMessage = ref('')
 const statusType = ref<'success' | 'error' | 'info' | 'warning'>('info')
+
+// Enhanced error handling
+const logger = useNuxtApp().$logger
+const { errorState, handleError, retry, clearError } = createErrorHandler(
+	statusMessage,
+	statusType,
+	logger
+)
+
+// Track current operation for retry functionality
+const currentOperation = ref<(() => Promise<void>) | null>(null)
+const retryCurrentOperation = async () =>
+{
+	if (currentOperation.value !== null)
+	{
+		await retry(currentOperation.value)
+	}
+}
 
 // Config file management
 const selectedConfigFiles = ref<ConfigFileWithContent[]>([])
@@ -287,41 +324,64 @@ function clearConfigFiles()
 // Load a minecraftinstance.json and convert to manifest
 async function loadInstance()
 {
-	statusMessage.value = ''
-	// Select minecraftinstance.json
-	const filePath = await selectFile()
-	if (filePath == null || filePath.length === 0)
+	const loadOperation = async () =>
 	{
-		statusMessage.value = 'No file selected.'
-		statusType.value = 'warning'
-		return
+		statusMessage.value = ''
+
+		// Select minecraftinstance.json
+		const filePath = await selectFile()
+		if (filePath == null || filePath.length === 0)
+		{
+			statusMessage.value = 'No file selected.'
+			statusType.value = 'warning'
+			return
+		}
+
+		try
+		{
+			// Parse minecraftinstance.json to Manifest
+			const parsed = await parseMinecraftInstance(filePath)
+			if (parsed == null)
+			{
+				throw new AppError('INVALID_MANIFEST', 'Failed to parse minecraftinstance.json')
+			}
+
+			// Save previous manifest for diffing (store in Pinia)
+			if (manifest.value != null)
+			{
+				manifestStore.setPreviousManifest(manifest.value)
+			}
+			manifestStore.setManifest(parsed)
+			statusMessage.value = 'Manifest generated from minecraftinstance.json.'
+			statusType.value = 'success'
+
+			// If previous manifest exists, show diff (store in Pinia)
+			if (manifestStore.previousManifest != null)
+			{
+				const diff = await compareManifests(manifestStore.previousManifest, parsed)
+				manifestStore.setUpdateInfo(diff)
+			}
+			else
+			{
+				manifestStore.setUpdateInfo(null)
+			}
+		}
+		catch (error)
+		{
+			if (error instanceof AppError)
+			{
+				handleError(error)
+			}
+			else
+			{
+				handleError(new AppError('FILE_READ_ERROR', error instanceof Error ? error : new Error(String(error))))
+			}
+		}
 	}
-	// Parse minecraftinstance.json to Manifest
-	const parsed = await parseMinecraftInstance(filePath)
-	if (parsed == null)
-	{
-		statusMessage.value = 'Failed to parse minecraftinstance.json.'
-		statusType.value = 'error'
-		return
-	}
-	// Save previous manifest for diffing (store in Pinia)
-	if (manifest.value != null)
-	{
-		manifestStore.setPreviousManifest(manifest.value)
-	}
-	manifestStore.setManifest(parsed)
-	statusMessage.value = 'Manifest generated from minecraftinstance.json.'
-	statusType.value = 'success'
-	// If previous manifest exists, show diff (store in Pinia)
-	if (manifestStore.previousManifest != null)
-	{
-		const diff = await compareManifests(manifestStore.previousManifest, parsed)
-		manifestStore.setUpdateInfo(diff)
-	}
-	else
-	{
-		manifestStore.setUpdateInfo(null)
-	}
+
+	// Set current operation for retry functionality
+	currentOperation.value = loadOperation
+	await loadOperation()
 }
 
 // Save/export the generated manifest
@@ -378,64 +438,81 @@ async function uploadToGithub()
 	{
 		return
 	}
-	statusMessage.value = ''
-	statusType.value = 'info'
-	progress.value = 0
-	uploading.value = true
-	try
+
+	const uploadOperation = async () =>
 	{
-		// Get repo and token
-		const repo = appStore.githubRepo
-		const token = await getSecure('cemm_github_token')
-		if (repo.trim().length === 0 || token == null || token.trim().length === 0)
+		statusMessage.value = ''
+		statusType.value = 'info'
+		progress.value = 0
+		uploading.value = true
+		try
 		{
-			statusMessage.value = 'GitHub repo or token not set.'
-			statusType.value = 'error'
-			uploading.value = false
-			return
-		}
-
-		// Generate UUID (for now, use Date.now as stub)
-		const uuid = Date.now().toString()
-		// Create updated manifest with config files included
-		const manifestWithConfig: Manifest = {
-			...manifest.value,
-			config_files: selectedConfigFiles.value.map((cf) => ({
-				filename: cf.filename,
-				relative_path: cf.relative_path
-			}))
-		}
-
-		// Use selected config files
-		const configFiles = selectedConfigFiles.value
-		await uploadUpdate({
-			repo,
-			token,
-			uuid,
-			manifest: manifestWithConfig,
-			configFiles,
-			onProgress: (p, msg) =>
+			// Get repo and token
+			const repo = appStore.githubRepo
+			const token = await getSecure('cemm_github_token')
+			if (repo.trim().length === 0 || token == null || token.trim().length === 0)
 			{
-				progress.value = p
-				if (typeof msg === 'string' && msg.length > 0)
-				{
-					statusMessage.value = msg
-				}
+				throw new Error('MISSING_GITHUB_SETTINGS')
 			}
-		})
-		statusMessage.value = 'Upload successful!'
-		statusType.value = 'success'
+
+			// Generate UUID (for now, use Date.now as stub)
+			const uuid = Date.now().toString()
+
+			// Create updated manifest with config files included
+			// Safe to assert non-null since we check at function start
+			const currentManifest = manifest.value as Manifest
+			const manifestWithConfig: Manifest = {
+				mods: currentManifest.mods,
+				resourcepacks: currentManifest.resourcepacks,
+				shaderpacks: currentManifest.shaderpacks,
+				datapacks: currentManifest.datapacks,
+				config_files: selectedConfigFiles.value.map((cf) => ({
+					filename: cf.filename,
+					relative_path: cf.relative_path
+				}))
+			}
+
+			// Use selected config files and wrap with network retry
+			const configFiles = selectedConfigFiles.value
+			await withNetworkRetry(async () =>
+			{
+				await uploadUpdate({
+					repo,
+					token,
+					uuid,
+					manifest: manifestWithConfig,
+					configFiles,
+					onProgress: (p, msg) =>
+					{
+						progress.value = p
+						if (typeof msg === 'string' && msg.length > 0)
+						{
+							statusMessage.value = msg
+						}
+					}
+				})
+			})
+
+			statusMessage.value = 'Upload successful!'
+			statusType.value = 'success'
+		}
+		catch (error)
+		{
+			const errorCode = error instanceof Error && error.message.startsWith('GITHUB_')
+				? error.message
+				: 'GITHUB_UPLOAD_FAILED'
+			const errorToHandle = error instanceof Error ? error : new Error(String(error))
+			handleError(new AppError(errorCode, errorToHandle), 'GitHub upload')
+		}
+		finally
+		{
+			uploading.value = false
+			progress.value = 100
+		}
 	}
-	catch (err)
-	{
-		statusMessage.value = (err instanceof Error ? err.message : 'Upload failed')
-		statusType.value = 'error'
-	}
-	finally
-	{
-		uploading.value = false
-		progress.value = 100
-	}
+	// Set current operation for retry functionality
+	currentOperation.value = uploadOperation
+	await uploadOperation()
 }
 
 // New function for directory-based config file selection
