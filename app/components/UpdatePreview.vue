@@ -50,9 +50,7 @@
               {{ preview.diff.removed_addons.length }}
             </div>
           </div>
-        </div>
-
-        <!-- Detailed Changes -->
+        </div>        <!-- Detailed Changes -->
         <div class="tabs tabs-boxed">
           <button
             class="tab"
@@ -74,6 +72,19 @@
             @click="activeTab = 'removed'"
           >
             Removed ({{ preview.diff.removed_addons.length }})
+          </button>          <button
+            v-if="preview.configFiles && preview.configFiles.length > 0"
+            class="tab"
+            :class="{ 'tab-active': activeTab === 'config' }"
+            @click="activeTab = 'config'"
+          >
+            Config Files ({{ preview.configFiles.length }})
+            <span
+              v-if="!configFilesDownloaded"
+              class="badge badge-warning badge-xs ml-1"
+            >
+              Not Downloaded
+            </span>
           </button>
         </div>
 
@@ -152,8 +163,64 @@
                   <span class="text-xs text-white">−</span>
                 </span>
                 <span>{{ addonName }}</span>
+              </div>              <span class="badge badge-error">REMOVE</span>
+            </div>
+          </div>          <!-- Config Files -->
+          <div
+            v-if="activeTab === 'config'"
+            class="space-y-4"
+          >
+            <div
+              v-if="!configFilesDownloaded && preview.configFiles && preview.configFiles.length > 0"
+              class="alert alert-info"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                class="w-6 h-6 stroke-current shrink-0"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <span>Config files will be downloaded when you confirm the update.</span>
+            </div>
+
+            <div
+              v-if="!preview.configFiles || preview.configFiles.length === 0"
+              class="text-center text-gray-500"
+            >
+              No config files to install
+            </div>
+            <div
+              v-for="configFile in preview.configFiles"
+              :key="configFile.relative_path"
+              class="flex items-center justify-between p-3 bg-info/10 border border-info/20 rounded"
+            >
+              <div class="flex items-center space-x-2">
+                <span class="w-4 h-4 bg-info rounded-full flex items-center justify-center">
+                  <span class="text-xs text-white">📄</span>
+                </span>
+                <div class="flex flex-col">
+                  <span class="font-mono text-sm">{{ configFile.relative_path }}</span>
+                  <span class="text-xs opacity-60">
+                    {{ Math.round(configFile.content.length / 1024 * 100) / 100 }} KB
+                  </span>
+                </div>
               </div>
-              <span class="badge badge-error">REMOVE</span>
+              <div class="flex items-center space-x-2">
+                <span class="badge badge-info">CONFIG</span>
+                <span
+                  v-if="!configFilesDownloaded"
+                  class="badge badge-warning badge-xs"
+                >
+                  Pending
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -216,6 +283,7 @@ interface Props
 {
 	preview: UpdatePreview
 	installing?: boolean
+	configFilesDownloaded?: boolean
 }
 
 interface Emits
@@ -225,12 +293,13 @@ interface Emits
 }
 
 const props = withDefaults(defineProps<Props>(), {
-	installing: false
+	installing: false,
+	configFilesDownloaded: false
 })
 
 defineEmits<Emits>()
 
-const activeTab = ref<'new' | 'updated' | 'removed'>('new')
+const activeTab = ref<'new' | 'updated' | 'removed' | 'config'>('new')
 
 const hasDestructiveChanges = computed(() =>
 	props.preview.diff.removed_addons.length > 0 || props.preview.diff.updated_addons.length > 0

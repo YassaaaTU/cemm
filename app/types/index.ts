@@ -10,12 +10,24 @@ export interface Addon
 	webSiteURL?: string // optional, CurseForge or homepage URL
 }
 
+export interface ConfigFile
+{
+	filename: string
+	relative_path: string
+}
+
+export interface ConfigFileWithContent extends ConfigFile
+{
+	content: string
+}
+
 export interface Manifest
 {
 	mods: Addon[]
 	resourcepacks: Addon[]
 	shaderpacks: Addon[]
 	datapacks: Addon[]
+	config_files: ConfigFile[]
 }
 
 export interface UpdateInfo
@@ -40,10 +52,5 @@ export interface UpdatePreview
 	newManifest: Manifest
 	diff: UpdateDiff
 	hasChanges: boolean
-}
-
-export interface ConfigFile
-{
-	path: string
-	content: string
+	configFiles?: ConfigFileWithContent[]
 }

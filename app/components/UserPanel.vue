@@ -28,19 +28,17 @@
         @click="saveManifest"
       >
         Save Manifest
-      </button>
-      <button
+      </button>      <button
         class="btn btn-accent"
         :disabled="downloading || uuid.trim().length === 0"
         @click="downloadFromGithub"
       >
-        <span v-if="!downloading">Download from GitHub</span>
+        <span v-if="!downloading">Download Manifest</span>
         <span
           v-else
           class="loading loading-spinner"
         />
-      </button>
-      <button
+      </button>      <button
         class="btn btn-success"
         :disabled="!canInstall"
         @click="showPreview = true"
@@ -74,13 +72,12 @@
         :message="statusMessage"
         :type="statusType"
       />
-    </div>
-
-    <!-- Update Preview Modal -->
+    </div>    <!-- Update Preview Modal -->
     <update-preview
       v-if="showPreview && previewData"
       :preview="previewData"
       :installing="installing"
+      :config-files-downloaded="configFilesDownloaded"
       @close="showPreview = false"
       @confirm="confirmInstall"
     />
@@ -96,12 +93,7 @@ import ManifestPreview from '~/components/ManifestPreview.vue'
 import ProgressBar from '~/components/ProgressBar.vue'
 import StatusAlert from '~/components/StatusAlert.vue'
 import UpdatePreview from '~/components/UpdatePreview.vue'
-import type { ConfigFile } from '~/composables/useGithubApi'
-import { useGithubApi } from '~/composables/useGithubApi'
-import { useTauri } from '~/composables/useTauri'
-import { useAppStore } from '~/stores/app'
-import { useManifestStore } from '~/stores/manifest'
-import type { Manifest } from '~/types'
+import type { ConfigFileWithContent, Manifest } from '~/types'
 
 interface InstallProgressEvent
 {
@@ -118,11 +110,10 @@ const statusType = ref<'success' | 'error' | 'info' | 'warning'>('info')
 const { selectFile, writeFile, readFile, parseMinecraftInstance } = useTauri()
 const manifestStore = useManifestStore()
 const manifest = computed(() => manifestStore.manifest)
-const { downloadUpdate } = useGithubApi()
 const appStore = useAppStore()
 const downloading = ref(false)
 const installing = ref(false)
-const downloadedConfigFiles = ref<ConfigFile[]>([])
+const downloadedConfigFiles = ref<ConfigFileWithContent[]>([])
 const logger = usePinoLogger()
 const { installUpdate: tauriInstallUpdate, installUpdateWithCleanup } = useTauri()
 
@@ -134,6 +125,7 @@ const canInstall = computed(() =>
 )
 
 const showPreview = ref(false)
+const configFilesDownloaded = ref(false)
 
 // Create preview data for the new UpdatePreview component
 const previewData = computed(() =>
@@ -211,18 +203,32 @@ const previewData = computed(() =>
 		|| diff.updated_addons.length > 0
 		|| diff.new_addons.length > 0
 	)
-
 	return {
 		oldManifest,
 		newManifest,
 		diff,
-		hasChanges: oldManifest === null ? false : hasChanges
+		hasChanges: oldManifest === null ? false : hasChanges,
+		configFiles: downloadedConfigFiles.value
 	}
 })
 
-function confirmInstall()
+async function confirmInstall()
 {
-	showPreview.value = false
+	showPreview.value = false	// Download config files if not already downloaded and if manifest has config files
+	if (!configFilesDownloaded.value && uuid.value.trim().length > 0 && manifest.value !== null && manifest.value.config_files.length > 0)
+	{
+		try
+		{
+			await downloadConfigFiles()
+		}
+		catch (error)
+		{
+			statusMessage.value = `Failed to download config files: ${error instanceof Error ? error.message : 'Unknown error'}`
+			statusType.value = 'error'
+			return // Don't proceed with installation if config download fails
+		}
+	}
+
 	installUpdate()
 }
 
@@ -419,12 +425,25 @@ async function downloadFromGithub()
 			downloading.value = false
 			return
 		}
-		const result = await downloadUpdate({
+		// Debug logging
+		logger.info('Starting manifest download', {
+			repo,
+			uuid: uuid.value.trim(),
+			repoLength: repo.length,
+			uuidLength: uuid.value.trim().length
+		})
+
+		// Phase 1: Download only the manifest
+		progress.value = 10
+		statusMessage.value = 'Downloading manifest...'
+
+		const { downloadManifest } = useGithubApi()
+		const manifest = await downloadManifest({
 			repo,
 			uuid: uuid.value.trim(),
 			onProgress: (p, msg) =>
 			{
-				progress.value = p
+				progress.value = Math.min(p / 2, 50) // First half of progress
 				if (typeof msg === 'string' && msg.length > 0)
 				{
 					statusMessage.value = msg
@@ -432,16 +451,18 @@ async function downloadFromGithub()
 			}
 		})
 
-		// Update manifest in store for preview
-		manifestStore.setManifest(result.manifest)
-		downloadedConfigFiles.value = result.configFiles
+		logger.info('Manifest download successful', { manifest })
 
-		// Write files to disk if modpack path is selected
+		// Update manifest in store for preview
+		manifestStore.setManifest(manifest)
+		progress.value = 50
+		statusMessage.value = 'Manifest downloaded. Ready to preview update.'
+
+		// Load existing manifest for comparison if modpack path is selected
 		const modpackPath = appStore.modpackPath
 		if (modpackPath && modpackPath.trim().length > 0)
 		{
-			progress.value = 80
-			statusMessage.value = 'Writing files to disk...' // Enhanced manifest loading logic for update workflow
+			// Enhanced manifest loading logic for update workflow
 			try
 			{
 				// Step 1: Try to read existing manifest.json from the modpack directory
@@ -469,43 +490,113 @@ async function downloadFromGithub()
 			}
 
 			// Backup current manifest and write new one using our new system
-			await backupAndReplaceManifest(modpackPath, result.manifest)
+			progress.value = 60
+			statusMessage.value = 'Backing up existing manifest...'
+			await backupAndReplaceManifest(modpackPath, manifest)
 
-			// Prepare other files for batch write (config files only now)
-			const filesToWrite: Array<[string, string]> = []
-
-			// Add config files (manifest.json is handled by backupAndReplaceManifest)
-			for (const configFile of result.configFiles)
-			{
-				filesToWrite.push([configFile.path, configFile.content])
-			}
-
-			// Write config files to modpack directory (if any)
-			if (filesToWrite.length > 0)
-			{
-				const writeSuccess = await writeFile(modpackPath, filesToWrite)
-				if (!writeSuccess)
-				{
-					statusMessage.value = 'Downloaded manifest successfully, but failed to write config files to disk.'
-					statusType.value = 'warning'
-					return
-				}
-			}
-
-			const totalFiles = filesToWrite.length + 1 // +1 for manifest.json
-			statusMessage.value = `Download successful! ${totalFiles} files written to ${modpackPath}. Previous manifest saved as manifest_old.json`
-			statusType.value = 'success'
+			logger.info('Phase 1 complete: Manifest downloaded and backed up')
 		}
 		else
 		{
-			statusMessage.value = 'Download successful! (No modpack path selected - files not written to disk)'
-			statusType.value = 'warning'
+			logger.info('Phase 1 complete: Manifest downloaded (no modpack path selected)')
 		}
+		statusMessage.value = 'Manifest ready for preview. Config files will be downloaded after confirmation.'
+		statusType.value = 'success'
 	}
 	catch (err)
 	{
-		statusMessage.value = (err instanceof Error ? err.message : 'Download failed')
+		const errorMessage = err instanceof Error ? err.message : 'Download failed'
+		statusMessage.value = errorMessage
 		statusType.value = 'error'
+		logger.error('Failed to download manifest', {
+			error: err,
+			errorMessage,
+			uuid: uuid.value.trim(),
+			repo: appStore.githubRepo,
+			errorType: typeof err,
+			errorString: String(err)
+		})
+	}
+	finally
+	{
+		downloading.value = false
+		progress.value = 100
+	}
+}
+
+// New function to download config files after user confirmation
+async function downloadConfigFiles()
+{
+	if (uuid.value.trim().length === 0 || manifest.value === null)
+	{
+		return
+	}
+
+	statusMessage.value = 'Downloading config files...'
+	statusType.value = 'info'
+	progress.value = 0
+	downloading.value = true
+
+	try
+	{
+		const repo = appStore.githubRepo
+		const { downloadConfigFiles } = useGithubApi()
+		const configFiles = await downloadConfigFiles({
+			repo,
+			uuid: uuid.value.trim(),
+			manifest: manifest.value,
+			onProgress: (p, msg) =>
+			{
+				progress.value = p
+				if (typeof msg === 'string' && msg.length > 0)
+				{
+					statusMessage.value = msg
+				}
+			}
+		})
+
+		downloadedConfigFiles.value = configFiles
+		configFilesDownloaded.value = true
+
+		// Write config files to disk if modpack path is selected
+		const modpackPath = appStore.modpackPath
+		if (modpackPath && modpackPath.trim().length > 0 && configFiles.length > 0)
+		{
+			const filesToWrite: Array<[string, string]> = []
+
+			// Add config files
+			for (const configFile of configFiles)
+			{
+				filesToWrite.push([configFile.relative_path, configFile.content])
+			}
+
+			// Write config files to modpack directory
+			const writeSuccess = await writeFile(modpackPath, filesToWrite)
+			if (!writeSuccess)
+			{
+				statusMessage.value = 'Config files downloaded but failed to write to disk.'
+				statusType.value = 'warning'
+				return
+			}
+
+			statusMessage.value = `Config files downloaded and written to ${modpackPath}`
+		}
+		else
+		{
+			statusMessage.value = configFiles.length > 0
+				? 'Config files downloaded (no modpack path selected)'
+				: 'No config files to download'
+		}
+
+		statusType.value = 'success'
+	}
+	catch (err)
+	{
+		const errorMessage = err instanceof Error ? err.message : 'Failed to download config files'
+		statusMessage.value = errorMessage
+		statusType.value = 'error'
+		logger.error('Failed to download config files', { error: err, uuid: uuid.value, repo: appStore.githubRepo })
+		throw new Error(`Config download failed: ${errorMessage}`) // Re-throw to be caught by confirmInstall
 	}
 	finally
 	{
@@ -535,10 +626,19 @@ async function installUpdate()
 			if (typeof message === 'string') statusMessage.value = message
 		})
 		const previousManifest = manifestStore.previousManifest
-
 		if (manifest.value === null)
 		{
 			throw new Error('No manifest available for installation')
+		}
+
+		// Validate config files structure before installation
+		const configFiles = downloadedConfigFiles.value
+		for (const configFile of configFiles)
+		{
+			if (!configFile.filename || !configFile.relative_path || typeof configFile.content !== 'string')
+			{
+				throw new Error(`Invalid config file structure: ${JSON.stringify(configFile)}`)
+			}
 		}
 
 		if (previousManifest !== null)
@@ -548,7 +648,7 @@ async function installUpdate()
 				appStore.modpackPath,
 				previousManifest,
 				manifest.value,
-				downloadedConfigFiles.value
+				configFiles
 			)
 			statusMessage.value = 'Update installation complete!'
 		}
@@ -558,7 +658,7 @@ async function installUpdate()
 			await tauriInstallUpdate(
 				appStore.modpackPath,
 				manifest.value,
-				downloadedConfigFiles.value
+				configFiles
 			)
 			statusMessage.value = 'Fresh installation complete!'
 		}

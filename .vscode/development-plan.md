@@ -399,51 +399,99 @@
 - [x] All edge cases (empty config files, missing directory, etc.) handled gracefully
 
 ### 🚧 Current Status (June 15, 2025)
-- Phase 5.5 is COMPLETE – Update Management System works with enhanced UI
-- Update preview shows detailed diff with removed, updated, and new addons
-- Backend cleanup functionality removes old files before installing new ones
-- UserPanel now uses new UpdatePreview component with better UX
-- Ready to proceed to Phase 6 – Polish & Error Handling
+- **Phase 6: Polish & Error Handling - Config File System Redesign** - ✅ **COMPLETE**
+- New config file workflow with manifest integration is fully implemented and working
+- All frontend and backend types updated to support the new `ConfigFileWithContent` structure
+- AdminPanel now builds config files into manifest before upload
+- UserPanel uses manifest-driven config file downloads and installation
+- UpdatePreview component enhanced to show config file details with relative paths
+- Ready to proceed with remaining Phase 6 tasks (comprehensive error handling, UI polish)
 
-### **Phase 5.5: Update Management System** - ✅ **COMPLETE**
-- ✅ Backend `install_update_with_cleanup()` function implemented and working
-- ✅ Frontend `UpdatePreview` component created with modern tabbed UI
-- ✅ Update diff calculation shows removed, updated, and new addons
-- ✅ UserPanel integrated with new preview system and cleanup functionality
-- ✅ Existing manifest loading and comparison working properly
-- ✅ Safe update process with file removal before installation
+### **Phase 6: Config File System Redesign** - ✅ **COMPLETE**
+- ✅ Updated TypeScript types to include `config_files` array in `Manifest` interface
+- ✅ Updated Rust backend types and functions to use new `ConfigFileWithContent` structure
+- ✅ Redesigned GitHub upload/download logic to use manifest-driven config file handling
+- ✅ Updated AdminPanel.vue to include config files in manifest before upload
+- ✅ Updated UserPanel.vue to use manifest for config file download and installation
+- ✅ Updated UpdatePreview.vue to display config files with new structure
+- ✅ Enhanced config file selection to support directory scanning with proper relative paths
+- ✅ All TypeScript and Rust compilation checks pass successfully
 
-### 📋 Next Steps (Phase 6: Polish & Error Handling)
+### 📋 Next Steps (Phase 6: Remaining Tasks)
 ### 📋 Next Steps (Phase 6: Polish & Error Handling)
 **Objective**: Make app production-ready with comprehensive error handling and UI polish
 
 **Tasks**:
-1. **Comprehensive Error Handling**:
+
+1. **Config File System Redesign** - ✅ **COMPLETED**:
+   - ✅ **Problem Solved**: Config files now stored in manifest for reliable, atomic operations
+   - ✅ **New Architecture**: Config files included directly in manifest.json with explicit paths
+   
+   **Implemented Config File Architecture**:
+   ```json
+   {
+     "mods": [...],
+     "resourcepacks": [...], 
+     "shaderpacks": [...],
+     "datapacks": [...],
+     "config_files": [
+       {
+         "filename": "attributefix.json",
+         "relative_path": "config/attributefix.json"
+       },
+       {
+         "filename": "sort-order.json", 
+         "relative_path": "config/jade/sort-order.json"
+       },
+       {
+         "filename": "biomesoplenty.json",
+         "relative_path": "defaultconfigs/biomesoplenty.json"
+       }
+     ]
+   }
+   ```
+   
+   **✅ Implementation Changes Completed**:
+   - ✅ Updated TypeScript types to include `config_files` array in `Manifest` interface
+   - ✅ Modified AdminPanel config selection to capture relative paths from modpack root
+   - ✅ Rewrote GitHub upload logic to store config files with directory structure: `{uuid}/{relative_path}`
+   - ✅ Rewrote download logic to get config files from manifest list, not directory scanning
+   - ✅ Updated install logic to write config files to correct relative paths before addon installation
+   - ✅ Enhanced UpdatePreview to show config file changes with full paths
+   
+   **✅ Benefits Achieved**:
+   - ✅ Manifest becomes single source of truth for entire update
+   - ✅ Atomic operations - all files or none
+   - ✅ Better user transparency in preview
+   - ✅ Supports any directory structure, not just `/config/`
+   - ✅ Eliminates race conditions and partial uploads
+
+2. **Comprehensive Error Handling**:
    - User-friendly error messages for all operations
    - Recovery suggestions for common failure scenarios
    - Logging system improvements
    - Network error handling with retry logic
 
-2. **UI Polish & User Experience**:
+3. **UI Polish & User Experience**:
    - Loading states for all async operations
    - Better visual feedback and animations
    - Responsive design for different screen sizes
    - Dark mode support and theme consistency
    - Improved accessibility (keyboard navigation, screen readers)
 
-3. **Performance Optimization**:
+4. **Performance Optimization**:
    - Optimize large manifest handling
    - Implement proper caching strategies
    - Reduce bundle size and startup time
    - Memory usage optimization
 
-4. **Final Testing & Quality Assurance**:
+5. **Final Testing & Quality Assurance**:
    - End-to-end workflow testing
    - Error scenario testing
    - Performance benchmarking
    - Cross-platform compatibility testing
 
-5. **Documentation & Help**:
+6. **Documentation & Help**:
    - In-app help system
    - User guide and troubleshooting
    - Developer documentation

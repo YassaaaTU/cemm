@@ -23,7 +23,8 @@ fn extract_filename_from_url(url: &str) -> Option<String> {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ConfigFile {
-    pub path: String,
+    pub filename: String,
+    pub relative_path: String,
     pub content: String,
 }
 
@@ -168,7 +169,7 @@ pub async fn install_update(
         }
         // Config files
         for config in config_files {
-            let dest = Path::new(&modpack_path).join(&config.path);
+            let dest = Path::new(&modpack_path).join(&config.relative_path);
             if let Some(parent) = dest.parent() {
                 async_fs::create_dir_all(parent).await.map_err(|e| format!("Failed to create directory {}: {}", parent.display(), e))?;
             }

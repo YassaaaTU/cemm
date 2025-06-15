@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { Addon, ConfigFile, Manifest, UpdateDiff, UpdateInfo } from '~/types'
+import type { Addon, ConfigFileWithContent, Manifest, UpdateDiff, UpdateInfo } from '~/types'
 
 export const useTauri = () =>
 {
@@ -37,6 +37,18 @@ export const useTauri = () =>
 		catch (_e)
 		{
 			return null
+		}
+	}
+
+	const selectMultipleFiles = async (): Promise<string[]> =>
+	{
+		try
+		{
+			return await invoke<string[]>('select_multiple_files')
+		}
+		catch (_e)
+		{
+			return []
 		}
 	}
 
@@ -122,24 +134,23 @@ export const useTauri = () =>
 			// Optionally log error
 		}
 	}
-
 	const installUpdate = async (
 		modpackPath: string,
 		manifest: Manifest,
-		configFiles: ConfigFile[]
+		configFiles: ConfigFileWithContent[]
 	): Promise<void> =>
 	{
 		return await invoke('install_update', {
 			modpackPath,
 			manifest,
-			configFiles
-		})
+			configFiles })
 	}
+
 	const installUpdateWithCleanup = async (
 		modpackPath: string,
 		oldManifest: Manifest | null,
 		newManifest: Manifest,
-		configFiles: ConfigFile[]
+		configFiles: ConfigFileWithContent[]
 	): Promise<void> =>
 	{
 		return await invoke('install_update_with_cleanup', {
@@ -239,10 +250,60 @@ export const useTauri = () =>
 
 		return diff
 	}
+
+	const downloadManifest = async (repo: string, uuid: string): Promise<Manifest | null> =>
+	{
+		try
+		{
+			return await invoke<Manifest>('download_manifest', { repo, uuid })
+		}
+		catch (_e)
+		{
+			return null
+		}
+	}
+
+	const downloadConfigFiles = async (repo: string, uuid: string): Promise<ConfigFileWithContent[]> =>
+	{
+		try
+		{
+			return await invoke<ConfigFileWithContent[]>('download_config_files', { repo, uuid })
+		}
+		catch (_e)
+		{
+			return []
+		}
+	}
+
+	const selectConfigDirectory = async (): Promise<string | null> =>
+	{
+		try
+		{
+			return await invoke<string>('select_config_directory')
+		}
+		catch (_e)
+		{
+			return null
+		}
+	}
+
+	const readDirectoryRecursive = async (dirPath: string, basePath: string): Promise<ConfigFileWithContent[]> =>
+	{
+		try
+		{
+			return await invoke<ConfigFileWithContent[]>('read_directory_recursive', { dirPath, basePath })
+		}
+		catch (_e)
+		{
+			return []
+		}
+	}
+
 	return {
 		selectDirectory,
 		selectFile,
 		selectSaveFile,
+		selectMultipleFiles,
 		readFile,
 		writeFile,
 		parseMinecraftInstance,
@@ -254,6 +315,10 @@ export const useTauri = () =>
 		keyringTestDirect,
 		keyringSetAndVerify,
 		loadExistingManifest,
-		calculateUpdateDiff
+		calculateUpdateDiff,
+		downloadManifest,
+		downloadConfigFiles,
+		selectConfigDirectory,
+		readDirectoryRecursive
 	}
 }

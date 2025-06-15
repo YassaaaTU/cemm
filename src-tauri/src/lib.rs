@@ -7,7 +7,7 @@ mod composables {
     pub mod manifest;
 }
 
-pub use composables::github::{download_update, upload_update};
+pub use composables::github::{download_update, download_manifest, download_config_files, upload_update};
 pub use composables::manifest::{
     compare_manifests, open_curseforge_url, open_url, parse_minecraft_instance, Addon, Manifest,
     UpdateInfo,
@@ -34,9 +34,14 @@ pub fn run() {
             open_url,
             upload_update,
             download_update,
+            download_manifest,
+            download_config_files,
             install_update,
             install_update_with_cleanup,
-            get_app_data_dir
+            get_app_data_dir,
+            select_multiple_files,
+            select_config_directory,
+            read_directory_recursive
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -182,3 +187,98 @@ fn get_app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     Ok(app_data_dir.to_string_lossy().to_string())
 }
+
+#[tauri::command]
+fn select_multiple_files(window: tauri::Window) -> Result<Vec<String>, String> {
+    let dialog = window
+        .dialog()
+        .file()
+        .add_filter("Config Files", &[
+            "cfg", "txt", "json", "json5", "toml", "properties", "conf",
+            "yaml", "yml", "ini", "xml", "js", "ts", "groovy", "kts",
+            "mcmeta", "snbt", "nbt", "dat"
+        ])
+        .add_filter("All Files", &["*"]);
+    
+    match dialog.blocking_pick_files() {
+        Some(files) => Ok(files.into_iter().map(|f| f.to_string()).collect()),
+        None => Ok(Vec::new()),
+    }
+}
+
+#[tauri::command]
+fn select_config_directory(window: tauri::Window) -> Result<String, String> {
+    let dialog = window
+        .dialog()
+        .file()
+        .set_title("Select Config Directory (config/, kubejs/, etc.)");
+    
+    match dialog.blocking_pick_folder() {
+        Some(folder) => Ok(folder.to_string()),
+        None => Err("No directory selected".to_string()),
+    }
+}
+
+#[tauri::command]
+fn read_directory_recursive(dir_path: String, base_path: String) -> Result<Vec<ConfigFileWithContent>, String> {
+    use std::path::Path;
+    
+    let mut config_files = Vec::new();
+    let dir = Path::new(&dir_path);
+    let base = Path::new(&base_path);
+    
+    fn collect_files(
+        dir: &Path, 
+        base: &Path, 
+        config_files: &mut Vec<ConfigFileWithContent>
+    ) -> Result<(), String> {
+        let entries = std::fs::read_dir(dir)
+            .map_err(|e| format!("Failed to read directory {}: {}", dir.display(), e))?;
+            
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+            let path = entry.path();
+            
+            if path.is_file() {
+                // Check if file has a config-related extension
+                if let Some(ext) = path.extension() {
+                    let ext_str = ext.to_string_lossy().to_lowercase();
+                    if matches!(ext_str.as_str(), 
+                        "cfg" | "txt" | "json" | "json5" | "toml" | "properties" | 
+                        "conf" | "yaml" | "yml" | "ini" | "xml" | "js" | "ts" | 
+                        "groovy" | "kts" | "mcmeta" | "snbt" | "nbt" | "dat"
+                    ) {
+                        let content = std::fs::read_to_string(&path)
+                            .map_err(|e| format!("Failed to read file {}: {}", path.display(), e))?;
+                        
+                        // Calculate relative path from base directory
+                        let relative_path = path.strip_prefix(base)
+                            .map_err(|_| format!("Failed to make path relative: {}", path.display()))?
+                            .to_string_lossy()
+                            .replace('\\', "/"); // Normalize path separators
+                        
+                        let filename = path.file_name()
+                            .ok_or_else(|| format!("Failed to get filename from path: {}", path.display()))?
+                            .to_string_lossy()
+                            .to_string();
+                        
+                        config_files.push(ConfigFileWithContent {
+                            filename,
+                            relative_path,
+                            content,
+                        });
+                    }
+                }
+            } else if path.is_dir() {
+                // Recursively process subdirectories
+                collect_files(&path, base, config_files)?;
+            }
+        }
+        Ok(())
+    }
+    
+    collect_files(dir, base, &mut config_files)?;
+    Ok(config_files)
+}
+
+use crate::composables::github::ConfigFileWithContent;

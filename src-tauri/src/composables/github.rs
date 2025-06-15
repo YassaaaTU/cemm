@@ -5,15 +5,16 @@ use tauri::command;
 use crate::composables::manifest::Manifest;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ConfigFile {
-    pub path: String,
+pub struct ConfigFileWithContent {
+    pub filename: String,
+    pub relative_path: String,
     pub content: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DownloadResult {
     pub manifest: Manifest,
-    pub config_files: Vec<ConfigFile>,
+    pub config_files: Vec<ConfigFileWithContent>,
 }
 
 #[command]
@@ -22,7 +23,7 @@ pub async fn upload_update(
     token: String,
     uuid: String,
     manifest: Manifest,
-    config_files: Vec<ConfigFile>,
+    config_files: Vec<ConfigFileWithContent>,
 ) -> Result<(), String> {
     use base64::engine::general_purpose::STANDARD;
     use base64::Engine;
@@ -59,13 +60,13 @@ pub async fn upload_update(
 
     // Upload config files
     for file in config_files {
-        let file_url = format!("{}/{}", api_base, file.path);
+        let file_url = format!("{}/{}", api_base, file.relative_path);
         let file_req = client
             .put(&file_url)
             .header("Authorization", format!("token {}", token))
             .header("User-Agent", user_agent)
             .json(&json!({
-                "message": format!("Upload config file {} for update {}", file.path, uuid),
+                "message": format!("Upload config file {} for update {}", file.relative_path, uuid),
                 "content": STANDARD.encode(file.content),
                 "branch": "main"
             }));
@@ -73,7 +74,7 @@ pub async fn upload_update(
         if !file_res.status().is_success() {
             return Err(format!(
                 "Failed to upload config file {}: {}",
-                file.path,
+                file.relative_path,
                 file_res.text().await.unwrap_or_default()
             ));
         }
@@ -82,12 +83,16 @@ pub async fn upload_update(
 }
 
 #[command]
-pub async fn download_update(
+pub async fn download_manifest(
     repo: String,
     uuid: String,
-) -> Result<DownloadResult, String> {
+) -> Result<Manifest, String> {
     use reqwest::Client;
     use serde_json::Value;
+    
+    // Debug logging
+    eprintln!("download_manifest called with repo: '{}', uuid: '{}'", repo, uuid);
+    
     let mut parts = repo.splitn(2, '/');
     let owner = parts.next().ok_or("Invalid repo format")?;
     let repo_name = parts.next().ok_or("Invalid repo format")?;
@@ -95,63 +100,161 @@ pub async fn download_update(
     let client = Client::new();
     let user_agent = "cemm-app-tauri";
 
-    // List files in the uuid folder
+    eprintln!("API URL: {}", api_base);
+
+    // List files in the uuid folder first
     let list_url = &api_base;
     let list_res = client
         .get(list_url)
         .header("User-Agent", user_agent)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
-    if !list_res.status().is_success() {
+        .map_err(|e| {
+            eprintln!("Request error: {}", e);
+            e.to_string()
+        })?;
+    
+    eprintln!("GitHub API response status: {}", list_res.status());
+    
+    let status = list_res.status();
+    if !status.is_success() {
+        let error_text = list_res.text().await.unwrap_or_default();
+        eprintln!("GitHub API error response: {}", error_text);
         return Err(format!(
-            "Failed to list update files: {}",
-            list_res.text().await.unwrap_or_default()
+            "Failed to list update files (status {}): {}",
+            status,
+            error_text
         ));
     }
-    let files: Vec<Value> = list_res.json().await.map_err(|e| e.to_string())?;
+    let files: Vec<Value> = list_res.json().await.map_err(|e| {
+        eprintln!("JSON parsing error: {}", e);
+        e.to_string()
+    })?;
+    
+    eprintln!("Found {} files in directory", files.len());
+    for file in &files {
+        if let Some(name) = file["name"].as_str() {
+            eprintln!("File: {}", name);
+        }
+    }
 
-    // Download manifest.json
+    // Find manifest.json
     let manifest_file = files
         .iter()
         .find(|f| f["name"] == "manifest.json")
-        .ok_or("manifest.json not found")?;
+        .ok_or_else(|| {
+            eprintln!("manifest.json not found in directory listing");
+            "manifest.json not found".to_string()
+        })?;
     let manifest_url = manifest_file["download_url"]
         .as_str()
-        .ok_or("No download_url for manifest.json")?;
+        .ok_or_else(|| {
+            eprintln!("No download_url found for manifest.json");
+            "No download_url for manifest.json".to_string()
+        })?;
+    
+    eprintln!("Downloading manifest from: {}", manifest_url);
+    
+    // Download manifest.json directly
     let manifest_res = client
         .get(manifest_url)
         .header("User-Agent", user_agent)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
-    let manifest_json = manifest_res.text().await.map_err(|e| e.to_string())?;
-    let manifest: Manifest = serde_json::from_str(&manifest_json).map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            eprintln!("Manifest download error: {}", e);
+            e.to_string()
+        })?;
+    
+    let manifest_json = manifest_res.text().await.map_err(|e| {
+        eprintln!("Failed to read manifest response text: {}", e);
+        e.to_string()
+    })?;
+    
+    eprintln!("Downloaded manifest JSON (first 200 chars): {}", 
+              &manifest_json.chars().take(200).collect::<String>());
+    
+    let manifest: Manifest = serde_json::from_str(&manifest_json).map_err(|e| {
+        eprintln!("Failed to parse manifest JSON: {}", e);
+        e.to_string()
+    })?;
+    
+    eprintln!("Successfully parsed manifest");
+    Ok(manifest)
+}
 
-    // Download config files
+#[command]
+pub async fn download_config_files(
+    repo: String,
+    uuid: String,
+    manifest: Manifest,
+) -> Result<Vec<ConfigFileWithContent>, String> {
+    use reqwest::Client;
+    
+    let mut parts = repo.splitn(2, '/');
+    let owner = parts.next().ok_or("Invalid repo format")?;
+    let repo_name = parts.next().ok_or("Invalid repo format")?;
+    let client = Client::new();
+    let user_agent = "cemm-app-tauri";
+
+    eprintln!("Downloading {} config files from manifest", manifest.config_files.len());
+
+    // Download config files based on manifest list
     let mut config_files = Vec::new();
-    for file in files {
-        let name = file["name"].as_str().unwrap_or("");
-        if name == "manifest.json" {
-            continue;
+    for config_file in manifest.config_files {
+        let file_url = format!("https://api.github.com/repos/{owner}/{repo_name}/contents/{uuid}/{}", config_file.relative_path);
+        eprintln!("Downloading config file from: {}", file_url);
+        
+        let file_res = client
+            .get(&file_url)
+            .header("User-Agent", user_agent)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+            
+        if !file_res.status().is_success() {
+            return Err(format!(
+                "Failed to download config file {}: {}",
+                config_file.relative_path,
+                file_res.text().await.unwrap_or_default()
+            ));
         }
-        let download_url = file["download_url"]
+        
+        let file_data: serde_json::Value = file_res.json().await.map_err(|e| e.to_string())?;
+        let download_url = file_data["download_url"]
             .as_str()
             .ok_or("No download_url for config file")?;
-        let file_res = client
+        
+        // Download the actual file content
+        let content_res = client
             .get(download_url)
             .header("User-Agent", user_agent)
             .send()
             .await
             .map_err(|e| e.to_string())?;
-        let content = file_res.text().await.map_err(|e| e.to_string())?;
-        config_files.push(ConfigFile {
-            path: name.to_string(),
+        let content = content_res.text().await.map_err(|e| e.to_string())?;
+        
+        config_files.push(ConfigFileWithContent {
+            filename: config_file.filename,
+            relative_path: config_file.relative_path,
             content,
         });
     }
+    
+    eprintln!("Successfully downloaded {} config files", config_files.len());
+    Ok(config_files)
+}
+
+#[command]
+pub async fn download_update(
+    repo: String,
+    uuid: String,
+) -> Result<DownloadResult, String> {
+    let manifest = download_manifest(repo.clone(), uuid.clone()).await?;
+    let config_files = download_config_files(repo, uuid, manifest.clone()).await?;
+    
     Ok(DownloadResult {
         manifest,
-        config_files: config_files,
+        config_files,
     })
 }

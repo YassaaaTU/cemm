@@ -17,11 +17,18 @@ pub struct Addon {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ConfigFile {
+    pub filename: String,
+    pub relative_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Manifest {
     pub mods: Vec<Addon>,
     pub resourcepacks: Vec<Addon>,
     pub shaderpacks: Vec<Addon>,
     pub datapacks: Vec<Addon>,
+    pub config_files: Vec<ConfigFile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -138,6 +145,7 @@ pub fn parse_minecraft_instance(path: String) -> Result<Manifest, String> {
         resourcepacks,
         shaderpacks,
         datapacks,
+        config_files: Vec::new(), // Empty for MinecraftInstance conversion
     })
 }
 
