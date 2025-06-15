@@ -9,7 +9,11 @@
     "core:default",
     "dialog:default",
     "opener:default",
-    "stronghold:default",
-    "fs:default"
+    "keyring:default",
+    "fs:default",
+    "fs:allow-appdata-write-recursive",
+    "fs:allow-appdata-read-recursive",
+    "fs:allow-exists",
+    "fs:allow-remove"
   ]
 }

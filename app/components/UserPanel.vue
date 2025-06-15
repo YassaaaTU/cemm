@@ -74,67 +74,147 @@
         :message="statusMessage"
         :type="statusType"
       />
-    </div>
-    <!-- Install Preview Modal -->
+    </div>    <!-- Install Preview Modal -->
     <dialog
       v-if="showPreview"
       open
       class="modal modal-open"
     >
-      <div class="modal-box max-w-2xl">
+      <div class="modal-box max-w-3xl">
         <h3 class="font-bold text-lg mb-2">
-          Install Preview
+          {{ isUpdate ? 'Update Preview' : 'Install Preview' }}
         </h3>
-        <p class="mb-2">
-          The following will be installed to <span class="font-mono">{{ appStore.modpackPath }}</span>:
+        <p class="mb-4">
+          {{ isUpdate ? 'The following changes will be applied to' : 'The following will be installed to' }}
+          <span class="font-mono">{{ appStore.modpackPath }}</span>:
         </p>
-        <div class="mb-2">
-          <strong>Mods:</strong>
-          <ul class="list-disc ml-6">
-            <li
-              v-for="mod in manifest?.mods ?? []"
-              :key="mod.addon_project_id"
-            >
-              {{ mod.addon_name }} ({{ mod.version }})
-            </li>
-          </ul>
+
+        <!-- Update-specific diff view -->
+        <div
+          v-if="isUpdate && updateDiff"
+          class="mb-4"
+        >
+          <!-- Removed addons -->
+          <div
+            v-if="updateDiff.removedAddons.length > 0"
+            class="mb-3"
+          >
+            <h4 class="font-semibold text-error mb-1">
+              🗑️ Will be removed:
+            </h4>
+            <ul class="list-disc ml-6 text-error">
+              <li
+                v-for="addon in updateDiff.removedAddons"
+                :key="addon"
+              >
+                {{ addon }}
+              </li>
+            </ul>
+          </div>
+
+          <!-- Updated addons -->
+          <div
+            v-if="updateDiff.updatedAddons.length > 0"
+            class="mb-3"
+          >
+            <h4 class="font-semibold text-warning mb-1">
+              🔄 Will be updated:
+            </h4>
+            <ul class="list-disc ml-6 text-warning">
+              <li
+                v-for="addon in updateDiff.updatedAddons"
+                :key="addon.name"
+              >
+                {{ addon.name }}: {{ addon.oldVersion }} → {{ addon.newVersion }}
+              </li>
+            </ul>
+          </div>
+
+          <!-- New addons -->
+          <div
+            v-if="updateDiff.newAddons.length > 0"
+            class="mb-3"
+          >
+            <h4 class="font-semibold text-success mb-1">
+              ➕ Will be added:
+            </h4>
+            <ul class="list-disc ml-6 text-success">
+              <li
+                v-for="addon in updateDiff.newAddons"
+                :key="addon"
+              >
+                {{ addon }}
+              </li>
+            </ul>
+          </div>
+
+          <!-- Summary -->
+          <div class="bg-base-200 p-3 rounded mb-3">
+            <strong>Summary:</strong>
+            {{ updateDiff.removedAddons.length }} removed,
+            {{ updateDiff.updatedAddons.length }} updated,
+            {{ updateDiff.newAddons.length }} new
+          </div>
         </div>
-        <div class="mb-2">
-          <strong>Resourcepacks:</strong>
-          <ul class="list-disc ml-6">
-            <li
-              v-for="rp in manifest?.resourcepacks ?? []"
-              :key="rp.addon_project_id"
-            >
-              {{ rp.addon_name }} ({{ rp.version }})
-            </li>
-          </ul>
+
+        <!-- Fresh install view -->
+        <div
+          v-else
+          class="mb-4"
+        >
+          <div class="mb-2">
+            <strong>Mods ({{ manifest?.mods?.length || 0 }}):</strong>
+            <ul class="list-disc ml-6 max-h-32 overflow-y-auto">
+              <li
+                v-for="mod in manifest?.mods ?? []"
+                :key="mod.addon_project_id"
+              >
+                {{ mod.addon_name }} ({{ mod.version }})
+              </li>
+            </ul>
+          </div>
+          <div class="mb-2">
+            <strong>Resourcepacks ({{ manifest?.resourcepacks?.length || 0 }}):</strong>
+            <ul class="list-disc ml-6 max-h-32 overflow-y-auto">
+              <li
+                v-for="rp in manifest?.resourcepacks ?? []"
+                :key="rp.addon_project_id"
+              >
+                {{ rp.addon_name }} ({{ rp.version }})
+              </li>
+            </ul>
+          </div>
+          <div class="mb-2">
+            <strong>Shaderpacks ({{ manifest?.shaderpacks?.length || 0 }}):</strong>
+            <ul class="list-disc ml-6 max-h-32 overflow-y-auto">
+              <li
+                v-for="sp in manifest?.shaderpacks ?? []"
+                :key="sp.addon_project_id"
+              >
+                {{ sp.addon_name }} ({{ sp.version }})
+              </li>
+            </ul>
+          </div>
+          <div class="mb-2">
+            <strong>Datapacks ({{ manifest?.datapacks?.length || 0 }}):</strong>
+            <ul class="list-disc ml-6 max-h-32 overflow-y-auto">
+              <li
+                v-for="dp in manifest?.datapacks ?? []"
+                :key="dp.addon_project_id"
+              >
+                {{ dp.addon_name }} ({{ dp.version }})
+              </li>
+            </ul>
+          </div>
         </div>
-        <div class="mb-2">
-          <strong>Shaderpacks:</strong>
-          <ul class="list-disc ml-6">
-            <li
-              v-for="sp in manifest?.shaderpacks ?? []"
-              :key="sp.addon_project_id"
-            >
-              {{ sp.addon_name }} ({{ sp.version }})
-            </li>
-          </ul>
-        </div>
-        <div class="mb-2">
-          <strong>Datapacks:</strong>
-          <ul class="list-disc ml-6">
-            <li
-              v-for="dp in manifest?.datapacks ?? []"
-              :key="dp.addon_project_id"
-            >
-              {{ dp.addon_name }} ({{ dp.version }})
-            </li>
-          </ul>
-        </div>
-        <div class="mb-2">
-          <strong>Config files:</strong>
-          <ul class="list-disc ml-6">
+
+        <!-- Config files (always shown) -->
+        <div
+          v-if="downloadedConfigFiles.length > 0"
+          class="mb-4"
+        >
+          <strong>Config files ({{ downloadedConfigFiles.length }}):</strong>
+          <ul class="list-disc ml-6 max-h-24 overflow-y-auto">
             <li
               v-for="cf in downloadedConfigFiles"
               :key="cf.path"
@@ -143,13 +223,14 @@
             </li>
           </ul>
         </div>
+
         <div class="modal-action mt-4 flex gap-2">
           <button
             class="btn btn-success"
             :disabled="installing"
             @click="confirmInstall"
           >
-            Confirm Install
+            {{ isUpdate ? 'Confirm Update' : 'Confirm Install' }}
           </button>
           <button
             class="btn btn-ghost"
@@ -165,7 +246,6 @@
 </template>
 
 <script setup lang="ts">
-import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 import AddonList from '~/components/AddonList.vue'
@@ -178,6 +258,7 @@ import { useGithubApi } from '~/composables/useGithubApi'
 import { useTauri } from '~/composables/useTauri'
 import { useAppStore } from '~/stores/app'
 import { useManifestStore } from '~/stores/manifest'
+import type { Manifest } from '~/types'
 
 interface InstallProgressEvent
 {
@@ -200,6 +281,7 @@ const downloading = ref(false)
 const installing = ref(false)
 const downloadedConfigFiles = ref<ConfigFile[]>([])
 const logger = usePinoLogger()
+const { installUpdate: tauriInstallUpdate, installUpdateWithCleanup } = useTauri()
 
 const canInstall = computed(() =>
 	manifest.value !== null
@@ -209,6 +291,75 @@ const canInstall = computed(() =>
 )
 
 const showPreview = ref(false)
+
+// Calculate update diff for preview
+const updateDiff = computed(() =>
+{
+	if (manifest.value === null || manifestStore.previousManifest === null)
+	{
+		return null
+	}
+
+	const old = manifestStore.previousManifest
+	const newManifest = manifest.value
+
+	const diff = {
+		removedAddons: [] as string[],
+		updatedAddons: [] as Array<{ name: string, oldVersion: string, newVersion: string }>,
+		newAddons: [] as string[]	}
+
+	// Type alias for addon objects
+	type AddonType = { addon_project_id: number, addon_name: string, version: string }
+
+	// Helper function to process addon categories
+	const processCategory = (
+		oldAddons: AddonType[],
+		newAddons: AddonType[]
+	) =>
+	{
+		// Find removed addons
+		for (const oldAddon of oldAddons)
+		{
+			const found = newAddons.find((a) => a.addon_project_id === oldAddon.addon_project_id)
+			if (found === undefined)
+			{
+				diff.removedAddons.push(oldAddon.addon_name)
+			}
+		}
+
+		// Find updated addons
+		for (const oldAddon of oldAddons)
+		{
+			const newAddon = newAddons.find((a) => a.addon_project_id === oldAddon.addon_project_id)
+			if (newAddon !== undefined && oldAddon.version !== newAddon.version)
+			{
+				diff.updatedAddons.push({
+					name: newAddon.addon_name,
+					oldVersion: oldAddon.version,
+					newVersion: newAddon.version
+				})
+			}
+		}
+
+		// Find new addons
+		for (const newAddon of newAddons)
+		{
+			const found = oldAddons.find((a) => a.addon_project_id === newAddon.addon_project_id)
+			if (found === undefined)
+			{
+				diff.newAddons.push(newAddon.addon_name)
+			}
+		}
+	}	// Process each category
+	processCategory(old.mods, newManifest.mods)
+	processCategory(old.resourcepacks, newManifest.resourcepacks)
+	processCategory(old.shaderpacks, newManifest.shaderpacks)
+	processCategory(old.datapacks, newManifest.datapacks)
+
+	return diff
+})
+
+const isUpdate = computed(() => manifestStore.previousManifest !== null)
 
 function confirmInstall()
 {
@@ -274,6 +425,95 @@ async function saveManifest()
 	}
 }
 
+async function loadExistingManifest(modpackPath: string)
+{
+	try
+	{
+		// Try to read existing manifest_old.json from the modpack directory first
+		// This will be the previous version if an update has already been downloaded
+		const oldManifestPath = `${modpackPath}/manifest_old.json`
+		const oldManifestContent = await readFile(oldManifestPath)
+
+		if (oldManifestContent !== null && oldManifestContent.trim().length > 0)
+		{
+			const oldManifest = JSON.parse(oldManifestContent)
+			manifestStore.loadInstalledManifest(oldManifest)
+			logger.info('Loaded existing manifest_old.json for update comparison', { oldManifestPath })
+			return
+		}
+	}
+	catch (err)
+	{
+		// manifest_old.json doesn't exist, try manifest.json
+		logger.debug('No manifest_old.json found, trying manifest.json', { err })
+	}
+
+	try
+	{
+		// Fall back to reading current manifest.json
+		const manifestPath = `${modpackPath}/manifest.json`
+		const existingManifestContent = await readFile(manifestPath)
+
+		if (existingManifestContent !== null && existingManifestContent.trim().length > 0)
+		{
+			const existingManifest = JSON.parse(existingManifestContent)
+			manifestStore.loadInstalledManifest(existingManifest)
+			logger.info('Loaded existing manifest.json for update comparison', { manifestPath })
+		}
+		else
+		{
+			manifestStore.loadInstalledManifest(null)
+		}
+	}
+	catch (err)
+	{
+		// No existing manifest found or invalid format - this is fine for fresh installs
+		logger.debug('No existing manifest found, proceeding with fresh install', { err })
+		manifestStore.loadInstalledManifest(null)
+	}
+}
+
+async function backupAndReplaceManifest(modpackPath: string, newManifest: Manifest)
+{
+	const manifestPath = `${modpackPath}/manifest.json`
+	const oldManifestPath = `${modpackPath}/manifest_old.json`
+
+	try
+	{
+		// Check if current manifest.json exists
+		const currentManifestContent = await readFile(manifestPath)
+
+		if (currentManifestContent !== null && currentManifestContent.trim().length > 0)
+		{
+			// Delete any existing manifest_old.json
+			// Note: writeFile with single file will overwrite, so we don't need to manually delete
+
+			// Move current manifest.json to manifest_old.json
+			const backupSuccess = await writeFile(oldManifestPath, currentManifestContent)
+			if (!backupSuccess)
+			{
+				throw new Error('Failed to backup current manifest')
+			}
+			logger.info('Backed up current manifest to manifest_old.json')
+		}
+
+		// Write new manifest as manifest.json
+		const writeSuccess = await writeFile(manifestPath, JSON.stringify(newManifest, null, 2))
+		if (!writeSuccess)
+		{
+			throw new Error('Failed to write new manifest')
+		}
+
+		logger.info('Successfully updated manifest.json')
+		return true
+	}
+	catch (err)
+	{
+		logger.error('Failed to backup and replace manifest', { err })
+		throw err
+	}
+}
+
 async function downloadFromGithub()
 {
 	if (uuid.value.trim().length === 0)
@@ -320,28 +560,35 @@ async function downloadFromGithub()
 			progress.value = 80
 			statusMessage.value = 'Writing files to disk...'
 
-			// Prepare files for batch write
+			// Check for existing manifest to use as previous manifest
+			await loadExistingManifest(modpackPath)
+
+			// Backup current manifest and write new one using our new system
+			await backupAndReplaceManifest(modpackPath, result.manifest)
+
+			// Prepare other files for batch write (config files only now)
 			const filesToWrite: Array<[string, string]> = []
 
-			// Add manifest.json
-			filesToWrite.push(['manifest.json', JSON.stringify(result.manifest, null, 2)])
-
-			// Add config files
+			// Add config files (manifest.json is handled by backupAndReplaceManifest)
 			for (const configFile of result.configFiles)
 			{
 				filesToWrite.push([configFile.path, configFile.content])
 			}
 
-			// Write all files to modpack directory
-			const writeSuccess = await writeFile(modpackPath, filesToWrite)
-			if (!writeSuccess)
+			// Write config files to modpack directory (if any)
+			if (filesToWrite.length > 0)
 			{
-				statusMessage.value = 'Download successful, but failed to write files to disk.'
-				statusType.value = 'warning'
-				return
+				const writeSuccess = await writeFile(modpackPath, filesToWrite)
+				if (!writeSuccess)
+				{
+					statusMessage.value = 'Downloaded manifest successfully, but failed to write config files to disk.'
+					statusType.value = 'warning'
+					return
+				}
 			}
 
-			statusMessage.value = `Download successful! ${filesToWrite.length} files written to ${modpackPath}`
+			const totalFiles = filesToWrite.length + 1 // +1 for manifest.json
+			statusMessage.value = `Download successful! ${totalFiles} files written to ${modpackPath}. Previous manifest saved as manifest_old.json`
 			statusType.value = 'success'
 		}
 		else
@@ -382,13 +629,35 @@ async function installUpdate()
 			if (typeof prog === 'number') progress.value = prog
 			if (typeof message === 'string') statusMessage.value = message
 		})
+		const previousManifest = manifestStore.previousManifest
 
-		await invoke('install_update', {
-			modpackPath: appStore.modpackPath,
-			manifest: manifest.value,
-			configFiles: downloadedConfigFiles.value
-		})
-		statusMessage.value = 'Installation complete!'
+		if (manifest.value === null)
+		{
+			throw new Error('No manifest available for installation')
+		}
+
+		if (previousManifest !== null)
+		{
+			// Use update with cleanup for existing installations
+			await installUpdateWithCleanup(
+				appStore.modpackPath,
+				previousManifest,
+				manifest.value,
+				downloadedConfigFiles.value
+			)
+			statusMessage.value = 'Update installation complete!'
+		}
+		else
+		{
+			// Use regular install for fresh installations
+			await tauriInstallUpdate(
+				appStore.modpackPath,
+				manifest.value,
+				downloadedConfigFiles.value
+			)
+			statusMessage.value = 'Fresh installation complete!'
+		}
+
 		statusType.value = 'success'
 	}
 	catch (err)

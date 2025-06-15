@@ -123,6 +123,42 @@ export const useTauri = () =>
 		}
 	}
 
+	const installUpdate = async (
+		modpackPath: string,
+		manifest: Manifest,
+		configFiles: ConfigFile[]
+	): Promise<void> =>
+	{
+		return await invoke('install_update', {
+			modpackPath,
+			manifest,
+			configFiles
+		})
+	}
+	const installUpdateWithCleanup = async (
+		modpackPath: string,
+		oldManifest: Manifest | null,
+		newManifest: Manifest,
+		configFiles: ConfigFile[]
+	): Promise<void> =>
+	{
+		return await invoke('install_update_with_cleanup', {
+			modpackPath,
+			oldManifest,
+			newManifest,
+			configFiles
+		})
+	}
+	const keyringTestDirect = async (): Promise<string> =>
+	{
+		return await invoke<string>('keyring_test_direct')
+	}
+
+	const keyringSetAndVerify = async (key: string, value: string): Promise<boolean> =>
+	{
+		return await invoke<boolean>('keyring_set_and_verify', { key, value })
+	}
+
 	return {
 		selectDirectory,
 		selectFile,
@@ -132,6 +168,10 @@ export const useTauri = () =>
 		parseMinecraftInstance,
 		compareManifests,
 		openCurseforgeUrl,
-		openUrl
+		openUrl,
+		installUpdate,
+		installUpdateWithCleanup,
+		keyringTestDirect,
+		keyringSetAndVerify
 	}
 }

@@ -1,77 +1,77 @@
-import { appDataDir } from '@tauri-apps/api/path'
-import { Stronghold } from '@tauri-apps/plugin-stronghold'
+import { deletePassword, getPassword, setPassword } from 'tauri-plugin-keyring-api'
 
-const VAULT_PASSWORD = 'cemm-vault' // In production, prompt user or use OS secret
-const CLIENT_NAME = 'cemm-client'
-const STORE_NAME = 'cemm-store'
+import { usePinoLogger } from './usePinoLogger'
 
-let stronghold: Stronghold | null = null
-let client: Awaited<ReturnType<Stronghold['createClient']>> | null = null
-let initPromise: Promise<void> | null = null
-
-async function getVaultPath()
-{
-	if (import.meta.dev)
-	{
-		// Use a fixed path in the project directory for dev
-		return 'D:/Projects/Rust/cemmV3/.dev-cemm-vault.hold'
-	}
-	return `${await appDataDir()}cemm-vault.hold`
-}
-
-async function initStronghold()
-{
-	if (client !== null) return
-	if (initPromise !== null) return initPromise
-	initPromise = (async () =>
-	{
-		const vaultPath = await getVaultPath()
-		stronghold = await Stronghold.load(vaultPath, VAULT_PASSWORD)
-		try
-		{
-			client = await stronghold.loadClient(CLIENT_NAME)
-		}
-		catch
-		{
-			client = await stronghold.createClient(CLIENT_NAME)
-		}
-	})()
-	await initPromise
-}
-
+/**
+ * Composable for secure storage using tauri-plugin-keyring
+ *
+ * This uses the OS-native credential manager:
+ * - Windows: Windows Credential Manager
+ * - macOS: Keychain
+ * - Linux: Secret Service/KWallet
+ */
 export const useSecureStorage = () =>
 {
-	const setSecure = async (key: string, value: string) =>
+	const logger = usePinoLogger()
+
+	/**
+	 * Store a value securely
+	 */
+	const setSecure = async (key: string, value: string): Promise<void> =>
 	{
-		await initStronghold()
-		if (client === null) throw new Error('Stronghold client not initialized')
-		const store = client.getStore()
-		await store.insert(key, Array.from(new TextEncoder().encode(value)))
-		await stronghold?.save()
-	}
-	const getSecure = async (key: string): Promise<string | null> =>
-	{
-		await initStronghold()
-		if (client === null) throw new Error('Stronghold client not initialized')
-		const store = client.getStore()
 		try
 		{
-			const data = await store.get(key)
-			if (data == null) return null
-			return new TextDecoder().decode(new Uint8Array(data))
+			logger.info('Setting secure value', { key, valueLength: value.length })
+			await setPassword('com.yasirjumaah.cemm', key, value)
+			logger.info('✅ Secure value set successfully', { key })
 		}
-		catch
+		catch (error)
 		{
+			logger.error('❌ Failed to set secure value', { key, error })
+			throw error
+		}
+	}
+
+	/**
+	 * Get a value from secure storage
+	 */
+	const getSecure = async (key: string): Promise<string | null> =>
+	{
+		try
+		{
+			logger.info('Getting secure value', { key })
+			const value = await getPassword('com.yasirjumaah.cemm', key)
+			logger.info('✅ Secure value retrieved', { key, hasValue: value !== null, valueLength: value?.length ?? 0 })
+			return value
+		}
+		catch (error)
+		{
+			logger.error('❌ Failed to get secure value', { key, error })
 			return null
 		}
 	}
-	const removeSecure = async (key: string) =>
+
+	/**
+	 * Remove a value from secure storage
+	 */
+	const removeSecure = async (key: string): Promise<void> =>
 	{
-		await initStronghold()
-		if (client === null) throw new Error('Stronghold client not initialized')
-		const store = client.getStore()
-		await store.remove(key)
-		await stronghold?.save()
+		try
+		{
+			logger.info('Removing secure value', { key })
+			await deletePassword('com.yasirjumaah.cemm', key)
+			logger.info('✅ Secure value removed successfully', { key })
+		}
+		catch (error)
+		{
+			logger.error('❌ Failed to remove secure value', { key, error })
+			throw error
+		}
 	}
-	return { setSecure, getSecure, removeSecure }
+
+	return {
+		setSecure,
+		getSecure,
+		removeSecure
+	}
 }

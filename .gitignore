@@ -9,5 +9,3 @@ node_modules
 .env
 dist
 bun.lockb
-cemm-stronghold-salt
-.dev-cemm-vault.hold

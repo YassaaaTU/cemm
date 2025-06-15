@@ -9,10 +9,29 @@ use sha2::{Digest, Sha256};
 use tauri::Window;
 use tauri::Emitter;
 
+// Helper function to extract filename from URL (moved to top level)
+fn extract_filename_from_url(url: &str) -> Option<String> {
+    url.split('/').last()
+        .and_then(|name| {
+            if name.contains('.') && !name.is_empty() {
+                Some(name.to_string())
+            } else {
+                None
+            }
+        })
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ConfigFile {
     pub path: String,
     pub content: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateDiff {
+    pub removed_addons: Vec<String>, // addon names to remove
+    pub updated_addons: Vec<(String, String)>, // (old_version, new_version) pairs
+    pub new_addons: Vec<String>, // completely new addon names
 }
 
 #[command]
@@ -167,5 +186,161 @@ pub async fn install_update(
         }
         return Err(format!("Install failed and rolled back: {}", e));
     }
+    Ok(())
+}
+
+#[command]
+pub async fn install_update_with_cleanup(
+    modpack_path: String,
+    old_manifest: Option<Manifest>,
+    new_manifest: Manifest,
+    config_files: Vec<ConfigFile>,
+) -> Result<(), String> {
+    // If no old manifest, fall back to regular install
+    if old_manifest.is_none() {
+        return install_update(modpack_path, new_manifest, config_files).await;
+    }    let old_manifest = old_manifest.unwrap();
+    let _client = Client::new(); // Prefix with _ to indicate intentionally unused
+
+    // Step 1: Calculate what needs to be removed/updated
+    let diff = calculate_update_diff(&old_manifest, &new_manifest)?;
+    
+    // Step 2: Remove old files first
+    remove_old_files(&modpack_path, &old_manifest, &diff).await?;
+    
+    // Step 3: Install new/updated files
+    install_update(modpack_path, new_manifest, config_files).await
+}
+
+fn calculate_update_diff(old_manifest: &Manifest, new_manifest: &Manifest) -> Result<UpdateDiff, String> {
+    let mut diff = UpdateDiff {
+        removed_addons: Vec::new(),
+        updated_addons: Vec::new(),
+        new_addons: Vec::new(),
+    };
+
+    // Helper to compare addon lists
+    fn process_addon_category<F>(
+        old_addons: &[crate::composables::manifest::Addon],
+        new_addons: &[crate::composables::manifest::Addon],
+        diff: &mut UpdateDiff,
+        _extract_filename: F,
+    ) where F: Fn(&str) -> Option<String> {
+        // Find removed addons (in old but not in new)
+        for old_addon in old_addons {
+            if !new_addons.iter().any(|new_addon| new_addon.addon_project_id == old_addon.addon_project_id) {
+                diff.removed_addons.push(old_addon.addon_name.clone());
+            }
+        }
+
+        // Find updated addons (same project ID, different version)
+        for old_addon in old_addons {
+            if let Some(new_addon) = new_addons.iter().find(|a| a.addon_project_id == old_addon.addon_project_id) {
+                if old_addon.version != new_addon.version {
+                    diff.updated_addons.push((old_addon.version.clone(), new_addon.version.clone()));
+                }
+            }
+        }
+
+        // Find new addons (in new but not old)
+        for new_addon in new_addons {
+            if !old_addons.iter().any(|old_addon| old_addon.addon_project_id == new_addon.addon_project_id) {
+                diff.new_addons.push(new_addon.addon_name.clone());
+            }
+        }
+    }
+
+    // Helper to extract filename from URL
+    let extract_filename = |url: &str| -> Option<String> {
+        url.split('/').last()
+            .and_then(|name| {
+                if name.contains('.') && !name.is_empty() {
+                    Some(name.to_string())
+                } else {
+                    None
+                }
+            })
+    };
+
+    // Process each addon category
+    process_addon_category(&old_manifest.mods, &new_manifest.mods, &mut diff, &extract_filename);
+    process_addon_category(&old_manifest.resourcepacks, &new_manifest.resourcepacks, &mut diff, &extract_filename);
+    process_addon_category(&old_manifest.shaderpacks, &new_manifest.shaderpacks, &mut diff, &extract_filename);
+    process_addon_category(&old_manifest.datapacks, &new_manifest.datapacks, &mut diff, &extract_filename);
+
+    Ok(diff)
+}
+
+async fn remove_old_files(modpack_path: &str, old_manifest: &Manifest, diff: &UpdateDiff) -> Result<(), String> {
+    // Helper to remove files from a category directory
+    async fn remove_category_files(
+        modpack_path: &str,
+        category_dir: &str,
+        old_addons: &[crate::composables::manifest::Addon],
+        diff: &UpdateDiff,
+    ) -> Result<(), String> {
+        use tokio_stream::{StreamExt, wrappers::ReadDirStream};
+        
+        let category_path = Path::new(modpack_path).join(category_dir);
+        
+        if !category_path.exists() {
+            return Ok(()); // Directory doesn't exist, nothing to remove
+        }
+
+        // Read directory contents
+        let dir_entries = async_fs::read_dir(&category_path).await
+            .map_err(|e| format!("Failed to read directory {}: {}", category_path.display(), e))?;
+
+        let mut dir_stream = ReadDirStream::new(dir_entries);
+
+        while let Some(entry_result) = dir_stream.next().await {
+            let entry = entry_result
+                .map_err(|e| format!("Failed to read directory entry: {}", e))?;
+            
+            let file_path = entry.path();
+            let file_name = file_path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
+
+            // Check if this file belongs to a removed addon
+            for removed_addon in &diff.removed_addons {
+                if let Some(old_addon) = old_addons.iter().find(|a| &a.addon_name == removed_addon) {
+                    let expected_filename = extract_filename_from_url(&old_addon.cdn_download_url)
+                        .unwrap_or_else(|| format!("{}-{}", old_addon.addon_name.replace(" ", "_"), old_addon.version));
+                    
+                    if file_name == expected_filename || file_name.contains(&old_addon.addon_name.replace(" ", "_")) {
+                        async_fs::remove_file(&file_path).await
+                            .map_err(|e| format!("Failed to remove file {}: {}", file_path.display(), e))?;
+                        break; // File removed, no need to check other conditions
+                    }
+                }
+            }
+
+            // Check if this file belongs to an updated addon (remove old version)
+            for old_addon in old_addons {
+                // Check if there's a corresponding new version of this addon
+                if diff.updated_addons.iter().any(|(old_ver, _)| old_ver == &old_addon.version) {
+                    let expected_filename = extract_filename_from_url(&old_addon.cdn_download_url)
+                        .unwrap_or_else(|| format!("{}-{}", old_addon.addon_name.replace(" ", "_"), old_addon.version));
+                    
+                    if file_name == expected_filename || 
+                       (file_name.contains(&old_addon.addon_name.replace(" ", "_")) && file_name.contains(&old_addon.version)) {
+                        async_fs::remove_file(&file_path).await
+                            .map_err(|e| format!("Failed to remove old version {}: {}", file_path.display(), e))?;
+                        break; // File removed, no need to check other conditions
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    // Remove old files from each category
+    remove_category_files(modpack_path, "mods", &old_manifest.mods, diff).await?;
+    remove_category_files(modpack_path, "resourcepacks", &old_manifest.resourcepacks, diff).await?;
+    remove_category_files(modpack_path, "shaderpacks", &old_manifest.shaderpacks, diff).await?;
+    remove_category_files(modpack_path, "datapacks", &old_manifest.datapacks, diff).await?;
+
     Ok(())
 }

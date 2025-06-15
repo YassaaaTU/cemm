@@ -14,10 +14,6 @@
 </template>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
-
-import GitHubSettings from '~/components/GitHubSettings.vue'
-
 const router = useRouter()
 const goBack = () =>
 {

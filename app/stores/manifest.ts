@@ -11,7 +11,18 @@ export const useManifestStore = defineStore('manifest', () =>
 	const updateInfo = ref<UpdateInfo | null>(null)
 	function setManifest(newManifest: Manifest | null)
 	{
+		// Store the current manifest as previous before setting new one
+		if (manifest.value !== null && newManifest !== null)
+		{
+			previousManifest.value = manifest.value
+		}
 		manifest.value = newManifest
+	}
+
+	function loadInstalledManifest(installedManifest: Manifest | null)
+	{
+		// Set as previous manifest without updating current
+		previousManifest.value = installedManifest
 	}
 
 	function setPreviousManifest(prev: Manifest | null)
@@ -23,7 +34,6 @@ export const useManifestStore = defineStore('manifest', () =>
 	{
 		updateInfo.value = info
 	}
-
 	return {
 		manifest,
 		selectedAddons,
@@ -31,6 +41,7 @@ export const useManifestStore = defineStore('manifest', () =>
 		previousManifest,
 		updateInfo,
 		setManifest,
+		loadInstalledManifest,
 		setPreviousManifest,
 		setUpdateInfo
 	}

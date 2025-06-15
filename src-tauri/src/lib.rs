@@ -13,7 +13,7 @@ pub use composables::manifest::{
     UpdateInfo,
 };
 mod installer;
-pub use installer::{install_update, ConfigFile as InstallerConfigFile};
+pub use installer::{install_update, install_update_with_cleanup, ConfigFile as InstallerConfigFile};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -21,6 +21,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_keyring::init())
         .invoke_handler(tauri::generate_handler![
             select_directory,
             select_file,
@@ -34,17 +35,10 @@ pub fn run() {
             upload_update,
             download_update,
             install_update,
+            install_update_with_cleanup,
+            get_app_data_dir
         ])
         .setup(|app| {
-            // Initialize Stronghold with app-specific data directory
-            let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-            std::fs::create_dir_all(&app_data_dir).map_err(|e| e.to_string())?;
-            let stronghold_path = app_data_dir.join("cemm-stronghold-salt");
-
-            app.handle()
-                .plugin(tauri_plugin_stronghold::Builder::with_argon2(&stronghold_path).build())
-                .map_err(|e| e.to_string())?;
-
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -181,4 +175,10 @@ fn select_save_file(app: tauri::AppHandle) -> Result<String, String> {
             Err("No file selected".to_string())
         }
     }
+}
+
+#[tauri::command]
+fn get_app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    Ok(app_data_dir.to_string_lossy().to_string())
 }

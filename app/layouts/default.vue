@@ -6,8 +6,7 @@
       </div>
       <div class="navbar-center">
         <mode-selector />
-      </div>
-      <div class="navbar-end">
+      </div>      <div class="navbar-end">
         <NuxtLink
           to="/settings"
           class="btn btn-ghost mr-4"
