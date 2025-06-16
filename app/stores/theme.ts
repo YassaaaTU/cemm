@@ -12,7 +12,7 @@ export const useThemeStore = defineStore(
 	'themeStore',
 	(): ThemeStore =>
 	{
-		const current = ref<'nord' | 'dracula'>('nord')
+		const current = ref<'nord' | 'dracula'>('dracula')
 
 		const setTheme = (theme: 'nord' | 'dracula') =>
 		{

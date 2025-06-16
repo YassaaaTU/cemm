@@ -7,20 +7,17 @@
       class="sidebar flex-none bg-base-200"
     />
 
-    <!-- Main content area -->
-    <main
-      role="main"
-      class="flex-1 min-h-screen flex flex-col ml-56"
-    >
-      <slot />
-    </main>
+    <div class="flex-1 flex flex-col">
+      <!-- Main content area -->
+      <main
+        role="main"
+        class="flex-1 h-0 min-h-0 flex flex-col ml-56 overflow-y-auto"
+      >
+        <slot />
+      </main>
+
+      <!-- Footer -->
+      <PageFooter />
+    </div>
   </div>
 </template>
-
-<script setup lang="ts">
-
-</script>
-
-<style scoped>
-
-</style>

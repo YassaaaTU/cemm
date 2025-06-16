@@ -15,8 +15,9 @@
     <nav class="flex flex-col w-full items-center sm:items-stretch mt-2">
       <NuxtLink
         to="/"
-        class="btn btn-ghost m-0 btn-lg justify-start"
+        class="btn rounded-none m-0 btn-lg justify-start"
         aria-label="Home"
+        :class="{ 'btn-primary': $route.path === '/' }"
       >
         <Icon
           name="mdi:home"
@@ -26,9 +27,23 @@
         <span class="hidden sm:inline">Home</span>
       </NuxtLink>
       <NuxtLink
+        to="/dashboard"
+        class="btn rounded-none m-0 btn-lg justify-start"
+        aria-label="Dashboard"
+        :class="{ 'btn-primary': $route.path === '/dashboard' }"
+      >
+        <Icon
+          name="mdi:view-dashboard"
+          size="1.2rem"
+          class="mr-0 sm:mr-2"
+        />
+        <span class="hidden sm:inline">Dashboard</span>
+      </NuxtLink>
+      <NuxtLink
         to="/settings"
-        class="btn btn-ghost m-0 btn-lg justify-start"
+        class="btn rounded-none m-0 btn-lg justify-start"
         aria-label="Settings"
+        :class="{ 'btn-primary': $route.path === '/settings' }"
       >
         <Icon
           name="mdi:cog"

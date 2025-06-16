@@ -24,7 +24,15 @@ body {
 }
 
 @layer base {
-
+ .landing-button {
+	@apply cursor-pointer flex-1 flex flex-col items-center justify-center transition-all duration-200 text-2xl font-bold p-8
+ }
+ .landing-button .lTextAdmin {
+	@apply text-primary-content hover:text-accent-content;
+ }
+ .landing-button .lTextUser {
+	@apply text-secondary-content hover:text-accent-content;
+ }
 }
 
 @layer utilities {
