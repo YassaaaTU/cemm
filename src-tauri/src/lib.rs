@@ -13,7 +13,7 @@ pub use composables::manifest::{
     UpdateInfo,
 };
 mod installer;
-pub use installer::{install_update, install_update_with_cleanup, ConfigFile as InstallerConfigFile};
+pub use installer::{install_update, install_update_with_cleanup, install_update_optimized, ConfigFile as InstallerConfigFile};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,6 +38,7 @@ pub fn run() {
             download_config_files,
             install_update,
             install_update_with_cleanup,
+            install_update_optimized,
             get_app_data_dir,
             select_multiple_files,
             select_config_directory,

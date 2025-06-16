@@ -1,5 +1,5 @@
 <template>
-  <footer class="footer footer-horizontal bg-base-200 text-base-content items-center p-3 w-[calc(100vw-14rem)] ml-56 fixed bottom-0 z-50 right-0 border-l border-base-300">
+  <footer class="footer footer-horizontal bg-base-200 text-base-content items-center p-3 border-l border-base-300 ml-56 w-[calc(100vw-14rem)]">
     <aside class="grid-flow-col items-center gap-2">
       <span class="text-primary font-semibold text-lg">
         No-Logo

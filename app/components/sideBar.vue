@@ -13,11 +13,11 @@
 
     <!-- Navigation links -->
     <nav class="flex flex-col w-full items-center sm:items-stretch mt-2">
-      <NuxtLink
-        to="/"
+      <button
         class="btn rounded-none m-0 btn-lg justify-start"
         aria-label="Home"
-        :class="{ 'btn-primary': $route.path === '/' }"
+        :class="{ 'btn-primary': navigation.isLanding }"
+        @click="navigation.navigateToLanding()"
       >
         <Icon
           name="mdi:home"
@@ -25,12 +25,12 @@
           class="mr-0 sm:mr-2"
         />
         <span class="hidden sm:inline">Home</span>
-      </NuxtLink>
-      <NuxtLink
-        to="/dashboard"
+      </button>
+      <button
         class="btn rounded-none m-0 btn-lg justify-start"
         aria-label="Dashboard"
-        :class="{ 'btn-primary': $route.path === '/dashboard' }"
+        :class="{ 'btn-primary': navigation.isDashboard }"
+        @click="navigation.navigateToDashboard()"
       >
         <Icon
           name="mdi:view-dashboard"
@@ -38,12 +38,12 @@
           class="mr-0 sm:mr-2"
         />
         <span class="hidden sm:inline">Dashboard</span>
-      </NuxtLink>
-      <NuxtLink
-        to="/settings"
+      </button>
+      <button
         class="btn rounded-none m-0 btn-lg justify-start"
         aria-label="Settings"
-        :class="{ 'btn-primary': $route.path === '/settings' }"
+        :class="{ 'btn-primary': navigation.isSettings }"
+        @click="navigation.navigateToSettings()"
       >
         <Icon
           name="mdi:cog"
@@ -51,7 +51,7 @@
           class="mr-0 sm:mr-2"
         />
         <span class="hidden sm:inline">Settings</span>
-      </NuxtLink>
+      </button>
     </nav>
 
     <div class="w-full mt-auto flex flex-col">
@@ -78,6 +78,7 @@
 import { useThemeStore } from '~/stores/theme'
 
 const themeStore = useThemeStore()
+const navigation = useNavigationStore()
 
 // Theme computed properties
 const isDark = computed(() => themeStore.isdark)

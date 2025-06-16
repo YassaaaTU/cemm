@@ -8,14 +8,43 @@
       class="text-2xl font-bold mb-4"
     >
       User Mode
-    </h2>
-
-    <!-- File Selection Section -->
+    </h2>    <!-- File Selection Section -->
     <section
       aria-labelledby="file-section"
       class="mb-6"
     >
+      <label
+        id="file-help"
+        for="file-selector"
+        class="w-full label label-text"
+      >
+        Select the modpack directory where you want to install the update:
+      </label>
       <file-selector />
+    </section>
+
+    <!-- GitHub Repository Section -->
+    <section
+      aria-labelledby="repo-section"
+      class="mb-6"
+    >
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">
+          GitHub Repository
+        </legend>
+        <input
+          id="github-repo"
+          v-model="githubRepo"
+          type="text"
+          class="input input-bordered w-full"
+          placeholder="user/repo (e.g., john/my-modpack-updates)"
+          autocomplete="off"
+          @blur="saveGithubRepo"
+        />
+        <p class="label">
+          The GitHub repository where modpack updates are stored
+        </p>
+      </fieldset>
     </section>
 
     <!-- UUID Input Section -->
@@ -178,7 +207,7 @@ const uuid = ref('')
 const progress = ref(0)
 const statusMessage = ref('')
 const statusType = ref<'success' | 'error' | 'info' | 'warning'>('info')
-const { writeFile, readFile, parseMinecraftInstance } = useTauri()
+const { writeFile, readFile, parseMinecraftInstance, installUpdateOptimized } = useTauri()
 const manifestStore = useManifestStore()
 const manifest = computed(() => manifestStore.manifest)
 const appStore = useAppStore()
@@ -186,8 +215,25 @@ const downloading = ref(false)
 const installing = ref(false)
 const downloadedConfigFiles = ref<ConfigFileWithContent[]>([])
 const logger = usePinoLogger()
-const { installUpdateWithCleanup } = useTauri()
 const path = computed(() => appStore.modpackPath)
+
+// GitHub repository reactive property with computed binding to app store
+const githubRepo = computed({
+	get: () => appStore.githubRepo,
+	set: (val: string) =>
+	{
+		appStore.githubRepo = val
+	}
+})
+
+// Save GitHub repository function
+const saveGithubRepo = () =>
+{
+	if (githubRepo.value.trim())
+	{
+		logger.info('GitHub repository saved', { repo: githubRepo.value })
+	}
+}
 
 // Enhanced error handling
 const errorHandler = createErrorHandler(statusMessage, statusType, logger)
@@ -535,7 +581,6 @@ async function installUpdate()
 		{
 			throw new Error('No manifest available for installation')
 		}
-
 		// Validate config files structure before installation
 		const configFiles = downloadedConfigFiles.value
 		for (const configFile of configFiles)
@@ -545,11 +590,12 @@ async function installUpdate()
 				throw new Error(`Invalid config file structure: ${JSON.stringify(configFile)}`)
 			}
 		}
-		// Always use update with cleanup for any installation
-		// This ensures removal of old/disabled mods even if previousManifest is unknown
-		await installUpdateWithCleanup(
+
+		// Use optimized installation that only downloads/installs changed or new addons
+		// This avoids redownloading unchanged addons, making updates much faster for large modpacks
+		await installUpdateOptimized(
 			appStore.modpackPath,
-			previousManifest, // Can be null, cleanup will handle it
+			previousManifest, // Can be null, optimized installer will handle it
 			manifest.value,
 			configFiles
 		)

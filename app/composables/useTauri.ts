@@ -299,6 +299,20 @@ export const useTauri = () =>
 		}
 	}
 
+	const installUpdateOptimized = async (
+		modpackPath: string,
+		oldManifest: Manifest | null,
+		newManifest: Manifest,
+		configFiles: ConfigFileWithContent[]
+	): Promise<void> =>
+	{
+		return await invoke('install_update_optimized', {
+			modpackPath,
+			oldManifest,
+			newManifest,
+			configFiles
+		})
+	}
 	return {
 		selectDirectory,
 		selectFile,
@@ -312,6 +326,7 @@ export const useTauri = () =>
 		openUrl,
 		installUpdate,
 		installUpdateWithCleanup,
+		installUpdateOptimized,
 		keyringTestDirect,
 		keyringSetAndVerify,
 		loadExistingManifest,

@@ -5,47 +5,50 @@
     </h2>
     <div v-if="loading">
       Loading...
-    </div>
-    <div v-else>
+    </div>    <div v-else>
       <form
         class="space-y-4"
         @submit.prevent="saveSettings"
       >
-        <div>
-          <label
-            class="label"
-            for="github-repo"
-          >GitHub Repository</label>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">
+            GitHub Repository
+          </legend>
           <input
             id="github-repo"
             v-model="githubRepo"
             type="text"
             class="input input-bordered w-full"
-            placeholder="user/repo"
+            placeholder="user/repo (e.g., john/my-modpack-updates)"
             autocomplete="off"
+            required
           />
-        </div>
-        <div>
-          <label
-            class="label"
-            for="github-token"
-          >GitHub Token</label>
+          <p class="label">
+            Required: The GitHub repository where modpack updates will be stored
+          </p>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">
+            GitHub Token (Optional)
+          </legend>
           <input
             id="github-token"
             v-model="githubToken"
             type="password"
             class="input input-bordered w-full"
-            placeholder="Personal Access Token"
+            placeholder="Personal Access Token (optional for public repos)"
             autocomplete="off"
           />
-          <div class="text-xs text-gray-500 mt-1">
-            Your token is stored securely and never sent anywhere except GitHub.
-          </div>
-        </div>
+          <p class="label">
+            Optional: Required only for private repositories or enhanced rate limits
+          </p>
+        </fieldset>
+
         <button
           type="submit"
           class="btn btn-primary w-full"
-          :disabled="loading"
+          :disabled="loading || !githubRepo.trim()"
         >
           Save Settings
         </button>
@@ -137,15 +140,10 @@ const saveSettings = async () =>
 	{
 		logger.info('Saving GitHub settings...')
 		logger.info('Before save - githubRepo value', { repo: githubRepo.value })
-
 		// Validate inputs
 		if (!githubRepo.value.trim())
 		{
 			throw new Error('GitHub repository is required')
-		}
-		if (!githubToken.value.trim())
-		{
-			throw new Error('GitHub token is required')
 		}
 
 		// Save repo to app store (persisted automatically)
@@ -156,10 +154,18 @@ const saveSettings = async () =>
 			computedRepo: githubRepo.value
 		})
 
-		// Save token to secure storage
-		await setSecure('cemm_github_token', githubToken.value.trim())
-
-		tokenSaved.value = true
+		// Save token to secure storage (if provided)
+		if (githubToken.value.trim())
+		{
+			await setSecure('cemm_github_token', githubToken.value.trim())
+			tokenSaved.value = true
+		}
+		else
+		{
+			// Clear token if empty
+			await setSecure('cemm_github_token', '')
+			tokenSaved.value = false
+		}
 		successMessage.value = 'Settings saved successfully!'
 
 		logger.info('GitHub settings saved successfully')

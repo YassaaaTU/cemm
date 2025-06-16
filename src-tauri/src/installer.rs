@@ -1,7 +1,7 @@
 use crate::composables::manifest::Manifest;
 use reqwest::Client;
 use serde::Deserialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::command;
 use tokio::fs as async_fs;
 use tokio::io::AsyncWriteExt;
@@ -344,4 +344,227 @@ async fn remove_old_files(modpack_path: &str, old_manifest: &Manifest, diff: &Up
     remove_category_files(modpack_path, "datapacks", &old_manifest.datapacks, diff).await?;
 
     Ok(())
+}
+
+#[command]
+pub async fn install_update_optimized(
+    modpack_path: String,
+    old_manifest: Option<Manifest>,
+    new_manifest: Manifest,
+    config_files: Vec<ConfigFile>,
+) -> Result<(), String> {
+    // If no old manifest, fall back to regular install (all addons are "new")
+    if old_manifest.is_none() {
+        return install_update(modpack_path, new_manifest, config_files).await;
+    }
+
+    let old_manifest = old_manifest.unwrap();
+    let client = Client::new();
+
+    // Step 1: Calculate what needs to be changed
+    let diff = calculate_detailed_update_diff(&old_manifest, &new_manifest)?;
+    
+    // Step 2: Remove old files first
+    remove_old_files(&modpack_path, &old_manifest, &calculate_update_diff(&old_manifest, &new_manifest)?).await?;
+    
+    // Step 3: Only download and install changed addons (optimized!)
+    install_changed_addons(&client, &modpack_path, &new_manifest, &diff, config_files).await
+}
+
+#[derive(Debug, Clone)]
+pub struct DetailedUpdateDiff {
+    pub addons_to_remove: Vec<crate::composables::manifest::Addon>, // Full addon info for removal
+    pub addons_to_update: Vec<crate::composables::manifest::Addon>, // New versions to download
+    pub addons_to_add: Vec<crate::composables::manifest::Addon>, // Completely new addons
+    pub addons_unchanged: Vec<crate::composables::manifest::Addon>, // Skip these entirely
+}
+
+fn calculate_detailed_update_diff(old_manifest: &Manifest, new_manifest: &Manifest) -> Result<DetailedUpdateDiff, String> {
+    let mut diff = DetailedUpdateDiff {
+        addons_to_remove: Vec::new(),
+        addons_to_update: Vec::new(),
+        addons_to_add: Vec::new(),
+        addons_unchanged: Vec::new(),
+    };
+
+    // Helper to process each addon category with detailed diff
+    fn process_category_detailed(
+        old_addons: &[crate::composables::manifest::Addon],
+        new_addons: &[crate::composables::manifest::Addon],
+        diff: &mut DetailedUpdateDiff,
+    ) {
+        // Process each old addon
+        for old_addon in old_addons {
+            if let Some(new_addon) = new_addons.iter().find(|a| a.addon_project_id == old_addon.addon_project_id) {
+                if new_addon.disabled == Some(true) {
+                    // Old addon exists but new one is disabled = removal
+                    diff.addons_to_remove.push(old_addon.clone());
+                } else if old_addon.version != new_addon.version {
+                    // Same addon, different version = update (download new)
+                    diff.addons_to_update.push(new_addon.clone());
+                } else {
+                    // Same addon, same version = unchanged (skip download)
+                    diff.addons_unchanged.push(new_addon.clone());
+                }
+            } else {
+                // Old addon not in new manifest = removal
+                diff.addons_to_remove.push(old_addon.clone());
+            }
+        }
+
+        // Process each new addon to find completely new ones
+        for new_addon in new_addons {
+            if new_addon.disabled == Some(true) {
+                continue; // Skip disabled addons
+            }
+            
+            if !old_addons.iter().any(|old_addon| old_addon.addon_project_id == new_addon.addon_project_id) {
+                // New addon not in old manifest = addition (download)
+                diff.addons_to_add.push(new_addon.clone());
+            }
+        }
+    }
+
+    // Process all categories
+    process_category_detailed(&old_manifest.mods, &new_manifest.mods, &mut diff);
+    process_category_detailed(&old_manifest.resourcepacks, &new_manifest.resourcepacks, &mut diff);
+    process_category_detailed(&old_manifest.shaderpacks, &new_manifest.shaderpacks, &mut diff);
+    process_category_detailed(&old_manifest.datapacks, &new_manifest.datapacks, &mut diff);
+
+    Ok(diff)
+}
+
+async fn install_changed_addons(
+    client: &Client,
+    modpack_path: &str,
+    _new_manifest: &Manifest,
+    diff: &DetailedUpdateDiff,
+    config_files: Vec<ConfigFile>,
+) -> Result<(), String> {
+    // Calculate total work: only addons that need downloading + config files
+    let total_downloads = diff.addons_to_add.len() + diff.addons_to_update.len() + config_files.len();
+    let mut current_progress = 0;
+    let mut installed_paths: Vec<std::path::PathBuf> = Vec::new();
+
+    println!("🚀 Optimized install: {} new, {} updated, {} unchanged (skipped), {} config files", 
+        diff.addons_to_add.len(), 
+        diff.addons_to_update.len(), 
+        diff.addons_unchanged.len(),
+        config_files.len()
+    );    // Helper to emit progress 
+    let emit_progress = |current: usize, total: usize, msg: &str| {
+        // Note: In real implementation, you'd emit to window here
+        let progress = if total > 0 { current as f64 / total as f64 * 100.0 } else { 100.0 };
+        println!("Progress: {:.1}% - {}", progress, msg);
+    };    // Helper async function to download and install a single addon
+    async fn download_addon_helper(
+        client: &Client,
+        addon: crate::composables::manifest::Addon,
+        category: String,
+        modpack_path: String,
+    ) -> Result<PathBuf, String> {
+        let filename = &addon.file_name_on_disk;
+        let dest = Path::new(&modpack_path).join(&category).join(filename);
+        
+        // Download the addon
+        let resp = client.get(&addon.cdn_download_url).send().await.map_err(|e| {
+            format!("Failed to download {}: {}", addon.addon_name, e)
+        })?;
+        
+        if !resp.status().is_success() {
+            return Err(format!("Failed to download {}: HTTP {}", addon.addon_name, resp.status()));
+        }
+        
+        let bytes = resp.bytes().await.map_err(|e| {
+            format!("Failed to read bytes for {}: {}", addon.addon_name, e)
+        })?;
+        
+        // Create directory if needed
+        if let Some(parent) = dest.parent() {
+            async_fs::create_dir_all(parent).await.map_err(|e| {
+                format!("Failed to create directory {}: {}", parent.display(), e)
+            })?;
+        }
+        
+        // Write file
+        async_fs::write(&dest, bytes).await.map_err(|e| {
+            format!("Failed to write {}: {}", dest.display(), e)
+        })?;
+        
+        Ok(dest)
+    }// Install new addons
+    for addon in &diff.addons_to_add {
+        if addon.disabled == Some(true) { continue; }        // Determine category properly by checking which list in new_manifest contains this addon
+        let category = determine_addon_category(_new_manifest, addon);
+        
+        match download_addon_helper(client, addon.clone(), category.to_string(), modpack_path.to_string()).await {
+            Ok(path) => {
+                installed_paths.push(path);
+                current_progress += 1;
+                emit_progress(current_progress, total_downloads, &format!("Downloaded new: {}", addon.addon_name));
+            }
+            Err(e) => {
+                // Rollback on error
+                for path in &installed_paths {
+                    let _ = async_fs::remove_file(path).await;
+                }
+                return Err(format!("Failed to install new addon: {}", e));
+            }
+        }
+    }
+
+    // Install updated addons
+    for addon in &diff.addons_to_update {
+        if addon.disabled == Some(true) { continue; }        let category = determine_addon_category(_new_manifest, addon);
+        
+        match download_addon_helper(client, addon.clone(), category.to_string(), modpack_path.to_string()).await {
+            Ok(path) => {
+                installed_paths.push(path);
+                current_progress += 1;
+                emit_progress(current_progress, total_downloads, &format!("Updated: {}", addon.addon_name));
+            }
+            Err(e) => {
+                // Rollback on error
+                for path in &installed_paths {
+                    let _ = async_fs::remove_file(path).await;
+                }
+                return Err(format!("Failed to update addon: {}", e));
+            }
+        }
+    }
+
+    // Install config files
+    for config in config_files {
+        let dest = Path::new(modpack_path).join(&config.relative_path);
+        if let Some(parent) = dest.parent() {
+            async_fs::create_dir_all(parent).await.map_err(|e| {
+                format!("Failed to create directory {}: {}", parent.display(), e)
+            })?;
+        }
+        
+        async_fs::write(&dest, config.content).await.map_err(|e| {
+            format!("Failed to write config file {}: {}", dest.display(), e)
+        })?;
+        
+        installed_paths.push(dest.clone());
+        current_progress += 1;
+        emit_progress(current_progress, total_downloads, &format!("Installed config: {}", dest.display()));
+    }
+
+    emit_progress(total_downloads, total_downloads, "Optimized installation complete!");
+    println!("✅ Optimized install complete! Skipped {} unchanged addons.", diff.addons_unchanged.len());
+    
+    Ok(())
+}
+
+fn determine_addon_category(manifest: &Manifest, addon: &crate::composables::manifest::Addon) -> String {
+    if manifest.mods.iter().any(|a| a.addon_project_id == addon.addon_project_id) {
+        "mods".to_string()
+    } else if manifest.resourcepacks.iter().any(|a| a.addon_project_id == addon.addon_project_id) {
+        "resourcepacks".to_string()
+    } else if manifest.shaderpacks.iter().any(|a| a.addon_project_id == addon.addon_project_id) {
+        "shaderpacks".to_string()
+    } else {
+        "datapacks".to_string()
+    }
 }
