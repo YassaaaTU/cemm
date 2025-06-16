@@ -8,7 +8,32 @@
       class="text-2xl font-bold mb-4"
     >
       User Mode
-    </h2>    <!-- File Selection Section -->
+    </h2>
+
+    <!-- Quick GitHub Repo Input (top, for user convenience) -->
+    <section class="mb-4">
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">
+          GitHub Repo
+        </legend>
+        <div class="flex gap-2 items-center">
+          <input
+            v-model="githubRepo"
+            type="text"
+            class="input input-bordered flex-1"
+            placeholder="user/repo (e.g., john/my-modpack-updates)"
+            autocomplete="off"
+            aria-label="GitHub repository name"
+            @blur="saveGithubRepo"
+          />
+        </div>
+        <p class="label">
+          Required for downloading updates from GitHub. This is usually provided by the modpack developer.
+        </p>
+      </fieldset>
+    </section>
+
+    <!-- File Selection Section -->
     <section
       aria-labelledby="file-section"
       class="mb-6"
@@ -21,30 +46,6 @@
         Select the modpack directory where you want to install the update:
       </label>
       <file-selector />
-    </section>
-
-    <!-- GitHub Repository Section -->
-    <section
-      aria-labelledby="repo-section"
-      class="mb-6"
-    >
-      <fieldset class="fieldset">
-        <legend class="fieldset-legend">
-          GitHub Repository
-        </legend>
-        <input
-          id="github-repo"
-          v-model="githubRepo"
-          type="text"
-          class="input input-bordered w-full"
-          placeholder="user/repo (e.g., john/my-modpack-updates)"
-          autocomplete="off"
-          @blur="saveGithubRepo"
-        />
-        <p class="label">
-          The GitHub repository where modpack updates are stored
-        </p>
-      </fieldset>
     </section>
 
     <!-- UUID Input Section -->
