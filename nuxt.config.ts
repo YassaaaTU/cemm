@@ -2,8 +2,6 @@ import tailwindcss from '@tailwindcss/vite'
 import { defineNuxtConfig } from 'nuxt/config'
 
 export default defineNuxtConfig({
-	// Enable static generation for Tauri
-
 	modules: [
 		'nuxt-svgo',
 		'@nuxt/eslint',
@@ -12,7 +10,10 @@ export default defineNuxtConfig({
 		'@nuxt/icon',
 		'@pinia/nuxt',
 		'pinia-plugin-persistedstate'
-	],	ssr: false,
+	],
+
+	// Enable static generation for Tauri
+	ssr: false,
 
 	imports: {
 		presets: [
@@ -62,21 +63,47 @@ export default defineNuxtConfig({
 
 	future: {
 		compatibilityVersion: 4
-	},
-
-	experimental: {
-		typedPages: true
+	},	experimental: {
+		typedPages: true,
+		payloadExtraction: false, // Better for Tauri apps
+		writeEarlyHints: false,
+		componentIslands: false
 	},
 
 	compatibilityDate: '2025-03-01',
 	nitro: {
 		preset: 'static'
 	},
-
 	vite: {
 		plugins: [
 			tailwindcss()
-		]
+		],
+		build: {
+			// Code splitting for better performance
+			rollupOptions: {
+				output: {
+					manualChunks: {
+						vendor: ['vue', 'pinia'],
+						tauri: ['@tauri-apps/api'],
+						ui: ['tailwindcss']
+					}
+				}
+			},
+			// Optimize chunks
+			chunkSizeWarningLimit: 1600,
+			// Enable minification
+			minify: 'terser',
+			terserOptions: {
+				compress: {
+					drop_console: true,
+					drop_debugger: true
+				}
+			}
+		},
+		// Optimize deps
+		optimizeDeps: {
+			include: ['pinia', '@tauri-apps/api', 'pino']
+		}
 	},
 
 	eslint: {

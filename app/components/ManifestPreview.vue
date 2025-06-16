@@ -112,9 +112,25 @@ async function openCurseforge(addon: Addon)
     </div>
     <div
       v-else
-      class="text-gray-400"
+      class="space-y-4"
     >
-      No manifest loaded.
+      <!-- Skeleton loading state -->
+      <div class="flex items-center justify-center p-8 text-center">
+        <div class="space-y-3">
+          <div class="text-gray-400 text-sm">
+            No manifest loaded
+          </div>
+          <div class="text-xs opacity-60">
+            Load a minecraftinstance.json file to see addon details
+          </div>
+          <!-- Skeleton placeholder -->
+          <div class="space-y-2 mt-4">
+            <div class="skeleton h-4 w-32 mx-auto" />
+            <div class="skeleton h-3 w-24 mx-auto" />
+            <div class="skeleton h-3 w-28 mx-auto" />
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>

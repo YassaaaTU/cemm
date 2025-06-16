@@ -1,38 +1,67 @@
 <template>
-  <div>
-    <h2 class="text-2xl font-bold mb-4">
+  <div
+    role="main"
+    aria-labelledby="admin-mode-title"
+  >
+    <h2
+      id="admin-mode-title"
+      class="text-2xl font-bold mb-4"
+    >
       Admin Mode
     </h2>
-    <div class="flex gap-2 mt-4">
-      <button
-        class="btn btn-primary"
-        @click="loadInstance"
-      >
-        Load Instance
-      </button>
-      <button
-        class="btn btn-secondary"
-        :disabled="manifest == null"
-        @click="saveManifest"
-      >
-        Save Manifest
-      </button>      <button
-        class="btn btn-accent"
-        :disabled="manifest == null || uploading"
-        @click="uploadToGithub"
-      >
-        <span v-if="!uploading">
-          Upload to GitHub
-          <span
-            v-if="selectedConfigFiles.length > 0"
-            class="badge badge-secondary badge-sm ml-1"
-          >
-            +{{ selectedConfigFiles.length }} config
+
+    <!-- Action Buttons Section -->
+    <section
+      aria-labelledby="admin-actions-section"
+      class="mb-6"
+    >
+      <div class="flex flex-wrap gap-2">
+        <button
+          class="btn btn-primary"
+          aria-describedby="load-instance-help"
+          @click="loadInstance"
+        >
+          Load Instance
+        </button>
+
+        <button
+          class="btn btn-secondary"
+          :disabled="manifest == null"
+          :aria-describedby="manifest == null ? 'save-disabled-help' : 'save-manifest-help'"
+          @click="saveManifest"
+        >
+          Save Manifest
+        </button>
+
+        <button
+          class="btn btn-accent"
+          :disabled="manifest == null || uploading"
+          :aria-describedby="getUploadButtonDescription()"
+          @click="uploadToGithub"
+        >
+          <span v-if="!uploading">
+            Upload to GitHub
+            <span
+              v-if="selectedConfigFiles.length > 0"
+              class="badge badge-secondary badge-sm ml-1"
+              :aria-label="`${selectedConfigFiles.length} config files selected`"
+            >
+              +{{ selectedConfigFiles.length }} config
+            </span>
           </span>
-        </span>        <span v-else>Uploading...</span>
-      </button>
-    </div>    <!-- Enhanced Error Handling -->
-    <error-alert
+          <loading-spinner
+            v-else
+            :loading="true"
+            size="sm"
+            message="Uploading..."
+            aria-label="Uploading manifest and config files to GitHub"
+          />
+        </button>
+      </div>
+    </section>
+
+    <!-- Error Handling -->
+    <app-alert
       v-if="errorState.error"
       class="mt-4"
       :error-state="errorState"
@@ -41,16 +70,74 @@
       @close="clearError"
     />
 
-    <!-- Legacy Status Alert (for non-error messages) -->
-    <status-alert
+    <!-- Simple status messages (for non-error messages) -->
+    <app-alert
       v-else-if="statusMessage"
       class="mt-4"
       :message="statusMessage"
       :type="statusType"
     />
 
-    <addon-list class="mt-4" />
-    <manifest-preview class="mt-4" />
+    <div
+      v-if="manifest"
+      class="mt-4"
+    >
+      <addon-list
+        :addons="manifest.mods"
+        :update-info="manifestStore.updateInfo"
+        title="Mods"
+        category="mods"
+        class="mb-4"
+      />
+      <addon-list
+        v-if="manifest.resourcepacks.length > 0"
+        :addons="manifest.resourcepacks"
+        :update-info="manifestStore.updateInfo"
+        title="Resource Packs"
+        category="resourcepacks"
+        class="mb-4"
+      />
+      <addon-list
+        v-if="manifest.shaderpacks.length > 0"
+        :addons="manifest.shaderpacks"
+        :update-info="manifestStore.updateInfo"
+        title="Shader Packs"
+        category="shaderpacks"
+        class="mb-4"
+      />
+      <addon-list
+        v-if="manifest.datapacks.length > 0"
+        :addons="manifest.datapacks"
+        :update-info="manifestStore.updateInfo"
+        title="Data Packs"
+        category="datapacks"
+      />
+    </div>
+
+    <div
+      v-else
+      class="space-y-4"
+    >
+      <!-- Skeleton loading state -->
+      <div class="flex items-center justify-center p-8 text-center">
+        <div class="space-y-3">
+          <div class="text-gray-400 text-sm">
+            No manifest loaded
+          </div>
+          <div class="text-xs opacity-60">
+            Load a minecraftinstance.json file to see addon details
+          </div>
+          <!-- Skeleton placeholder -->
+          <div class="space-y-2 mt-4">
+            <div class="skeleton h-4 w-32 mx-auto" />
+            <div class="skeleton h-3 w-24 mx-auto" />
+            <div class="skeleton h-3 w-28 mx-auto" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- <manifest-preview class="mt-4" /> -->
 
     <!-- Config Files Section -->
     <div class="mt-6 card bg-base-200 shadow-lg">
@@ -65,40 +152,22 @@
             class="btn btn-outline btn-sm"
             @click="selectConfigFiles"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-4 h-4"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M12 4.5v15m7.5-7.5h-15"
-              />
-            </svg>
+            <Icon
+              name="mdi:file-plus"
+              size="1.2rem"
+              class="mr-1"
+            />
             Add Config Files
           </button>
           <button
             class="btn btn-outline btn-sm"
             @click="selectConfigDirectory"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-4 h-4"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25H11.69a1.5 1.5 0 0 0-1.061.44Z"
-              />
-            </svg>
+            <Icon
+              name="mdi:folder-plus"
+              size="1.2rem"
+              class="mr-1"
+            />
             Add From Directory
           </button>
           <button
@@ -106,20 +175,11 @@
             class="btn btn-outline btn-error btn-sm"
             @click="clearConfigFiles"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-4 h-4"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
-              />
-            </svg>
+            <Icon
+              name="mdi:trash-can"
+              size="1.2rem"
+              class="mr-1"
+            />
             Clear All
           </button>
         </div>
@@ -150,20 +210,11 @@
               class="btn btn-ghost btn-xs btn-circle"
               @click="removeConfigFile(configFile)"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-                class="w-4 h-4"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
+              <Icon
+                name="mdi:close"
+                size="1.2rem"
+                class="text-error"
+              />
             </button>
           </div>
         </div>
@@ -172,20 +223,11 @@
           v-else
           class="text-center py-6 opacity-60"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke-width="1.5"
-            stroke="currentColor"
-            class="w-12 h-12 mx-auto mb-2 opacity-40"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
-            />
-          </svg>
+          <Icon
+            name="mdi:file-document-outline"
+            size="4rem"
+            class="text-gray-400 mb-2"
+          />
           <p class="text-sm">
             No config files selected
           </p>
@@ -195,30 +237,19 @@
         </div>
       </div>
     </div>
-
     <div class="mt-6 flex flex-col gap-2">
-      <progress-bar :progress="progress" />
-      <status-alert
-        :message="statusMessage"
-        :type="statusType"
+      <progress-bar
+        :progress="progress"
+        :label="uploading ? 'Uploading to GitHub...' : ''"
+        :color="uploading ? 'primary' : 'success'"
+        :show-percentage="uploading"
       />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import AddonList from '~/components/AddonList.vue'
-import ErrorAlert from '~/components/ErrorAlert.vue'
-import ManifestPreview from '~/components/ManifestPreview.vue'
-import ProgressBar from '~/components/ProgressBar.vue'
-import StatusAlert from '~/components/StatusAlert.vue'
-import { useGithubApi } from '~/composables/useGithubApi'
-import { useSecureStorage } from '~/composables/useSecureStorage'
-import { useTauri } from '~/composables/useTauri'
-import { useAppStore } from '~/stores/app'
-import { useManifestStore } from '~/stores/manifest'
 import type { ConfigFileWithContent, Manifest } from '~/types'
-import { AppError, createErrorHandler, withNetworkRetry } from '~/utils/errorHandler'
 
 const { uploadUpdate } = useGithubApi()
 const { getSecure } = useSecureStorage()
@@ -253,6 +284,20 @@ const selectedConfigFiles = ref<ConfigFileWithContent[]>([])
 const { selectFile, selectSaveFile, selectMultipleFiles, selectConfigDirectory: selectDirectory, readDirectoryRecursive, writeFile, parseMinecraftInstance, compareManifests, readFile } = useTauri()
 const manifestStore = useManifestStore()
 const manifest = computed(() => manifestStore.manifest)
+
+// Accessibility helper methods for button descriptions
+const getUploadButtonDescription = () =>
+{
+	if (manifest.value == null)
+	{
+		return 'upload-disabled-help'
+	}
+	if (uploading.value)
+	{
+		return 'upload-disabled-help'
+	}
+	return 'upload-help'
+}
 
 // Config file selection functions
 async function selectConfigFiles()

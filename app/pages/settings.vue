@@ -9,7 +9,7 @@
     <h1 class="text-2xl font-bold mb-4">
       Settings
     </h1>
-    <git-hub-settings />
+    <GitHubSettings />
   </div>
 </template>
 

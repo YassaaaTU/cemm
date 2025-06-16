@@ -1,55 +1,167 @@
 <template>
-  <div>
-    <h2 class="text-2xl font-bold mb-4">
+  <div
+    role="main"
+    aria-labelledby="user-mode-title"
+  >
+    <h2
+      id="user-mode-title"
+      class="text-2xl font-bold mb-4"
+    >
       User Mode
     </h2>
-    <div class="form-control w-full max-w-xs">
-      <label class="label">
-        <span class="label-text">Update UUID</span>
-      </label>
-      <input
-        v-model="uuid"
-        type="text"
-        class="input input-bordered w-full"
-        placeholder="Paste update UUID here"
-      />
-    </div>
-    <file-selector class="mt-4" />
-    <div class="flex gap-2 mt-4">
-      <button
-        class="btn btn-primary"
-        @click="openManifest"
-      >
-        Open Manifest
-      </button>
-      <button
-        class="btn btn-secondary"
-        :disabled="manifest == null"
-        @click="saveManifest"
-      >
-        Save Manifest
-      </button>      <button
-        class="btn btn-accent"
-        :disabled="downloading || uuid.trim().length === 0"
-        @click="downloadFromGithub"
-      >
-        <span v-if="!downloading">Download Manifest</span>
-        <span
-          v-else
-          class="loading loading-spinner"
+
+    <!-- UUID Input Section -->
+    <section
+      aria-labelledby="uuid-section"
+      class="mb-6"
+    >
+      <div class="form-control w-full max-w-xs">
+        <label
+          for="uuid-input"
+          class="label"
+        >
+          <span class="label-text">Update UUID</span>
+        </label>
+        <input
+          id="uuid-input"
+          v-model="uuid"
+          type="text"
+          class="input input-bordered w-full"
+          placeholder="Paste update UUID here"
+          aria-describedby="uuid-help"
+          :aria-invalid="uuid.trim().length > 0 && uuid.trim().length < 8"
         />
-      </button>      <button
-        class="btn btn-success"
-        :disabled="!canInstall"
-        @click="showPreview = true"
+        <div
+          id="uuid-help"
+          class="label"
+        >
+          <span class="label-text-alt text-xs opacity-70">
+            Enter the UUID code provided by the modpack admin
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- File Selection Section -->
+    <section
+      aria-labelledby="file-section"
+      class="mb-6"
+    >
+      <h3
+        id="file-section"
+        class="sr-only"
       >
-        <span v-if="!installing">Install Update</span>
-        <span
-          v-else
-          class="loading loading-spinner"
-        />
-      </button>
-    </div>
+        Modpack Directory Selection
+      </h3>
+      <file-selector />
+    </section>
+
+    <!-- Action Buttons Section -->
+    <section
+      aria-labelledby="actions-section"
+      class="mb-6"
+    >
+      <h3
+        id="actions-section"
+        class="sr-only"
+      >
+        Available Actions
+      </h3>
+      <div class="flex flex-wrap gap-2">
+        <button
+          class="btn btn-primary"
+          aria-describedby="open-manifest-help"
+          @click="openManifest"
+        >
+          Open Manifest
+        </button>
+        <div
+          id="open-manifest-help"
+          class="sr-only"
+        >
+          Open an existing manifest file from your computer
+        </div>
+
+        <button
+          class="btn btn-secondary"
+          :disabled="manifest == null"
+          :aria-describedby="manifest == null ? 'save-disabled-help' : 'save-manifest-help'"
+          @click="saveManifest"
+        >
+          Save Manifest
+        </button>
+        <div
+          id="save-manifest-help"
+          class="sr-only"
+        >
+          Save the current manifest to your computer
+        </div>
+        <div
+          id="save-disabled-help"
+          class="sr-only"
+        >
+          Save is disabled because no manifest is loaded
+        </div>
+
+        <button
+          class="btn btn-accent"
+          :disabled="downloading || uuid.trim().length === 0"
+          :aria-describedby="getDownloadButtonDescription()"
+          @click="downloadFromGithub"
+        >
+          <span v-if="!downloading">Download Manifest</span>
+          <loading-spinner
+            v-else
+            :loading="true"
+            size="sm"
+            message=""
+            aria-label="Downloading manifest from GitHub"
+          />
+        </button>
+
+        <button
+          class="btn btn-success"
+          :disabled="!canInstall"
+          :aria-describedby="getInstallButtonDescription()"
+          @click="showPreview = true"
+        >
+          <span v-if="!installing">Install Update</span>
+          <loading-spinner
+            v-else
+            :loading="true"
+            size="sm"
+            message=""
+            aria-label="Installing modpack update"
+          />
+        </button>
+      </div>
+
+      <!-- Hidden descriptive elements for screen readers -->
+      <div
+        id="download-help"
+        class="sr-only"
+      >
+        Download manifest and config files from GitHub using the UUID
+      </div>
+      <div
+        id="download-disabled-help"
+        class="sr-only"
+      >
+        Download is disabled because no UUID is entered or download is in progress
+      </div>
+      <div
+        id="install-help"
+        class="sr-only"
+      >
+        Preview and install the downloaded update to your modpack
+      </div>
+      <div
+        id="install-disabled-help"
+        class="sr-only"
+      >
+        Install is disabled because no manifest is loaded or installation is in progress
+      </div>
+    </section>
     <manifest-preview class="mt-4" />
     <div
       v-if="manifest && manifest.datapacks && manifest.datapacks.length > 0"
@@ -64,20 +176,48 @@
           {{ datapack.addon_name }} ({{ datapack.version }})
         </li>
       </ul>
-    </div>    <addon-list class="mt-4" />
+    </div>
 
-    <!-- Enhanced Error Alert -->
-    <error-alert
+    <div
+      v-if="manifest"
+      class="mt-4"
+    >
+      <addon-list
+        :addons="manifest.mods"
+        title="Mods"
+        category="mods"
+        class="mb-4"
+      />
+      <addon-list
+        v-if="manifest.resourcepacks.length > 0"
+        :addons="manifest.resourcepacks"
+        title="Resource Packs"
+        category="resourcepacks"
+        class="mb-4"
+      />
+      <addon-list
+        v-if="manifest.shaderpacks.length > 0"
+        :addons="manifest.shaderpacks"
+        title="Shader Packs"
+        category="shaderpacks"
+        class="mb-4"
+      />
+    </div>    <!-- Enhanced Error Alert -->
+    <app-alert
       :error-state="errorState"
       :retry-operation="retryCurrentOperation"
       :show-technical-details="true"
       @close="clearError"
       @retry="retryCurrentOperation"
     />
-
     <div class="mt-6 flex flex-col gap-2">
-      <progress-bar :progress="progress" />
-      <status-alert
+      <progress-bar
+        :progress="progress"
+        :label="getProgressLabel()"
+        :color="getProgressColor()"
+        :show-percentage="downloading || installing"
+      />
+      <app-alert
         :message="statusMessage"
         :type="statusType"
       />
@@ -96,15 +236,7 @@
 <script setup lang="ts">
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
-import AddonList from '~/components/AddonList.vue'
-import ErrorAlert from '~/components/ErrorAlert.vue'
-import FileSelector from '~/components/FileSelector.vue'
-import ManifestPreview from '~/components/ManifestPreview.vue'
-import ProgressBar from '~/components/ProgressBar.vue'
-import StatusAlert from '~/components/StatusAlert.vue'
-import UpdatePreview from '~/components/UpdatePreview.vue'
 import type { ConfigFileWithContent, Manifest } from '~/types'
-import { createErrorHandler, withNetworkRetry } from '~/utils/errorHandler'
 
 interface InstallProgressEvent
 {
@@ -703,5 +835,59 @@ async function installUpdate()
 			unlisten()
 		}
 	}
+}
+
+// Accessibility helper methods for button descriptions
+const getDownloadButtonDescription = () =>
+{
+	if (downloading.value)
+	{
+		return 'download-disabled-help'
+	}
+	if (uuid.value.trim().length === 0)
+	{
+		return 'download-disabled-help'
+	}
+	return 'download-help'
+}
+
+const getInstallButtonDescription = () =>
+{
+	if (!canInstall.value)
+	{
+		return 'install-disabled-help'
+	}
+	return 'install-help'
+}
+
+// Progress bar helper functions
+const getProgressLabel = () =>
+{
+	if (downloading.value)
+	{
+		return 'Downloading from GitHub...'
+	}
+	if (installing.value)
+	{
+		return 'Installing addons and config files...'
+	}
+	return ''
+}
+
+const getProgressColor = (): 'primary' | 'secondary' | 'accent' | 'success' | 'warning' | 'error' | 'info' =>
+{
+	if (downloading.value)
+	{
+		return 'info'
+	}
+	if (installing.value)
+	{
+		return 'primary'
+	}
+	if (progress.value === 100)
+	{
+		return 'success'
+	}
+	return 'primary'
 }
 </script>
