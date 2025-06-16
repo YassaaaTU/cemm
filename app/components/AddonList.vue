@@ -60,37 +60,23 @@
     </div>
 
     <!-- Virtual scrolling container for large lists -->
-    <div
-      v-else-if="useVirtualScrolling"
-      ref="containerRef"
-      class="relative overflow-y-auto"
+    <v-list
+      v-if="useVirtualScrolling"
+      v-slot="{ item: addon, index }"
+      :data="displayedAddons"
       :style="{ height: `${containerHeight}px` }"
-      @scroll="handleScroll"
     >
-      <!-- Total height spacer -->
-      <div
-        class="block"
-        :style="{ height: `${totalHeight}px` }"
+      <addon-item
+        :key="`${addon.addon_project_id}-${addon.version}`"
+        :addon="addon"
+        :index="index"
+        :selected="selectedAddons.includes(addon.addon_name)"
+        :show-selection="showSelection"
+        :status="getAddonStatus(addon)"
+        @toggle-selection="handleToggleSelection"
+        @open-link="openCurseforge(addon)"
       />
-
-      <!-- Visible items -->
-      <div
-        class="transition-transform"
-        :style="{ transform: `translateY(${offsetY}px)` }"
-      >
-        <addon-item
-          v-for="{ item: addon, index, key } in visibleItems"
-          :key="key"
-          :addon="addon"
-          :index="index"
-          :selected="selectedAddons.includes(addon.addon_name)"
-          :show-selection="showSelection"
-          :status="getAddonStatus(addon)"
-          @toggle-selection="handleToggleSelection"
-          @open-link="openCurseforge(addon)"
-        />
-      </div>
-    </div>
+    </v-list>
 
     <!-- Regular rendering for smaller lists -->
     <div
@@ -131,8 +117,9 @@
 
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core'
+import { VList } from 'virtua/vue'
 
-import { useLazyList, useSearchOptimized } from '~/composables/usePerformance'
+import { useSearchOptimized } from '~/composables/usePerformance'
 import type { Addon, UpdateInfo } from '~/types'
 
 const logger = usePinoLogger()
@@ -179,19 +166,6 @@ const { searchTerm, isSearching, filteredItems } = useSearchOptimized(
 // Virtual scrolling for large lists
 const useVirtualScrolling = computed(() => filteredItems.value.length > props.virtualScrollThreshold)
 
-const {
-	containerRef,
-	visibleItems,
-	totalHeight,
-	offsetY,
-	handleScroll,
-	getStats
-} = useLazyList(filteredItems, {
-	itemHeight: 60,
-	bufferSize: 5,
-	threshold: props.virtualScrollThreshold
-})
-
 // Event handlers
 const emit = defineEmits<{ toggleSelection: [addonName: string] }>()
 
@@ -233,9 +207,11 @@ async function openCurseforge(addon: Addon)
 }
 
 // Computed properties
-const displayedAddons = computed(() => filteredItems.value)
+const displayedAddons = computed(() =>
+	filteredItems.value.filter((a) => a.disabled !== true)
+)
 const totalAddons = computed(() => props.addons.length)
-const visibleCount = computed(() => useVirtualScrolling.value ? visibleItems.value.length : displayedAddons.value.length)
+const visibleCount = computed(() => displayedAddons.value.length)
 const renderRatio = computed(() => Math.round((visibleCount.value / Math.max(totalAddons.value, 1)) * 100))
 
 // Performance metrics
@@ -275,7 +251,6 @@ function getAddonStatus(addon: Addon): '' | 'added' | 'removed'
 
 // Expose stats for debugging
 const getPerformanceStats = () => ({
-	...getStats(),
 	searchDuration: searchDuration.value,
 	memoryEstimate: memoryEstimate.value,
 	useVirtualScrolling: useVirtualScrolling.value

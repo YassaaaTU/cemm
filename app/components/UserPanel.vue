@@ -75,23 +75,6 @@
       class="mb-6"
     >
       <div class="flex flex-wrap gap-2">
-        <!-- <button
-          class="btn btn-primary"
-          aria-describedby="open-manifest-help"
-          @click="openManifest"
-        >
-          Open Manifest
-        </button> -->
-
-        <!-- <button
-          class="btn btn-secondary"
-          :disabled="manifest == null"
-          :aria-describedby="manifest == null ? 'save-disabled-help' : 'save-manifest-help'"
-          @click="saveManifest"
-        >
-          Save Manifest
-        </button> -->
-
         <button
           class="btn btn-success"
           :disabled="!canInstall"
@@ -195,8 +178,7 @@ const uuid = ref('')
 const progress = ref(0)
 const statusMessage = ref('')
 const statusType = ref<'success' | 'error' | 'info' | 'warning'>('info')
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const { selectFile, writeFile, readFile, parseMinecraftInstance } = useTauri()
+const { writeFile, readFile, parseMinecraftInstance } = useTauri()
 const manifestStore = useManifestStore()
 const manifest = computed(() => manifestStore.manifest)
 const appStore = useAppStore()
@@ -204,7 +186,7 @@ const downloading = ref(false)
 const installing = ref(false)
 const downloadedConfigFiles = ref<ConfigFileWithContent[]>([])
 const logger = usePinoLogger()
-const { installUpdate: tauriInstallUpdate, installUpdateWithCleanup } = useTauri()
+const { installUpdateWithCleanup } = useTauri()
 const path = computed(() => appStore.modpackPath)
 
 // Enhanced error handling
@@ -250,33 +232,39 @@ const previewData = computed(() =>
 	{
 		// Helper function to process addon categories
 		const processCategory = (
-			oldAddons: Array<{ addon_project_id: number, addon_name: string, version: string }>,
-			newAddons: Array<{ addon_project_id: number, addon_name: string, version: string }>
+			oldAddons: Array<{ addon_project_id: number, addon_name: string, version: string, disabled?: boolean }>,
+			newAddons: Array<{ addon_project_id: number, addon_name: string, version: string, disabled?: boolean }>
 		) =>
 		{
-			// Find removed addons
+			// Find removed addons - only count as removed if:
+			// 1. Old addon was enabled (not disabled) AND new addon is missing or disabled
+			// 2. This prevents showing "will remove" for addons that were already disabled/removed
 			for (const oldAddon of oldAddons)
 			{
-				const found = newAddons.find((a) => a.addon_project_id === oldAddon.addon_project_id)
-				if (found === undefined)
+				// Skip if old addon was already disabled - can't "remove" something that wasn't active
+				if (oldAddon.disabled === true) continue
+
+				const newAddon = newAddons.find((a) => a.addon_project_id === oldAddon.addon_project_id)
+				if (newAddon === undefined || newAddon.disabled === true)
 				{
 					diff.removed_addons.push(oldAddon.addon_name)
 				}
 			}
 
-			// Find updated addons
+			// Find updated addons (same project ID, different version, not disabled)
 			for (const oldAddon of oldAddons)
 			{
 				const newAddon = newAddons.find((a) => a.addon_project_id === oldAddon.addon_project_id)
-				if (newAddon !== undefined && oldAddon.version !== newAddon.version)
+				if (newAddon !== undefined && newAddon.disabled !== true && oldAddon.version !== newAddon.version)
 				{
 					diff.updated_addons.push([oldAddon.version, newAddon.version])
 				}
 			}
 
-			// Find new addons
+			// Find new addons (in new but not old, and not disabled)
 			for (const newAddon of newAddons)
 			{
+				if (newAddon.disabled === true) continue // Skip disabled addons
 				const found = oldAddons.find((a) => a.addon_project_id === newAddon.addon_project_id)
 				if (found === undefined)
 				{
@@ -293,12 +281,12 @@ const previewData = computed(() =>
 	}
 	else
 	{
-		// Fresh install - everything is new
+		// Fresh install - everything is new (except disabled addons)
 		diff.new_addons = [
-			...newManifest.mods.map((addon) => addon.addon_name),
-			...newManifest.resourcepacks.map((addon) => addon.addon_name),
-			...newManifest.shaderpacks.map((addon) => addon.addon_name),
-			...newManifest.datapacks.map((addon) => addon.addon_name)
+			...newManifest.mods.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
+			...newManifest.resourcepacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
+			...newManifest.shaderpacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
+			...newManifest.datapacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name)
 		]
 	}
 
@@ -332,179 +320,7 @@ async function confirmInstall()
 			return // Don't proceed with installation if config download fails
 		}
 	}
-
 	installUpdate()
-}
-
-// async function openManifest()
-// {
-// 	statusMessage.value = ''
-// 	const filePath = await selectFile()
-// 	if (filePath == null || filePath.length === 0)
-// 	{
-// 		statusMessage.value = 'No file selected.'
-// 		statusType.value = 'warning'
-// 		return
-// 	}
-// 	const content = await readFile(filePath)
-// 	if (content == null || content.length === 0)
-// 	{
-// 		statusMessage.value = 'Failed to read file.'
-// 		statusType.value = 'error'
-// 		return
-// 	}
-// 	try
-// 	{
-// 		const parsed = JSON.parse(content)
-// 		manifestStore.setManifest(parsed)
-// 		statusMessage.value = 'Manifest loaded.'
-// 		statusType.value = 'success'
-// 	}
-// 	catch (_err)
-// 	{
-// 		statusMessage.value = 'Invalid manifest format.'
-// 		statusType.value = 'error'
-// 	}
-// }
-
-// async function saveManifest()
-// {
-// 	statusMessage.value = ''
-// 	if (manifest.value == null)
-// 	{
-// 		return
-// 	}
-// 	const filePath = await selectFile()
-// 	if (filePath == null || filePath.length === 0)
-// 	{
-// 		statusMessage.value = 'No file selected.'
-// 		statusType.value = 'warning'
-// 		return
-// 	}
-// 	const ok = await writeFile(filePath, JSON.stringify(manifest.value, null, 2))
-// 	if (ok)
-// 	{
-// 		statusMessage.value = 'Manifest saved.'
-// 		statusType.value = 'success'
-// 	}
-// 	else
-// 	{
-// 		statusMessage.value = 'Failed to save file.'
-// 		statusType.value = 'error'
-// 	}
-// }
-
-async function backupAndReplaceManifest(modpackPath: string, newManifest: Manifest)
-{
-	const manifestPath = `${modpackPath}/manifest.json`
-	const oldManifestPath = `${modpackPath}/manifest_old.json`
-
-	try
-	{
-		// Check if current manifest.json exists
-		const currentManifestContent = await readFile(manifestPath)
-
-		if (currentManifestContent !== null && currentManifestContent.trim().length > 0)
-		{
-			// Delete any existing manifest_old.json
-			// Note: writeFile with single file will overwrite, so we don't need to manually delete
-
-			// Move current manifest.json to manifest_old.json
-			const backupSuccess = await writeFile(oldManifestPath, currentManifestContent)
-			if (!backupSuccess)
-			{
-				throw new Error('Failed to backup current manifest')
-			}
-			logger.info('Backed up current manifest to manifest_old.json')
-		}
-
-		// Write new manifest as manifest.json
-		const writeSuccess = await writeFile(manifestPath, JSON.stringify(newManifest, null, 2))
-		if (!writeSuccess)
-		{
-			throw new Error('Failed to write new manifest')
-		}
-
-		logger.info('Successfully updated manifest.json')
-		return true
-	}
-	catch (err)
-	{
-		logger.error('Failed to backup and replace manifest', { err })
-		throw err
-	}
-}
-
-/**
- * Try to load manifest from minecraftinstance.json when no manifest.json exists
- * This allows updating from raw Minecraft instances
- */
-async function tryLoadFromMinecraftInstance(modpackPath: string)
-{
-	try
-	{
-		// Check for minecraftinstance.json
-		const minecraftInstancePath = `${modpackPath}/minecraftinstance.json`
-		const minecraftInstanceContent = await readFile(minecraftInstancePath)
-
-		if (minecraftInstanceContent !== null && minecraftInstanceContent.trim().length > 0)
-		{
-			logger.info('Found minecraftinstance.json, parsing to manifest format')
-			statusMessage.value = 'Converting minecraftinstance.json to manifest format...' // Parse minecraftinstance.json into manifest format
-			const parsedManifest = await parseMinecraftInstance(minecraftInstancePath)
-
-			if (parsedManifest !== null)
-			{
-				logger.info('Successfully parsed minecraftinstance.json to manifest')
-
-				// Step 1: Write the parsed manifest as manifest.json
-				const manifestPath = `${modpackPath}/manifest.json`
-				const manifestContent = JSON.stringify(parsedManifest, null, 2)
-				const writeSuccess = await writeFile(manifestPath, manifestContent)
-
-				if (!writeSuccess)
-				{
-					throw new Error('Failed to write parsed manifest.json')
-				}
-
-				logger.info('Created manifest.json from minecraftinstance.json')
-
-				// Step 2: Immediately rename it to manifest_old.json for backup
-				const oldManifestPath = `${modpackPath}/manifest_old.json`
-				const backupSuccess = await writeFile(oldManifestPath, manifestContent)
-
-				if (!backupSuccess)
-				{
-					throw new Error('Failed to backup parsed manifest as manifest_old.json')
-				}
-
-				logger.info('Backed up parsed manifest as manifest_old.json')
-
-				// Step 3: Load the parsed manifest as the previous manifest for comparison
-				manifestStore.loadInstalledManifest(parsedManifest)
-
-				statusMessage.value = 'Converted Minecraft instance to manifest format for update comparison'
-				return
-			}
-			else
-			{
-				logger.error('Failed to parse minecraftinstance.json')
-				throw new Error('Invalid minecraftinstance.json format')
-			}
-		}
-		else
-		{
-			// No minecraftinstance.json found either
-			logger.debug('No minecraftinstance.json found, proceeding with fresh install')
-			manifestStore.loadInstalledManifest(null)
-		}
-	}
-	catch (err)
-	{
-		logger.error('Failed to process minecraftinstance.json', { err })
-		// Fall back to fresh install
-		manifestStore.loadInstalledManifest(null)
-	}
 }
 
 async function downloadFromGithub()
@@ -569,42 +385,29 @@ async function downloadFromGithub()
 		manifestStore.setManifest(manifest)
 		progress.value = 50
 		statusMessage.value = 'Manifest downloaded. Ready to preview update.'
-
 		// Load existing manifest for comparison if modpack path is selected
 		const modpackPath = appStore.modpackPath
 		if (modpackPath && modpackPath.trim().length > 0)
 		{
 			await executeWithRecovery(async () =>
 			{
-				// Enhanced manifest loading logic for update workflow
-				// Step 1: Try to read existing manifest.json from the modpack directory
-				const manifestPath = `${modpackPath}/manifest.json`
-				const existingManifestContent = await readFile(manifestPath)
+				// IMPROVED: Always generate manifest_old.json from minecraftinstance.json (actual installed state)
+				progress.value = 60
+				statusMessage.value = 'Generating manifest_old.json from current installation...'
 
-				if (existingManifestContent !== null && existingManifestContent.trim().length > 0)
-				{
-					// Found existing manifest.json - use it as previous manifest
-					const existingManifest = JSON.parse(existingManifestContent)
-					manifestStore.loadInstalledManifest(existingManifest)
-					logger.info('Loaded existing manifest.json for update comparison', { manifestPath })
-				}
-				else
-				{
-					// Step 2: No manifest.json found, check for minecraftinstance.json
-					await tryLoadFromMinecraftInstance(modpackPath)
-				}
-			}, 'loadExistingManifest')
+				await generateManifestOldFromMinecraftInstance(modpackPath)
+			}, 'generateManifestOld')
 
-			// Backup current manifest and write new one using our new system
-			progress.value = 60
-			statusMessage.value = 'Backing up existing manifest...'
+			// Write new manifest.json (target state)
+			progress.value = 80
+			statusMessage.value = 'Writing new manifest.json...'
 
 			await executeWithRecovery(async () =>
 			{
-				await backupAndReplaceManifest(modpackPath, manifest)
-			}, 'backupManifest')
+				await writeNewManifest(modpackPath, manifest)
+			}, 'writeNewManifest')
 
-			logger.info('Phase 1 complete: Manifest downloaded and backed up')
+			logger.info('Phase 1 complete: Manifest downloaded with improved backup system')
 		}
 		else
 		{
@@ -742,28 +545,15 @@ async function installUpdate()
 				throw new Error(`Invalid config file structure: ${JSON.stringify(configFile)}`)
 			}
 		}
-
-		if (previousManifest !== null)
-		{
-			// Use update with cleanup for existing installations
-			await installUpdateWithCleanup(
-				appStore.modpackPath,
-				previousManifest,
-				manifest.value,
-				configFiles
-			)
-			statusMessage.value = 'Update installation complete!'
-		}
-		else
-		{
-			// Use regular install for fresh installations
-			await tauriInstallUpdate(
-				appStore.modpackPath,
-				manifest.value,
-				configFiles
-			)
-			statusMessage.value = 'Fresh installation complete!'
-		}
+		// Always use update with cleanup for any installation
+		// This ensures removal of old/disabled mods even if previousManifest is unknown
+		await installUpdateWithCleanup(
+			appStore.modpackPath,
+			previousManifest, // Can be null, cleanup will handle it
+			manifest.value,
+			configFiles
+		)
+		statusMessage.value = previousManifest !== null ? 'Update installation complete!' : 'Fresh installation complete!'
 
 		statusType.value = 'success'
 	}
@@ -836,5 +626,146 @@ const getProgressColor = (): 'primary' | 'secondary' | 'accent' | 'success' | 'w
 		return 'success'
 	}
 	return 'primary'
+}
+
+// Navigation state management - fix for settings → dashboard bug
+const route = useRoute()
+const isNavigatingFromSettings = ref(false)
+
+// Reset component state when navigating back from settings
+const resetComponentState = () =>
+{
+	// Reset all local state that might be stale
+	uuid.value = ''
+	progress.value = 0
+	statusMessage.value = ''
+	statusType.value = 'info'
+	downloading.value = false
+	installing.value = false
+	showPreview.value = false
+	configFilesDownloaded.value = false
+	downloadedConfigFiles.value = []
+	currentOperation.value = null
+
+	// Clear any errors
+	clearError()
+
+	logger.info('Component state reset after navigation')
+}
+
+// Watch for route changes to detect navigation back from settings
+watch(() => route.name, (newRouteName, oldRouteName) =>
+{
+	if (oldRouteName === 'settings' && newRouteName === 'dashboard')
+	{
+		isNavigatingFromSettings.value = true
+		resetComponentState()
+		logger.info('Detected navigation from settings to dashboard, state reset')
+	}
+})
+
+// Ensure component is properly initialized on mount
+onMounted(() =>
+{
+	// If we just navigated from settings, ensure UI is in proper state
+	if (isNavigatingFromSettings.value)
+	{
+		nextTick(() =>
+		{
+			isNavigatingFromSettings.value = false
+		})
+	}
+	logger.info('UserPanel mounted')
+})
+
+// Cleanup on unmount
+onUnmounted(() =>
+{
+	// Cancel any ongoing operations
+	if (currentOperation.value !== null)
+	{
+		currentOperation.value = null
+	}
+	logger.info('UserPanel unmounted')
+})
+
+async function generateManifestOldFromMinecraftInstance(modpackPath: string)
+{
+	try
+	{
+		// Always generate manifest_old.json from minecraftinstance.json to represent actual installed state
+		const minecraftInstancePath = `${modpackPath}/minecraftinstance.json`
+		const minecraftInstanceContent = await readFile(minecraftInstancePath)
+
+		if (minecraftInstanceContent !== null && minecraftInstanceContent.trim().length > 0)
+		{
+			logger.info('Generating manifest_old.json from minecraftinstance.json (actual installed state)')
+
+			// Parse minecraftinstance.json into manifest format
+			const parsedManifest = await parseMinecraftInstance(minecraftInstancePath)
+
+			if (parsedManifest !== null)
+			{
+				// Write as manifest_old.json (represents current installed state)
+				const oldManifestPath = `${modpackPath}/manifest_old.json`
+				const manifestContent = JSON.stringify(parsedManifest, null, 2)
+				const writeSuccess = await writeFile(oldManifestPath, manifestContent)
+
+				if (!writeSuccess)
+				{
+					throw new Error('Failed to write manifest_old.json from minecraftinstance.json')
+				}
+
+				logger.info('Successfully generated manifest_old.json from actual installed state')
+
+				// Load as previous manifest for comparison
+				manifestStore.loadInstalledManifest(parsedManifest)
+
+				return true
+			}
+			else
+			{
+				logger.error('Failed to parse minecraftinstance.json')
+				throw new Error('Invalid minecraftinstance.json format')
+			}
+		}
+		else
+		{
+			// No minecraftinstance.json found - fresh install
+			logger.debug('No minecraftinstance.json found, treating as fresh install')
+			manifestStore.loadInstalledManifest(null)
+			return false
+		}
+	}
+	catch (err)
+	{
+		logger.error('Failed to generate manifest_old.json from minecraftinstance.json', { err })
+		// Fall back to fresh install
+		manifestStore.loadInstalledManifest(null)
+		return false
+	}
+}
+
+async function writeNewManifest(modpackPath: string, newManifest: Manifest)
+{
+	try
+	{
+		// Simply write the new manifest.json (target state)
+		const manifestPath = `${modpackPath}/manifest.json`
+		const writeSuccess = await writeFile(manifestPath, JSON.stringify(newManifest, null, 2))
+
+		if (!writeSuccess)
+		{
+			throw new Error('Failed to write new manifest.json')
+		}
+
+		logger.info('Successfully wrote new manifest.json')
+		return true
+	}
+	catch (err)
+	{
+		logger.error('Failed to write new manifest.json', { err })
+		throw err
+	}
 }
 </script>

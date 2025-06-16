@@ -137,8 +137,6 @@
       </div>
     </div>
 
-    <!-- <manifest-preview class="mt-4" /> -->
-
     <!-- Config Files Section -->
     <div class="mt-6 card bg-base-200 shadow-lg">
       <div class="card-body">
@@ -616,4 +614,50 @@ async function selectConfigDirectory()
 		statusType.value = 'error'
 	}
 }
+
+// Navigation state management - fix for settings → dashboard bug
+const route = useRoute()
+
+// Reset component state when navigating back from settings
+const resetComponentState = () =>
+{
+	// Reset all local state that might be stale
+	uploading.value = false
+	progress.value = 0
+	statusMessage.value = ''
+	statusType.value = 'info'
+	currentOperation.value = null
+
+	// Clear any errors
+	clearError()
+
+	logger.info('AdminPanel state reset after navigation')
+}
+
+// Watch for route changes to detect navigation back from settings
+watch(() => route.name, (newRouteName, oldRouteName) =>
+{
+	if (oldRouteName === 'settings' && newRouteName === 'dashboard')
+	{
+		resetComponentState()
+		logger.info('Detected navigation from settings to dashboard, AdminPanel state reset')
+	}
+})
+
+// Ensure component is properly initialized on mount
+onMounted(() =>
+{
+	logger.info('AdminPanel mounted')
+})
+
+// Cleanup on unmount
+onUnmounted(() =>
+{
+	// Cancel any ongoing operations
+	if (currentOperation.value !== null)
+	{
+		currentOperation.value = null
+	}
+	logger.info('AdminPanel unmounted')
+})
 </script>

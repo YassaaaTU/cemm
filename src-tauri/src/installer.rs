@@ -62,18 +62,7 @@ pub async fn install_update(
             })));
         }
     }
-
-    // Helper to extract filename from URL
-    fn extract_filename_from_url(url: &str) -> Option<String> {
-        url.split('/').last()
-            .and_then(|name| {
-                if name.contains('.') && !name.is_empty() {
-                    Some(name.to_string())
-                } else {
-                    None
-                }
-            })
-    }    // Helper to download, save, and check integrity
+    // Helper to download, save, and check integrity
     async fn download_save_check(
         client: &Client,
         url: &str,
@@ -126,41 +115,49 @@ pub async fn install_update(
     }    // Wrap everything in a rollback guard
     let result: Result<(), String> = async {
         let window = None; // Optionally pass a tauri::Window for progress events
-        let mut current = 0usize;
-        // Mods
+        let mut current = 0usize;        // Mods
         for addon in &manifest.mods {
-            let filename = extract_filename_from_url(&addon.cdn_download_url)
-                .unwrap_or_else(|| format!("{}-{}.jar", addon.addon_name.replace(" ", "_"), addon.version));
+            // Skip disabled addons
+            if addon.disabled == Some(true) {
+                continue;
+            }
+            let filename = &addon.file_name_on_disk;
             let dest = Path::new(&modpack_path).join("mods").join(filename);
             download_save_check(&client, &addon.cdn_download_url, &dest, None).await?;
             installed_paths.push(dest.clone());
             current += 1;
             emit_progress(window.as_ref(), current, total_files, &format!("Installed mod: {}", addon.addon_name));
-        }
-        // Resourcepacks
+        }        // Resourcepacks
         for addon in &manifest.resourcepacks {
-            let filename = extract_filename_from_url(&addon.cdn_download_url)
-                .unwrap_or_else(|| format!("{}-{}.zip", addon.addon_name.replace(" ", "_"), addon.version));
+            // Skip disabled addons
+            if addon.disabled == Some(true) {
+                continue;
+            }
+            let filename = &addon.file_name_on_disk;
             let dest = Path::new(&modpack_path).join("resourcepacks").join(filename);
             download_save_check(&client, &addon.cdn_download_url, &dest, None).await?;
             installed_paths.push(dest.clone());
             current += 1;
             emit_progress(window.as_ref(), current, total_files, &format!("Installed resourcepack: {}", addon.addon_name));
-        }
-        // Shaderpacks
+        }        // Shaderpacks
         for addon in &manifest.shaderpacks {
-            let filename = extract_filename_from_url(&addon.cdn_download_url)
-                .unwrap_or_else(|| format!("{}-{}.zip", addon.addon_name.replace(" ", "_"), addon.version));
+            // Skip disabled addons
+            if addon.disabled == Some(true) {
+                continue;
+            }
+            let filename = &addon.file_name_on_disk;
             let dest = Path::new(&modpack_path).join("shaderpacks").join(filename);
             download_save_check(&client, &addon.cdn_download_url, &dest, None).await?;
             installed_paths.push(dest.clone());
             current += 1;
             emit_progress(window.as_ref(), current, total_files, &format!("Installed shaderpack: {}", addon.addon_name));
-        }
-        // Datapacks
+        }        // Datapacks
         for addon in &manifest.datapacks {
-            let filename = extract_filename_from_url(&addon.cdn_download_url)
-                .unwrap_or_else(|| format!("{}-{}.zip", addon.addon_name.replace(" ", "_"), addon.version));
+            // Skip disabled addons
+            if addon.disabled == Some(true) {
+                continue;
+            }
+            let filename = &addon.file_name_on_disk;
             let dest = Path::new(&modpack_path).join("datapacks").join(filename);
             download_save_check(&client, &addon.cdn_download_url, &dest, None).await?;
             installed_paths.push(dest.clone());
@@ -201,7 +198,6 @@ pub async fn install_update_with_cleanup(
     if old_manifest.is_none() {
         return install_update(modpack_path, new_manifest, config_files).await;
     }    let old_manifest = old_manifest.unwrap();
-    let _client = Client::new(); // Prefix with _ to indicate intentionally unused
 
     // Step 1: Calculate what needs to be removed/updated
     let diff = calculate_update_diff(&old_manifest, &new_manifest)?;
@@ -227,10 +223,15 @@ fn calculate_update_diff(old_manifest: &Manifest, new_manifest: &Manifest) -> Re
         diff: &mut UpdateDiff,
         _extract_filename: F,
     ) where F: Fn(&str) -> Option<String> {
-        // Find removed addons (in old but not in new)
+        // Find removed addons (in old but not in new, or disabled in new)
         for old_addon in old_addons {
-            if !new_addons.iter().any(|new_addon| new_addon.addon_project_id == old_addon.addon_project_id) {
+            let maybe_new = new_addons.iter().find(|new_addon| new_addon.addon_project_id == old_addon.addon_project_id);
+            if maybe_new.is_none() {
                 diff.removed_addons.push(old_addon.addon_name.clone());
+            } else if let Some(new_addon) = maybe_new {
+                if new_addon.disabled == Some(true) {
+                    diff.removed_addons.push(old_addon.addon_name.clone());
+                }
             }
         }
 
@@ -301,15 +302,14 @@ async fn remove_old_files(modpack_path: &str, old_manifest: &Manifest, diff: &Up
             let file_path = entry.path();
             let file_name = file_path.file_name()
                 .and_then(|name| name.to_str())
-                .unwrap_or("");
-
-            // Check if this file belongs to a removed addon
+                .unwrap_or("");            // Check if this file belongs to a removed addon
             for removed_addon in &diff.removed_addons {
                 if let Some(old_addon) = old_addons.iter().find(|a| &a.addon_name == removed_addon) {
-                    let expected_filename = extract_filename_from_url(&old_addon.cdn_download_url)
-                        .unwrap_or_else(|| format!("{}-{}", old_addon.addon_name.replace(" ", "_"), old_addon.version));
+                    let exact_filename = &old_addon.file_name_on_disk;
+                    let disabled_filename = format!("{}.disabled", exact_filename);
                     
-                    if file_name == expected_filename || file_name.contains(&old_addon.addon_name.replace(" ", "_")) {
+                    // Remove if matches exact filename or .disabled variant
+                    if file_name == exact_filename || file_name == disabled_filename {
                         async_fs::remove_file(&file_path).await
                             .map_err(|e| format!("Failed to remove file {}: {}", file_path.display(), e))?;
                         break; // File removed, no need to check other conditions

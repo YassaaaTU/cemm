@@ -1,6 +1,7 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::{Path, PathBuf};
 use tauri::command;
 use uuid::Uuid;
 
@@ -14,6 +15,10 @@ pub struct Addon {
     pub version: String,
     #[serde(rename = "webSiteURL")]
     pub web_site_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disabled: Option<bool>,
+    #[serde(rename = "fileNameOnDisk")]
+    pub file_name_on_disk: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -87,6 +92,12 @@ pub fn parse_minecraft_instance(path: String) -> Result<Manifest, String> {
         log::error!("parse_minecraft_instance: failed to parse JSON: {e}");
         e.to_string()
     })?;
+    // Scan for .disabled files in relevant folders
+    let base_dir = Path::new(&path).parent().unwrap_or_else(|| Path::new("."));
+    let disabled_mods = find_disabled_files(base_dir.join("mods"));
+    let disabled_resourcepacks = find_disabled_files(base_dir.join("resourcepacks"));
+    let disabled_shaderpacks = find_disabled_files(base_dir.join("shaderpacks"));
+    let disabled_datapacks = find_disabled_files(base_dir.join("datapacks"));
     let mut mods = Vec::new();
     let mut resourcepacks = Vec::new();
     let mut shaderpacks = Vec::new();
@@ -119,6 +130,28 @@ pub fn parse_minecraft_instance(path: String) -> Result<Manifest, String> {
         let Some(cdn_download_url) = &installed_file.download_url else {
             continue;
         };
+        // Determine if this addon is disabled by checking for .disabled file
+        let mut disabled = None;
+        let cat = category_name.to_lowercase();
+        let folder = mod_folder_path.to_lowercase();
+        let file_name = version;
+        if cat.contains("shader") || folder.ends_with("shaderpacks") {
+            if disabled_shaderpacks.contains(file_name) {
+                disabled = Some(true);
+            }
+        } else if cat.contains("resource") || folder.ends_with("resourcepacks") {
+            if disabled_resourcepacks.contains(file_name) {
+                disabled = Some(true);
+            }
+        } else if cat.contains("datapack") || folder.ends_with("datapacks") {
+            if disabled_datapacks.contains(file_name) {
+                disabled = Some(true);
+            }
+        } else {
+            if disabled_mods.contains(file_name) {
+                disabled = Some(true);
+            }
+        }
         let addon_struct = Addon {
             addon_file_id,
             addon_name: addon_name.clone(),
@@ -127,9 +160,9 @@ pub fn parse_minecraft_instance(path: String) -> Result<Manifest, String> {
             mod_folder_path: mod_folder_path.clone(),
             version: version.clone(),
             web_site_url: addon.web_site_url.clone(),
+            disabled,
+            file_name_on_disk: version.clone(), // Use the version field which contains the filename
         };
-        let cat = category_name.to_lowercase();
-        let folder = mod_folder_path.to_lowercase();
         if cat.contains("shader") || folder.ends_with("shaderpacks") {
             shaderpacks.push(addon_struct);
         } else if cat.contains("resource") || folder.ends_with("resourcepacks") {
@@ -149,6 +182,27 @@ pub fn parse_minecraft_instance(path: String) -> Result<Manifest, String> {
     })
 }
 
+fn find_disabled_files(dir: PathBuf) -> Vec<String> {
+    let mut result = Vec::new();
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(ext) = path.extension() {
+                if ext == "disabled" {
+                    // Get the file stem (e.g., modname.jar from modname.jar.disabled)
+                    if let Some(file_stem) = path.file_stem() {
+                        // file_stem is OsStr, convert to &str
+                        if let Some(stem_str) = file_stem.to_str() {
+                            result.push(stem_str.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
 #[command]
 pub fn compare_manifests(old: Manifest, new: Manifest) -> Result<UpdateInfo, String> {
     log::info!("compare_manifests: comparing manifests");
@@ -157,13 +211,22 @@ pub fn compare_manifests(old: Manifest, new: Manifest) -> Result<UpdateInfo, Str
     let added: Vec<Addon> = new
         .mods
         .iter()
-        .filter(|a| !old_ids.contains(&a.addon_name))
+        .filter(|a| !old_ids.contains(&a.addon_name) && a.disabled != Some(true))
         .cloned()
+        .collect();
+    // Build a set of disabled addon names in the new manifest
+    let disabled_in_new: std::collections::HashSet<_> = new
+        .mods
+        .iter()
+        .filter(|a| a.disabled == Some(true))
+        .map(|a| &a.addon_name)
         .collect();
     let removed: Vec<String> = old
         .mods
         .iter()
-        .filter(|a| !new_ids.contains(&a.addon_name))
+        .filter(|a| {
+            !new_ids.contains(&a.addon_name) || disabled_in_new.contains(&a.addon_name)
+        })
         .map(|a| a.addon_name.clone())
         .collect();
     let update_info = UpdateInfo {

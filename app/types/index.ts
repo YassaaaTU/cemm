@@ -7,7 +7,9 @@ export interface Addon
 	mod_folder_path: string
 	version: string
 	thumbnailUrl?: string // optional, for UI only
-	webSiteURL?: string // optional, CurseForge or homepage URL
+	webSiteURL?: string // optional, CurseForge or homepage URL (always preserved)
+	disabled?: boolean // optional, true if .disabled file detected
+	fileNameOnDisk: string // exact filename on disk for reliable removal
 }
 
 export interface ConfigFile

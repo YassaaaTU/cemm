@@ -495,3 +495,79 @@
    - In-app help system
    - User guide and troubleshooting
    - Developer documentation
+
+---
+
+## Summary of Completed Work
+
+### ✅ Major Fixes Implemented:
+1. **Disabled Mod Handling**: Complete system to detect, mark, and properly handle `.disabled` mods
+2. **Precise File Operations**: Added `fileNameOnDisk` field for exact file matching during updates
+3. **Enhanced Update Logic**: Implemented `install_update_with_cleanup()` for proper mod removal
+4. **UI Preview Accuracy**: Fixed update preview to correctly categorize disabled mods as removed
+5. **Code Cleanup**: Removed dead code, unused imports, and improved code organization
+6. **Virtual List Performance**: Fixed addon list rendering with `virtua` package for large lists
+7. **Navigation State Management**: Fixed settings → dashboard UI bug with lifecycle hooks and state reset
+8. **Phantom Removal Prevention**: Enhanced logic to prevent showing removal of already-disabled addons
+9. **Improved Backup System**: Manifest backup now uses minecraftinstance.json as source of truth
+
+### 🎯 Next Priority Tasks:
+1. Optimize update process to avoid redownloading unchanged addons
+
+The core disabled mod functionality and file removal logic are now working correctly!
+
+## Detected Bugs & Issues
+
+### ✅ COMPLETED FIXES:
+1. **Mods that are .disabled should be considered as removed** - ✅ **FIXED**
+   - Updated manifest generation to detect `.disabled` files and mark them with `disabled: true`
+   - Modified installer to skip disabled mods during installation
+   - Enhanced removal logic to delete both normal and `.disabled` variants
+   - Update preview now correctly shows disabled mods as "removed", not "new"
+
+2. **Large modpack: mod that should be removed was not removed** - ✅ **FIXED**
+   - Implemented `install_update_with_cleanup()` function in Rust backend
+   - Added precise file matching using `fileNameOnDisk` field for exact removal
+   - Enhanced removal logic to handle both regular files and `.disabled` variants
+   - Fixed update preview logic to properly categorize changes
+
+3. **Dead code cleanup** - ✅ **COMPLETED**
+   - Removed commented-out functions (`openManifest`, `saveManifest`) from UserPanel.vue
+   - Cleaned up unused imports (`selectFile`)
+   - Removed unused variables and improved code organization
+   - Fixed lint errors and formatting issues
+
+4. **Virtual list of addons is buggy with long lists** - ✅ **FIXED**
+   - Replaced custom virtual list implementation with `virtua` npm package
+   - Ensured stable keys for each addon item
+   - Fixed rendering issues with long lists
+
+5. **Navigation state management bug (settings → dashboard)** - ✅ **FIXED**
+   - Added lifecycle hooks (onMounted, onUnmounted) to both AdminPanel and UserPanel
+   - Implemented route watching to detect navigation from settings
+   - Added resetComponentState() function to clear stale state
+   - Fixed UI not showing after navigating back from settings
+
+6. **Disabled addon phantom removal bug** - ✅ **FIXED**
+   - Enhanced update preview logic to only show removals for previously enabled addons
+   - Added check: `if (oldAddon.disabled === true) continue` before removal detection
+   - Prevents showing "will remove" for addons that were already disabled/removed
+
+7. **Improved manifest backup system** - ✅ **IMPLEMENTED**
+   - Changed from renaming manifest.json → manifest_old.json approach
+   - Now always generates manifest_old.json from minecraftinstance.json (source of truth)
+   - Enables idempotent downloads, safer cancellation, and accurate state tracking
+   - Prevents backup corruption when re-downloading same UUID
+
+### 🔄 REMAINING ISSUES:
+1. **Untouched addons should not be redownloaded**
+   - Currently reinstalls all addons - should only process changed/added/removed
+   - Need to optimize for large modpacks by comparing manifests more efficiently
+
+---
+
+**Summary:**  
+- All of these are valid and important issues to address for a robust user experience.
+- Prioritize fixing removal/diff logic and state management bugs first, then optimize the update process for large modpacks.
+
+If you want, I can help you plan or implement fixes for any of these issues!
