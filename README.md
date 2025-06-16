@@ -1,20 +1,18 @@
 # CEMM - ChillEcke Modpack Manager
 
 ## Overview
-CEMM (ChillEcke Modpack Manager) is a lightweight desktop application for managing Minecraft modpack updates and distributions. Built with Nuxt 3 frontend and Tauri/Rust backend, it provides two main modes:
+CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes it easier for you and your friends to play pre-existing CurseForge modpacks with custom modifications. Built with Nuxt 3 frontend and Tauri/Rust backend, it provides two main modes:
 
-- **Admin Mode**: Generate manifest.json from minecraftinstance.json → Upload to GitHub with UUID
-- **User Mode**: Input UUID code → Download and apply changes from GitHub repo
+- **Admin Mode**: Modify a downloaded CurseForge modpack (add, remove, or update addons and config files) → Generate UUID and upload changes to GitHub
+- **User Mode**: Paste the UUID code from admin → Select correct modpack directory → Install the modifications automatically
 
 ## Features
-- **Nuxt 3 Frontend**: Modern web application framework with TypeScript support
-- **Tauri + Rust Backend**: Fast, secure desktop application with native file operations
-- **Tailwind CSS v4 + DaisyUI**: Modern UI styling with component library
-- **Bun Package Manager**: Fast package management for dependencies
-- **GitHub Integration**: Secure modpack distribution via GitHub repositories
-- **Theme Switching**: Nord and Dracula themes with persistent storage
-- **ESLint + TypeScript**: Comprehensive code quality and type safety
-- **Secure Storage**: GitHub tokens stored securely using Tauri Stronghold plugin
+- **Modpack Modification**: Add, remove, or update mods/resourcepacks/shaderpacks from CurseForge modpacks
+- **Config File Distribution**: Share custom configuration files with your friends
+- **Easy Sharing**: Generate UUID codes for simple modpack distribution
+- **GitHub Integration**: Secure distribution via GitHub repositories
+- **Automatic Installation**: Users can install modifications with a single UUID code
+- **Cross-Platform**: Works on Windows *AND SHOULD* work on macOS and Linux, never tested on these platforms
 
 ## Getting Started
 
@@ -85,7 +83,8 @@ cemm/
 ```
 
 ### Tech Stack
-- **Frontend**: Nuxt 3, Vue 3, TypeScript, Tailwind CSS, DaisyUI, Pinia
+- **Frontend**: Nuxt 3, Vue 3, TypeScript, Tailwind CSS v4, DaisyUI, Pinia
 - **Backend**: Tauri, Rust, Serde, Tokio
-- **Storage**: GitHub API, Tauri Stronghold (secure storage)
-- **Development**: Bun, ESLint, Pino (logging)
+- **Storage**: GitHub API, Tauri Keyring (secure token storage)
+- **Development**: Bun package manager, ESLint, Pino logging
+- **Build**: Tauri bundler for cross-platform desktop apps
