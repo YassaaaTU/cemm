@@ -353,6 +353,36 @@ pub async fn install_update_optimized(
     new_manifest: Manifest,
     config_files: Vec<ConfigFile>,
 ) -> Result<(), String> {
+    // Check if this is a config-only update
+    if new_manifest.update_type.as_ref() == Some(&"config".to_string()) {
+        // Config-only update: just install config files, don't touch addons
+        println!("🔧 Config-only update: {} config files", config_files.len());
+        
+        // Helper to emit progress for config-only updates
+        let emit_progress = |current: usize, total: usize, msg: &str| {
+            let progress = if total > 0 { current as f64 / total as f64 * 100.0 } else { 100.0 };
+            println!("Progress: {:.1}% - {}", progress, msg);
+        };
+        
+        emit_progress(1, 10, "Installing config files only...");
+        
+        // Install config files
+        for (i, config_file) in config_files.iter().enumerate() {
+            emit_progress(i + 1, config_files.len(), &format!("Installing config file: {}", config_file.relative_path));
+
+            let file_path = format!("{}/{}", modpack_path, config_file.relative_path);
+            let parent_dir = std::path::Path::new(&file_path).parent()
+                .ok_or("Invalid config file path")?;
+            std::fs::create_dir_all(parent_dir)
+                .map_err(|e| format!("Failed to create config directory: {}", e))?;
+            std::fs::write(&file_path, &config_file.content)
+                .map_err(|e| format!("Failed to write config file {}: {}", config_file.relative_path, e))?;
+        }
+        
+        emit_progress(config_files.len(), config_files.len(), "Config-only update complete!");
+        return Ok(());
+    }
+
     // If no old manifest, fall back to regular install (all addons are "new")
     if old_manifest.is_none() {
         return install_update(modpack_path, new_manifest, config_files).await;

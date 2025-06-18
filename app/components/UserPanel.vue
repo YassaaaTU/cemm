@@ -319,22 +319,36 @@ const previewData = computed(() =>
 				}
 			}
 		}
-
-		// Process each category
-		processCategory(oldManifest.mods, newManifest.mods)
-		processCategory(oldManifest.resourcepacks, newManifest.resourcepacks)
-		processCategory(oldManifest.shaderpacks, newManifest.shaderpacks)
-		processCategory(oldManifest.datapacks, newManifest.datapacks)
+		// Check if this is a config-only update
+		if (newManifest.updateType === 'config')
+		{
+			// For config-only updates, don't process addons at all
+			// This means no addons will be added, removed, or updated
+			diff.removed_addons = []
+			diff.updated_addons = []
+			diff.new_addons = []
+		}
+		else
+		{
+			// Process each category for full updates
+			processCategory(oldManifest.mods, newManifest.mods)
+			processCategory(oldManifest.resourcepacks, newManifest.resourcepacks)
+			processCategory(oldManifest.shaderpacks, newManifest.shaderpacks)
+			processCategory(oldManifest.datapacks, newManifest.datapacks)
+		}
 	}
 	else
 	{
-		// Fresh install - everything is new (except disabled addons)
-		diff.new_addons = [
-			...newManifest.mods.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
-			...newManifest.resourcepacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
-			...newManifest.shaderpacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
-			...newManifest.datapacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name)
-		]
+		// Fresh install - only add new addons if it's not a config-only update
+		if (newManifest.updateType !== 'config')
+		{
+			diff.new_addons = [
+				...newManifest.mods.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
+				...newManifest.resourcepacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
+				...newManifest.shaderpacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
+				...newManifest.datapacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name)
+			]
+		}
 	}
 
 	const hasChanges = oldManifest !== null && (

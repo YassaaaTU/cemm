@@ -1,7 +1,7 @@
 {
 	"name": "nuxt_tailwindv4_template",
 	"type": "module",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"private": true,
 	"packageManager": "bun@1.2.6",
 	"author": "YassaaaTU aka YasirJumaah",
@@ -27,7 +27,8 @@
 		"app:build": "tauri build",
 		"cargo:clean": "cd src-tauri; cargo clean",
 		"cargo:check": "cd src-tauri; cargo check",
-		"cargo:fix": "cd src-tauri; cargo fix"
+		"cargo:fix": "cd src-tauri; cargo fix",
+		"bump": "bunx bumpp --all --config bump.config.ts"
 	},
 	"dependencies": {
 		"@tauri-apps/plugin-dialog": "~2",
@@ -54,6 +55,7 @@
 		"@typescript-eslint/eslint-plugin": "^8.28.0",
 		"@typescript-eslint/parser": "^8.28.0",
 		"@vueuse/nuxt": "^13.0.0",
+		"bumpp": "^10.2.0",
 		"bundle-analyzer": "^0.0.6",
 		"daisyui": "^5.0.43",
 		"eslint": "^9.0.0",

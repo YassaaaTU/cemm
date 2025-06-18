@@ -34,51 +34,178 @@ pub async fn upload_update(
     let mut parts = repo.splitn(2, '/');
     let owner = parts.next().ok_or("Invalid repo format")?;
     let repo_name = parts.next().ok_or("Invalid repo format")?;
-    let api_base = format!("https://api.github.com/repos/{owner}/{repo_name}/contents/{uuid}");
     let client = Client::new();
     let user_agent = "cemm-app-tauri";
 
-    // Upload manifest.json
-    let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
-    let manifest_url = format!("{}/manifest.json", api_base);
-    let manifest_req = client
-        .put(&manifest_url)
+    // Step 1: Get the current commit SHA of main branch
+    let refs_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/refs/heads/main");
+    let refs_response = client
+        .get(&refs_url)
         .header("Authorization", format!("token {}", token))
         .header("User-Agent", user_agent)
-        .json(&json!({
-            "message": format!("Upload manifest for update {}", uuid),
-            "content": STANDARD.encode(manifest_json),
-            "branch": "main"
-        }));
-    let manifest_res = manifest_req.send().await.map_err(|e| e.to_string())?;
-    if !manifest_res.status().is_success() {
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    if !refs_response.status().is_success() {
         return Err(format!(
-            "Failed to upload manifest: {}",
-            manifest_res.text().await.unwrap_or_default()
+            "Failed to get main branch ref: {}",
+            refs_response.text().await.unwrap_or_default()
         ));
     }
 
-    // Upload config files
-    for file in config_files {
-        let file_url = format!("{}/{}", api_base, file.relative_path);
-        let file_req = client
-            .put(&file_url)
+    let refs_json: serde_json::Value = refs_response.json().await.map_err(|e| e.to_string())?;
+    let base_commit_sha = refs_json["object"]["sha"]
+        .as_str()
+        .ok_or("Could not find main branch SHA")?;
+
+    // Step 2: Get the base tree SHA
+    let commit_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/commits/{base_commit_sha}");
+    let commit_response = client
+        .get(&commit_url)
+        .header("Authorization", format!("token {}", token))
+        .header("User-Agent", user_agent)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let commit_json: serde_json::Value = commit_response.json().await.map_err(|e| e.to_string())?;
+    let base_tree_sha = commit_json["tree"]["sha"]
+        .as_str()
+        .ok_or("Could not find base tree SHA")?;
+
+    // Step 3: Create blobs for all files
+    let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
+    
+    // Create blob for manifest
+    let manifest_blob_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/blobs");
+    let manifest_blob_response = client
+        .post(&manifest_blob_url)
+        .header("Authorization", format!("token {}", token))
+        .header("User-Agent", user_agent)
+        .json(&json!({
+            "content": STANDARD.encode(manifest_json),
+            "encoding": "base64"
+        }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let manifest_blob_json: serde_json::Value = manifest_blob_response.json().await.map_err(|e| e.to_string())?;
+    let manifest_blob_sha = manifest_blob_json["sha"]
+        .as_str()
+        .ok_or("Could not get manifest blob SHA")?;
+
+    // Create blobs for config files
+    let mut config_blob_shas = Vec::new();
+    for file in &config_files {
+        let config_blob_response = client
+            .post(&manifest_blob_url) // Same URL for creating blobs
             .header("Authorization", format!("token {}", token))
             .header("User-Agent", user_agent)
             .json(&json!({
-                "message": format!("Upload config file {} for update {}", file.relative_path, uuid),
-                "content": STANDARD.encode(file.content),
-                "branch": "main"
-            }));
-        let file_res = file_req.send().await.map_err(|e| e.to_string())?;
-        if !file_res.status().is_success() {
-            return Err(format!(
-                "Failed to upload config file {}: {}",
-                file.relative_path,
-                file_res.text().await.unwrap_or_default()
-            ));
-        }
+                "content": STANDARD.encode(&file.content),
+                "encoding": "base64"
+            }))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let config_blob_json: serde_json::Value = config_blob_response.json().await.map_err(|e| e.to_string())?;
+        let config_blob_sha = config_blob_json["sha"]
+            .as_str()
+            .ok_or("Could not get config blob SHA")?
+            .to_string();
+        config_blob_shas.push(config_blob_sha);
     }
+
+    // Step 4: Create a new tree with all files
+    // Note: This will automatically overwrite any existing files at the same paths
+    // because Git tree creation replaces the entire directory structure
+    let mut tree_items = vec![
+        json!({
+            "path": format!("{}/manifest.json", uuid),
+            "mode": "100644",
+            "type": "blob",
+            "sha": manifest_blob_sha
+        })
+    ];
+
+    // Add config files to tree (will overwrite existing config files if same UUID)
+    for (i, file) in config_files.iter().enumerate() {
+        tree_items.push(json!({
+            "path": format!("{}/{}", uuid, file.relative_path),
+            "mode": "100644",
+            "type": "blob",
+            "sha": config_blob_shas[i]
+        }));
+    }
+
+    let tree_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/trees");
+    let tree_response = client
+        .post(&tree_url)
+        .header("Authorization", format!("token {}", token))
+        .header("User-Agent", user_agent)
+        .json(&json!({
+            "base_tree": base_tree_sha,
+            "tree": tree_items
+        }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let tree_json: serde_json::Value = tree_response.json().await.map_err(|e| e.to_string())?;
+    let new_tree_sha = tree_json["sha"]
+        .as_str()
+        .ok_or("Could not get new tree SHA")?;
+
+    // Step 5: Create a commit
+    let config_count = config_files.len();
+    let commit_message = if config_count > 0 {
+        format!("Upload update {} (manifest + {} config files)", uuid, config_count)
+    } else {
+        format!("Upload update {} (manifest only)", uuid)
+    };
+
+    let commit_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/commits");
+    let commit_response = client
+        .post(&commit_url)
+        .header("Authorization", format!("token {}", token))
+        .header("User-Agent", user_agent)
+        .json(&json!({
+            "message": commit_message,
+            "tree": new_tree_sha,
+            "parents": [base_commit_sha]
+        }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let new_commit_json: serde_json::Value = commit_response.json().await.map_err(|e| e.to_string())?;
+    let new_commit_sha = new_commit_json["sha"]
+        .as_str()
+        .ok_or("Could not get new commit SHA")?;
+
+    // Step 6: Update the main branch reference
+    let update_ref_response = client
+        .patch(&refs_url)
+        .header("Authorization", format!("token {}", token))
+        .header("User-Agent", user_agent)
+        .json(&json!({
+            "sha": new_commit_sha,
+            "force": false
+        }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !update_ref_response.status().is_success() {
+        return Err(format!(
+            "Failed to update main branch: {}",
+            update_ref_response.text().await.unwrap_or_default()
+        ));
+    }
+
     Ok(())
 }
 

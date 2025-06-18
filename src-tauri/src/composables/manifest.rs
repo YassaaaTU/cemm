@@ -29,6 +29,9 @@ pub struct ConfigFile {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Manifest {
+    #[serde(rename = "updateType")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update_type: Option<String>, // "full" or "config"
     pub mods: Vec<Addon>,
     pub resourcepacks: Vec<Addon>,
     pub shaderpacks: Vec<Addon>,
@@ -174,6 +177,7 @@ pub fn parse_minecraft_instance(path: String) -> Result<Manifest, String> {
         }
     }
     Ok(Manifest {
+        update_type: None, // Default to None for MinecraftInstance conversion
         mods,
         resourcepacks,
         shaderpacks,

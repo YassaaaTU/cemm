@@ -31,16 +31,14 @@
           @click="saveManifest"
         >
           Save Manifest
-        </button>
-
-        <button
+        </button>        <button
           class="btn btn-accent"
-          :disabled="manifest == null || uploading"
+          :disabled="(manifest == null && selectedConfigFiles.length === 0) || uploading"
           :aria-describedby="getUploadButtonDescription()"
           @click="uploadToGithub"
         >
           <span v-if="!uploading">
-            Upload to GitHub
+            {{ getUploadButtonText() }}
             <span
               v-if="selectedConfigFiles.length > 0"
               class="badge badge-secondary badge-sm ml-1"
@@ -283,14 +281,31 @@ const { selectFile, selectSaveFile, selectMultipleFiles, selectConfigDirectory: 
 const manifestStore = useManifestStore()
 const manifest = computed(() => manifestStore.manifest)
 
-// Accessibility helper methods for button descriptions
+// UI helper functions for upload button
+const getUploadButtonText = () =>
+{
+	if (manifest.value !== null && selectedConfigFiles.value.length > 0)
+	{
+		return 'Upload to GitHub'
+	}
+	else if (manifest.value !== null)
+	{
+		return 'Upload to GitHub'
+	}
+	else if (selectedConfigFiles.value.length > 0)
+	{
+		return 'Upload Config Only'
+	}
+	return 'Upload to GitHub'
+}
+
 const getUploadButtonDescription = () =>
 {
-	if (manifest.value == null)
+	if (uploading.value)
 	{
 		return 'upload-disabled-help'
 	}
-	if (uploading.value)
+	if (manifest.value == null && selectedConfigFiles.value.length === 0)
 	{
 		return 'upload-disabled-help'
 	}
@@ -317,18 +332,25 @@ async function selectConfigFiles()
 		{
 			const content = await readFile(filePath)
 			if (content !== null)
-			{
-				// Extract filename and ask user for relative path
+			{ // Extract filename and calculate relative path from modpack root
 				const fileName = filePath.split(/[/\\]/).pop()
 				if (fileName !== undefined && fileName.length > 0)
 				{
-					// For single file selection, prompt user for relative path or use config/ as default
-					const defaultRelativePath = `config/${fileName}`
-					// TODO: In a future enhancement, we could add a dialog to let user specify custom relative path
+				// Calculate relative path from modpack directory
+					let relativePath = fileName // Default to root if we can't determine
+					const modpackPath = appStore.modpackPath
+
+					if (modpackPath && filePath.startsWith(modpackPath))
+					{
+					// Calculate actual relative path from modpack root
+						const normalizedModpackPath = modpackPath.replace(/\\/g, '/')
+						const normalizedFilePath = filePath.replace(/\\/g, '/')
+						relativePath = normalizedFilePath.substring(normalizedModpackPath.length + 1)
+					}
 
 					newConfigFiles.push({
 						filename: fileName,
-						relative_path: defaultRelativePath,
+						relative_path: relativePath,
 						content
 					})
 				}
@@ -477,7 +499,8 @@ async function saveManifest()
 
 async function uploadToGithub()
 {
-	if (manifest.value == null)
+	// Allow upload if we have either a manifest OR config files
+	if (manifest.value == null && selectedConfigFiles.value.length === 0)
 	{
 		return
 	}
@@ -497,22 +520,41 @@ async function uploadToGithub()
 			{
 				throw new Error('MISSING_GITHUB_SETTINGS')
 			}
-
 			// Generate UUID (for now, use Date.now as stub)
 			const uuid = Date.now().toString()
 
-			// Create updated manifest with config files included
-			// Safe to assert non-null since we check at function start
-			const currentManifest = manifest.value as Manifest
-			const manifestWithConfig: Manifest = {
-				mods: currentManifest.mods,
-				resourcepacks: currentManifest.resourcepacks,
-				shaderpacks: currentManifest.shaderpacks,
-				datapacks: currentManifest.datapacks,
-				config_files: selectedConfigFiles.value.map((cf) => ({
-					filename: cf.filename,
-					relative_path: cf.relative_path
-				}))
+			// Create manifest (either from existing or config-only)
+			let manifestWithConfig: Manifest
+			if (manifest.value !== null)
+			{
+				// Full manifest with addons + config files
+				const currentManifest = manifest.value as Manifest
+				manifestWithConfig = {
+					updateType: 'full',
+					mods: currentManifest.mods,
+					resourcepacks: currentManifest.resourcepacks,
+					shaderpacks: currentManifest.shaderpacks,
+					datapacks: currentManifest.datapacks,
+					config_files: selectedConfigFiles.value.map((cf) => ({
+						filename: cf.filename,
+						relative_path: cf.relative_path
+					}))
+				}
+			}
+			else
+			{
+				// Config-only manifest (empty addons)
+				manifestWithConfig = {
+					updateType: 'config',
+					mods: [],
+					resourcepacks: [],
+					shaderpacks: [],
+					datapacks: [],
+					config_files: selectedConfigFiles.value.map((cf) => ({
+						filename: cf.filename,
+						relative_path: cf.relative_path
+					}))
+				}
 			}
 
 			// Use selected config files and wrap with network retry
@@ -536,7 +578,9 @@ async function uploadToGithub()
 				})
 			})
 
-			statusMessage.value = 'Upload successful!'
+			statusMessage.value = manifest.value !== null
+				? 'Upload successful!'
+				: 'Config files uploaded successfully!'
 			statusType.value = 'success'
 		}
 		catch (error)

@@ -61,6 +61,14 @@ export default defineNuxtConfig({
 		}
 	},
 
+	runtimeConfig: {
+		public: {
+			version: process.env.VERSION ?? '0.0.0'
+			// ...other public config...
+		}
+		// ...other private config...
+	},
+
 	future: {
 		compatibilityVersion: 4
 	},	experimental: {

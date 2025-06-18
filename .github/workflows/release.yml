@@ -49,12 +49,20 @@ jobs:
       - name: install frontend dependencies
         run: bun install
 
+      - name: install macOS x86_64 Rust target
+        if: matrix.args == '--target x86_64-apple-darwin'
+        run: rustup target add x86_64-apple-darwin
+
+      - name: Load version from .env
+        id: version
+        run: echo "VERSION=$(grep '^VERSION=' .env | cut -d '=' -f2)" >> $GITHUB_ENV
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: app-v1.0.0 # hardcoded version
-          releaseName: 'App v1.0.0'
+          tagName: app-v${{ env.VERSION }}
+          releaseName: 'App v${{ env.VERSION }}'
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: false

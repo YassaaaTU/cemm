@@ -25,6 +25,7 @@ export interface ConfigFileWithContent extends ConfigFile
 
 export interface Manifest
 {
+	updateType?: 'full' | 'config' // 'full' = addons + config, 'config' = config only
 	mods: Addon[]
 	resourcepacks: Addon[]
 	shaderpacks: Addon[]

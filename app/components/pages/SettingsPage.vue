@@ -73,7 +73,7 @@
         <div class="card-body">
           <div class="space-y-2">
             <p>
-              <span class="font-semibold">Version:</span> 1.0.0
+              <span class="font-semibold">Version:</span> {{ version }}
             </p>
             <p>
               <span class="font-semibold">Built with:</span> Nuxt 3 + Tauri + Rust
@@ -90,4 +90,5 @@
 
 <script setup lang="ts">
 const themeStore = useThemeStore()
+const version = useRuntimeConfig().public.version
 </script>

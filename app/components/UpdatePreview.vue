@@ -2,19 +2,40 @@
   <div class="modal modal-open">
     <div class="modal-box w-11/12 max-w-5xl">
       <div class="flex justify-between items-center mb-4">
-        <h2 class="text-2xl font-bold">
-          Update Preview
-        </h2>
+        <div>
+          <h2 class="text-2xl font-bold">
+            Update Preview
+          </h2>
+          <div class="text-sm opacity-70 mt-1">
+            <span
+              v-if="preview.newManifest.updateType === 'config'"
+              class="badge badge-info"
+            >
+              Config-Only Update
+            </span>
+            <span
+              v-else
+              class="badge badge-primary"
+            >
+              Full Update
+            </span>
+          </div>
+        </div>
         <button
           class="btn btn-sm btn-circle btn-ghost"
           @click="$emit('close')"
         >
           ✕
         </button>
+      </div>      <div
+        v-if="!preview.hasChanges && preview.newManifest.updateType === 'config'"
+        class="alert alert-info mb-4"
+      >
+        <span>Config-only update: Only configuration files will be updated. No addons will be modified.</span>
       </div>
 
       <div
-        v-if="!preview.hasChanges"
+        v-else-if="!preview.hasChanges"
         class="alert alert-info mb-4"
       >
         <span>No changes detected. This appears to be a fresh installation.</span>
