@@ -80,7 +80,30 @@
             </p>
             <p>
               <span class="font-semibold">Purpose:</span> ChillEcke Modpack Manager
-            </p>
+            </p>            <!-- Update Section -->
+            <div class="divider" />
+            <div class="flex items-center justify-between">
+              <span class="font-semibold">Updates:</span>
+              <div class="flex gap-2">
+                <button
+                  class="btn btn-primary btn-sm"
+                  :disabled="isCheckingUpdates"
+                  @click="handleCheckUpdates"
+                >
+                  <Icon
+                    v-if="isCheckingUpdates"
+                    name="line-md:loading-loop"
+                    class="w-4 h-4"
+                  />
+                  <Icon
+                    v-else
+                    name="mdi:update"
+                    class="w-4 h-4"
+                  />
+                  {{ isCheckingUpdates ? 'Checking...' : 'Check for Updates' }}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -91,4 +114,20 @@
 <script setup lang="ts">
 const themeStore = useThemeStore()
 const version = useRuntimeConfig().public.version
+const { checkForUpdates } = useUpdater()
+
+const isCheckingUpdates = ref(false)
+
+const handleCheckUpdates = async () =>
+{
+	isCheckingUpdates.value = true
+	try
+	{
+		await checkForUpdates()
+	}
+	finally
+	{
+		isCheckingUpdates.value = false
+	}
+}
 </script>

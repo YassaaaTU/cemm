@@ -18,6 +18,31 @@
       </main>
       <!-- Footer -->
       <PageFooter class="flex-none" />
-    </div>
+    </div>    <!-- Global Update Dialog -->
+    <UpdateDialog
+      :is-visible="isUpdateDialogVisible"
+      :title="dialogTitle"
+      :message="dialogMessage"
+      :current-version="currentVersion"
+      :new-version="newVersion"
+      :is-downloading="isDownloading"
+      :download-progress="downloadProgress"
+      @confirm="handleUpdateConfirm"
+      @cancel="handleUpdateCancel"
+    />
   </div>
 </template>
+
+<script setup lang="ts">
+const {
+	isUpdateDialogVisible,
+	isDownloading,
+	downloadProgress,
+	dialogTitle,
+	dialogMessage,
+	currentVersion,
+	newVersion,
+	handleUpdateConfirm,
+	handleUpdateCancel
+} = useUpdater()
+</script>

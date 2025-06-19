@@ -54,16 +54,22 @@ jobs:
         run: rustup target add x86_64-apple-darwin
 
       - name: Load version from .env
-        id: version
-        run: echo "VERSION=$(grep '^VERSION=' .env | cut -d '=' -f2)" >> $GITHUB_ENV
+        shell: bash
+        run: |
+          VERSION=$(grep '^VERSION=' .env | cut -d '=' -f2)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Loaded VERSION: $VERSION"
 
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: app-v${{ env.VERSION }}
           releaseName: 'App v${{ env.VERSION }}'
           releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+          includeUpdaterJson: true

@@ -52,6 +52,24 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // Secure storage setup
+            app.handle()
+                .plugin(tauri_plugin_keyring::init())
+                .expect("failed to setup keyring plugin");
+
+            // Auto-updater setup (desktop only)
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())
+                .expect("failed to setup updater plugin");
+
+            // Process plugin for restart functionality
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_process::init())
+                .expect("failed to setup process plugin");
+
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -1,7 +1,7 @@
 {
 	"name": "nuxt_tailwindv4_template",
 	"type": "module",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"private": true,
 	"packageManager": "bun@1.2.6",
 	"author": "YassaaaTU aka YasirJumaah",
@@ -34,6 +34,8 @@
 		"@tauri-apps/plugin-dialog": "~2",
 		"@tauri-apps/plugin-fs": "~2",
 		"@tauri-apps/plugin-opener": "^2.2.7",
+		"@tauri-apps/plugin-process": "^2.2.2",
+		"@tauri-apps/plugin-updater": "^2.8.1",
 		"nuxt": "^3.16.0",
 		"pino": "^9.7.0",
 		"tauri-plugin-keyring-api": "^0.1.1",
