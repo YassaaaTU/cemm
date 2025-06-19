@@ -52,7 +52,7 @@ jobs:
       - name: install macOS x86_64 Rust target
         if: matrix.args == '--target x86_64-apple-darwin'
         run: rustup target add x86_64-apple-darwin
-
+      
       - name: Load version from .env
         shell: bash
         run: |
@@ -60,7 +60,7 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Loaded VERSION: $VERSION"
 
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@dev
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -71,5 +71,5 @@ jobs:
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: false
           prerelease: false
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} --verbose
           includeUpdaterJson: true
