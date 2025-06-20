@@ -73,4 +73,3 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }} --verbose
-          includeUpdaterJson: true
