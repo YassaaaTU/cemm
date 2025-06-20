@@ -8,3 +8,5 @@ node_modules
 .output
 dist
 bun.lockb
+private.key
+private.key.pub
