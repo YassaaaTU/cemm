@@ -232,7 +232,7 @@ const saveGithubRepo = () =>
 {
 	if (githubRepo.value.trim())
 	{
-		logger.info('GitHub repository saved', { repo: githubRepo.value })
+		console.info('GitHub repository saved', { repo: githubRepo.value })
 	}
 }
 
@@ -410,7 +410,7 @@ async function downloadFromGithub()
 	try
 	{
 		// Debug logging
-		logger.info('Starting manifest download', {
+		console.info('Starting manifest download', {
 			repo,
 			uuid: uuid.value.trim(),
 			repoLength: repo.length,
@@ -440,7 +440,7 @@ async function downloadFromGithub()
 			1000 // backoffMs
 		)
 
-		logger.info('Manifest download successful', { manifest })
+		console.info('Manifest download successful', { manifest })
 
 		// Update manifest in store for preview
 		manifestStore.setManifest(manifest)
@@ -468,11 +468,11 @@ async function downloadFromGithub()
 				await writeNewManifest(modpackPath, manifest)
 			}, 'writeNewManifest')
 
-			logger.info('Phase 1 complete: Manifest downloaded with improved backup system')
+			console.info('Phase 1 complete: Manifest downloaded with improved backup system')
 		}
 		else
 		{
-			logger.info('Phase 1 complete: Manifest downloaded (no modpack path selected)')
+			console.info('Phase 1 complete: Manifest downloaded (no modpack path selected)')
 		}
 
 		statusMessage.value = 'Manifest ready for preview. Config files will be downloaded after confirmation.'
@@ -561,7 +561,7 @@ async function downloadConfigFiles()
 		const errorMessage = err instanceof Error ? err.message : 'Failed to download config files'
 		statusMessage.value = errorMessage
 		statusType.value = 'error'
-		logger.error('Failed to download config files', { error: err, uuid: uuid.value, repo: appStore.githubRepo })
+		console.error('Failed to download config files', { error: err, uuid: uuid.value, repo: appStore.githubRepo })
 		throw new Error(`Config download failed: ${errorMessage}`) // Re-throw to be caught by confirmInstall
 	}
 	finally
@@ -621,7 +621,7 @@ async function installUpdate()
 	catch (err)
 	{
 		statusMessage.value = (err instanceof Error ? err.message : 'Installation failed')
-		logger.error(err)
+		console.error(err)
 		statusType.value = 'error'
 	}
 	finally
@@ -711,7 +711,7 @@ const resetComponentState = () =>
 	// Clear any errors
 	clearError()
 
-	logger.info('Component state reset after navigation')
+	console.info('Component state reset after navigation')
 }
 
 // Watch for route changes to detect navigation back from settings
@@ -721,7 +721,7 @@ watch(() => route.name, (newRouteName, oldRouteName) =>
 	{
 		isNavigatingFromSettings.value = true
 		resetComponentState()
-		logger.info('Detected navigation from settings to dashboard, state reset')
+		console.info('Detected navigation from settings to dashboard, state reset')
 	}
 })
 
@@ -736,7 +736,7 @@ onMounted(() =>
 			isNavigatingFromSettings.value = false
 		})
 	}
-	logger.info('UserPanel mounted')
+	console.info('UserPanel mounted')
 })
 
 // Cleanup on unmount
@@ -747,7 +747,7 @@ onUnmounted(() =>
 	{
 		currentOperation.value = null
 	}
-	logger.info('UserPanel unmounted')
+	console.info('UserPanel unmounted')
 })
 
 async function generateManifestOldFromMinecraftInstance(modpackPath: string)
@@ -760,7 +760,7 @@ async function generateManifestOldFromMinecraftInstance(modpackPath: string)
 
 		if (minecraftInstanceContent !== null && minecraftInstanceContent.trim().length > 0)
 		{
-			logger.info('Generating manifest_old.json from minecraftinstance.json (actual installed state)')
+			console.info('Generating manifest_old.json from minecraftinstance.json (actual installed state)')
 
 			// Parse minecraftinstance.json into manifest format
 			const parsedManifest = await parseMinecraftInstance(minecraftInstancePath)
@@ -777,7 +777,7 @@ async function generateManifestOldFromMinecraftInstance(modpackPath: string)
 					throw new Error('Failed to write manifest_old.json from minecraftinstance.json')
 				}
 
-				logger.info('Successfully generated manifest_old.json from actual installed state')
+				console.info('Successfully generated manifest_old.json from actual installed state')
 
 				// Load as previous manifest for comparison
 				manifestStore.loadInstalledManifest(parsedManifest)
@@ -786,21 +786,21 @@ async function generateManifestOldFromMinecraftInstance(modpackPath: string)
 			}
 			else
 			{
-				logger.error('Failed to parse minecraftinstance.json')
+				console.error('Failed to parse minecraftinstance.json')
 				throw new Error('Invalid minecraftinstance.json format')
 			}
 		}
 		else
 		{
 			// No minecraftinstance.json found - fresh install
-			logger.debug('No minecraftinstance.json found, treating as fresh install')
+			console.debug('No minecraftinstance.json found, treating as fresh install')
 			manifestStore.loadInstalledManifest(null)
 			return false
 		}
 	}
 	catch (err)
 	{
-		logger.error('Failed to generate manifest_old.json from minecraftinstance.json', { err })
+		console.error('Failed to generate manifest_old.json from minecraftinstance.json', { err })
 		// Fall back to fresh install
 		manifestStore.loadInstalledManifest(null)
 		return false
@@ -820,12 +820,12 @@ async function writeNewManifest(modpackPath: string, newManifest: Manifest)
 			throw new Error('Failed to write new manifest.json')
 		}
 
-		logger.info('Successfully wrote new manifest.json')
+		console.info('Successfully wrote new manifest.json')
 		return true
 	}
 	catch (err)
 	{
-		logger.error('Failed to write new manifest.json', { err })
+		console.error('Failed to write new manifest.json', { err })
 		throw err
 	}
 }

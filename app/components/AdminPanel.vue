@@ -675,7 +675,7 @@ const resetComponentState = () =>
 	// Clear any errors
 	clearError()
 
-	logger.info('AdminPanel state reset after navigation')
+	console.info('AdminPanel state reset after navigation')
 }
 
 // Watch for route changes to detect navigation back from settings
@@ -684,14 +684,14 @@ watch(() => route.name, (newRouteName, oldRouteName) =>
 	if (oldRouteName === 'settings' && newRouteName === 'dashboard')
 	{
 		resetComponentState()
-		logger.info('Detected navigation from settings to dashboard, AdminPanel state reset')
+		console.info('Detected navigation from settings to dashboard, AdminPanel state reset')
 	}
 })
 
 // Ensure component is properly initialized on mount
 onMounted(() =>
 {
-	logger.info('AdminPanel mounted')
+	console.info('AdminPanel mounted')
 })
 
 // Cleanup on unmount
@@ -702,6 +702,6 @@ onUnmounted(() =>
 	{
 		currentOperation.value = null
 	}
-	logger.info('AdminPanel unmounted')
+	console.info('AdminPanel unmounted')
 })
 </script>

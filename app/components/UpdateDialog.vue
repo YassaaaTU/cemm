@@ -1,13 +1,13 @@
 <!-- components/UpdateDialog.vue -->
 <template>
   <div
-    v-if="isVisible"
+    v-if="updater.isUpdateDialogVisible.value"
     class="fixed inset-0 z-50 flex items-center justify-center"
   >
     <!-- Backdrop -->
     <div
       class="fixed inset-0 bg-black bg-opacity-50"
-      @click="handleCancel"
+      @click="handleLater"
     />
 
     <!-- Dialog -->
@@ -23,7 +23,7 @@
         </div>
         <div>
           <h3 class="text-lg font-semibold">
-            {{ title }}
+            Update Available
           </h3>
           <p class="text-sm text-base-content/70">
             CEMM Update Available
@@ -36,48 +36,74 @@
         <div class="bg-base-200 rounded-lg p-4">
           <div class="flex justify-between items-center mb-2">
             <span class="text-sm font-medium">Current Version:</span>
-            <span class="badge badge-outline">{{ currentVersion }}</span>
+            <span class="badge badge-outline">{{ updater.updateInfo.value?.current_version }}</span>
           </div>
           <div class="flex justify-between items-center">
             <span class="text-sm font-medium">New Version:</span>
-            <span class="badge badge-primary">{{ newVersion }}</span>
+            <span class="badge badge-primary">{{ updater.updateInfo.value?.latest_version }}</span>
           </div>
         </div>
-
+        <div
+          v-if="updater.updateInfo.value?.size"
+          class="text-sm text-base-content/70"
+        >
+          Download size: {{ updater.formatBytes(updater.updateInfo.value.size) }}
+        </div>
         <p class="text-sm text-base-content/80">
-          {{ message }}
+          A new version of CEMM is available. Click "Update Now" to download and install automatically.
         </p>
+
+        <!-- Error Alert -->
+        <div
+          v-if="updateError"
+          class="alert alert-error"
+        >
+          <Icon name="mdi:alert-circle" />
+          <span>{{ updateError }}</span>
+        </div>
 
         <!-- Progress bar (when downloading) -->
         <div
-          v-if="isDownloading"
+          v-if="updater.isDownloading.value"
           class="space-y-2"
         >
           <div class="flex justify-between text-sm">
             <span>Downloading update...</span>
-            <span>{{ downloadProgress }}%</span>
+            <span>{{ updater.downloadProgress.value }}%</span>
           </div>
           <progress
             class="progress progress-primary w-full"
-            :value="downloadProgress"
+            :value="updater.downloadProgress.value"
             max="100"
           />
+        </div>
+
+        <!-- Installing state -->
+        <div
+          v-if="updater.isInstalling.value"
+          class="space-y-2"
+        >
+          <div class="flex items-center gap-2 text-sm">
+            <span class="loading loading-spinner loading-sm" />
+            <span>Installing update...</span>
+          </div>
         </div>
       </div>
 
       <!-- Actions -->
       <div class="flex gap-3 justify-end">
         <button
-          v-if="!isDownloading"
+          v-if="!updater.isDownloading.value && !updater.isInstalling.value"
           class="btn btn-ghost"
-          @click="handleCancel"
+          @click="handleLater"
         >
           Later
         </button>
         <button
-          v-if="!isDownloading"
+          v-if="!updater.isDownloading.value && !updater.isInstalling.value"
           class="btn btn-primary"
-          @click="handleConfirm"
+          :disabled="!updater.updateInfo.value?.available"
+          @click="handleUpdateConfirm"
         >
           <Icon
             name="mdi:download"
@@ -86,7 +112,7 @@
           Update Now
         </button>
         <button
-          v-if="isDownloading"
+          v-if="updater.isDownloading.value || updater.isInstalling.value"
           class="btn btn-disabled"
           disabled
         >
@@ -94,7 +120,7 @@
             name="line-md:loading-loop"
             size="1.4em"
           />
-          Installing...
+          {{ updater.isDownloading.value ? 'Downloading...' : 'Installing...' }}
         </button>
       </div>
     </div>
@@ -102,50 +128,87 @@
 </template>
 
 <script setup lang="ts">
-interface Props
+import { ref } from 'vue'
+
+const updater = useUpdater()
+// const { $logger } = useNuxtApp()
+
+const updateError = ref<string | null>(null)
+
+const handleUpdateConfirm = async () =>
 {
-	isVisible: boolean
-	title: string
-	message: string
-	currentVersion: string
-	newVersion: string
-	isDownloading?: boolean
-	downloadProgress?: number
+	updateError.value = null
+	try
+	{
+		console.info('🚀 Starting update download and install process')
+		await updater.downloadAndInstall()
+		console.info('✅ Update completed successfully')
+	}
+	catch (err: unknown)
+	{
+		console.error('❌ Update failed:')
+		console.error(err)
+		// Log JSON representation if possible
+		try
+		{
+			console.error('Update error (JSON):', JSON.stringify(err, null, 2))
+		}
+		catch (_)
+		{ /* empty */ }
+		// Show both string and JSON error in UI for diagnostics
+		if (err instanceof Error)
+		{
+			updateError.value = err.message
+			console.error('Error message:', err.message)
+			console.error('Error stack:', err.stack)
+		}
+		else if (typeof err === 'object' && err !== null)
+		{
+			try
+			{
+				updateError.value = JSON.stringify(err)
+				console.error('Error object:', err)
+			}
+			catch
+			{
+				updateError.value = String(err)
+				console.error('Error (string):', String(err))
+			}
+		}
+		else
+		{
+			updateError.value = String(err)
+		}
+	}
 }
 
-interface Emits
+const handleLater = () =>
 {
-	confirm: []
-	cancel: []
+	updater.handleUpdateCancel()
+	// Optionally reset progress state here if needed
 }
 
-const props = withDefaults(defineProps<Props>(), {
-	isDownloading: false,
-	downloadProgress: 0
-})
-
-const emit = defineEmits<Emits>()
-
-const handleConfirm = () =>
+// Debug logging for dialog visibility
+watch(() => updater.isUpdateDialogVisible.value, (visible) =>
 {
-	emit('confirm')
-}
+	console.info('UpdateDialog visibility changed:', { visible })
 
-const handleCancel = () =>
-{
-	emit('cancel')
-}
-
-// Prevent body scroll when dialog is open
-watch(() => props.isVisible, (visible) =>
-{
 	if (visible)
 	{
+		console.info('UpdateDialog: Update available, showing dialog')
+		console.info('UpdateDialog: Update info:', updater.updateInfo.value)
 		document.body.style.overflow = 'hidden'
 	}
 	else
 	{
+		console.info('UpdateDialog: Hiding dialog')
 		document.body.style.overflow = ''
 	}
-})
+}, { immediate: true })
+
+// Debug logging for update info changes
+watch(() => updater.updateInfo.value, (updateInfo) =>
+{
+	console.info('UpdateDialog: Update info changed:', updateInfo)
+}, { immediate: true })
 </script>

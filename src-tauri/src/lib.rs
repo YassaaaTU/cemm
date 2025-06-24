@@ -7,6 +7,9 @@ mod composables {
     pub mod manifest;
 }
 
+mod updater;
+pub use updater::{check_for_updates, download_updater_file, install_updater_file};
+
 pub use composables::github::{download_update, download_manifest, download_config_files, upload_update};
 pub use composables::manifest::{
     compare_manifests, open_curseforge_url, open_url, parse_minecraft_instance, Addon, Manifest,
@@ -39,6 +42,9 @@ pub fn run() {
             install_update,
             install_update_with_cleanup,
             install_update_optimized,
+            check_for_updates,
+            download_updater_file,
+            install_updater_file,
             get_app_data_dir,
             select_multiple_files,
             select_config_directory,
@@ -58,11 +64,7 @@ pub fn run() {
                 .plugin(tauri_plugin_keyring::init())
                 .expect("failed to setup keyring plugin");
 
-            // Auto-updater setup (desktop only)
-            #[cfg(desktop)]
-            app.handle()
-                .plugin(tauri_plugin_updater::Builder::new().build())
-                .expect("failed to setup updater plugin");
+
 
             // Process plugin for restart functionality
             #[cfg(desktop)]

@@ -41,7 +41,7 @@ export default withNuxt(
 			'prefer-arrow-callback': 'error',
 			'object-shorthand': 'error',
 			// Use custom pino logger rule instead of no-console
-			'pino-logger/no-console-to-pino-logger': 'warn',
+			// 'pino-logger/no-console-to-pino-logger': 'warn',
 			'no-console': 'off',
 			'no-var': 'error',
 			'prefer-const': 'error'

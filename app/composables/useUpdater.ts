@@ -1,191 +1,182 @@
 // composables/useUpdater.ts
-import { relaunch } from '@tauri-apps/plugin-process'
-import { check, type Update } from '@tauri-apps/plugin-updater'
+import { invoke } from '@tauri-apps/api/core'
+import { storeToRefs } from 'pinia'
+import { nextTick, readonly } from 'vue'
+
+import { useAppStore } from '~/stores/app'
+import { type UpdateInfo, useUpdaterStore } from '~/stores/updater'
 
 export const useUpdater = () =>
 {
-	const logger = usePinoLogger()
+	const updaterStore = useUpdaterStore()
+	// const { $logger } = useNuxtApp()
+	const appStore = useAppStore()
 
-	// Update dialog state
-	const isUpdateDialogVisible = useState('update.dialogVisible', () => false)
-	const isDownloading = useState('update.downloading', () => false)
-	const downloadProgress = useState('update.progress', () => 0)
-	const updateInfo = useState<Update | null>('update.info', () => null)
-	const updatePhase = useState<'available' | 'downloading' | 'complete'>('update.phase', () => 'available')
-
-	const checkForUpdates = async () =>
+	// Extract refs from store using storeToRefs
+	const {
+		updateInfo,
+		isChecking,
+		isDownloading,
+		isInstalling,
+		downloadProgress,
+		isUpdateDialogVisible
+	} = storeToRefs(updaterStore)
+	const checkForUpdates = async (): Promise<UpdateInfo> =>
 	{
+		const appRepo = appStore.appRepo
+		if (!appRepo)
+		{
+			throw new Error('App repository not configured')
+		}
+		console.info('🔍 MANUAL update check starting', { appRepo })
+		isChecking.value = true
 		try
 		{
-			logger.info('Checking for updates...')
-			const update = await check()
-
-			if (update != null)
+			const result = await invoke<UpdateInfo>('check_for_updates', { repo: appRepo })
+			updateInfo.value = result
+			console.info('✅ MANUAL update check completed', {
+				available: result.available, current: result.current_version,
+				latest: result.latest_version,
+				repo: appRepo,
+				downloadUrl: result.download_url,
+				assetName: result.asset_name
+			})
+			if (result.available)
 			{
-				logger.info('Update available', {
-					version: update.version,
-					currentVersion: update.currentVersion
-				})
-
-				// Show our custom dialog instead of native ask dialog
-				updateInfo.value = update
-				updatePhase.value = 'available'
+				console.info('🎯 MANUAL check: Setting dialog visible = true')
 				isUpdateDialogVisible.value = true
-				return update
+				console.info('🎯 MANUAL check: Dialog visible value after setting:', isUpdateDialogVisible.value)
+				nextTick(() =>
+				{
+					console.info('🎯 MANUAL check: Dialog visible value in nextTick:', isUpdateDialogVisible.value)
+				})
 			}
 			else
 			{
-				logger.info('No updates available')
-				return null
+				console.info('ℹ️ MANUAL check: No update available, dialog stays hidden')
 			}
+			return result
 		}
 		catch (error)
 		{
-			logger.error('Failed to check for updates', { error })
+			console.error('Update check failed', error)
 			throw error
+		}
+		finally
+		{
+			isChecking.value = false
 		}
 	}
 
-	const handleUpdateConfirm = async () =>
+	const downloadAndInstall = async () =>
 	{
-		if (updateInfo.value === null) return
-
+		const info = updateInfo.value
+		if (info === null || !info.available || (info.download_url ?? '').length === 0)
+		{
+			throw new Error('No update available')
+		}
 		try
 		{
-			logger.info('Starting update download...')
-
-			// Switch to downloading phase
-			updatePhase.value = 'downloading'
 			isDownloading.value = true
 			downloadProgress.value = 0
-
-			// Simulate progress updates (Tauri updater doesn't provide real progress)
 			const progressInterval = setInterval(() =>
 			{
-				if (downloadProgress.value < 90)
-				{
-					downloadProgress.value += 10
-				}
-			}, 300)
+				downloadProgress.value = Math.min(downloadProgress.value + 10, 90)
+			}, 200)
 
-			// Download and install the update
-			await updateInfo.value.downloadAndInstall()
-
-			// Complete the progress
+			console.info('Starting update download', {
+				url: info.download_url,
+				asset: info.asset_name
+			})
+			const filePath = await invoke('download_updater_file', {
+				downloadUrl: info.download_url,
+				assetName: info.asset_name
+			}) as string
 			clearInterval(progressInterval)
 			downloadProgress.value = 100
-
-			logger.info('Update downloaded and installed successfully')
-
-			// Switch to complete phase
-			updatePhase.value = 'complete'
 			isDownloading.value = false
-
-			// Auto-close dialog after showing completion
-			setTimeout(() =>
-			{
-				closeUpdateDialog()
-				handleRestart()
-			}, 2000)
+			isInstalling.value = true
+			console.info('Starting update installation', {
+				filePath,
+				size: (info.size != null) ? formatBytes(info.size) : 'unknown'
+			})
+			await invoke('install_updater_file', { filePath })
+			console.info('Update installed successfully')
+			isUpdateDialogVisible.value = false
 		}
 		catch (error)
 		{
-			logger.error('Failed to download/install update', { error })
-			isDownloading.value = false
-			downloadProgress.value = 0
+			console.error('Update installation failed', error)
+			isUpdateDialogVisible.value = false
 			throw error
 		}
-	}
-
-	const handleUpdateCancel = () =>
-	{
-		logger.info('Update cancelled by user')
-		closeUpdateDialog()
-	}
-
-	const closeUpdateDialog = () =>
-	{
-		isUpdateDialogVisible.value = false
-		isDownloading.value = false
-		downloadProgress.value = 0
-		updateInfo.value = null
-		updatePhase.value = 'available'
-	}
-
-	const handleRestart = async () =>
-	{
-		try
+		finally
 		{
-			logger.info('Restarting application...')
-			await relaunch()
-		}
-		catch (error)
-		{
-			logger.error('Failed to restart application', { error })
+			isDownloading.value = false
+			isInstalling.value = false
 		}
 	}
 
 	const checkForUpdatesOnStartup = async () =>
 	{
-		// Check for updates 5 seconds after app startup
-		setTimeout(checkForUpdates, 5000)
+		const appRepo = appStore.appRepo
+		if (!appRepo)
+		{
+			console.warn('App repository not configured, skipping startup update check')
+			return
+		}
+		try
+		{
+			console.info('🚀 STARTUP update check starting', { repo: appRepo })
+			const result = await invoke<UpdateInfo>('check_for_updates', { repo: appRepo })
+			updateInfo.value = result
+			console.info('✅ STARTUP update check completed', {
+				available: result.available,
+				current: result.current_version,
+				latest: result.latest_version,
+				repo: appRepo
+			})
+			if (result.available)
+			{
+				console.info('🎯 STARTUP check: Setting dialog visible = true')
+				isUpdateDialogVisible.value = true
+			}
+			else
+			{
+				console.info('ℹ️ STARTUP check: No update available, dialog stays hidden')
+			}
+		}
+		catch (error)
+		{
+			console.warn('Startup update check failed (non-critical)', error)
+		}
 	}
 
-	// Computed values for the dialog
-	const dialogTitle = computed(() =>
+	const handleUpdateCancel = () =>
 	{
-		switch (updatePhase.value)
-		{
-			case 'downloading':
-				return 'Downloading Update...'
-			case 'complete':
-				return 'Update Complete!'
-			default:
-				return 'Update Available'
-		}
-	})
-	const dialogMessage = computed(() =>
-	{
-		if (updateInfo.value === null) return ''
-		switch (updatePhase.value)
-		{
-			case 'downloading':
-				return 'Please wait while the update is being downloaded and installed.'
-			case 'complete':
-				return 'Update installed successfully! The application will restart automatically.'
-			default:
-				return 'A new version of CEMM is available. Would you like to download and install it now?'
-		}
-	})
+		isUpdateDialogVisible.value = false
+	}
 
-	const currentVersion = computed(() =>
+	const formatBytes = (bytes: number): string =>
 	{
-		if (updateInfo.value === null) return ''
-		return updateInfo.value.currentVersion
-	})
-	const newVersion = computed(() =>
-	{
-		if (updateInfo.value === null) return ''
-		return updateInfo.value.version
-	})
+		if (bytes === 0) return '0 Bytes'
+		const k = 1024
+		const sizes = ['Bytes', 'KB', 'MB', 'GB']
+		const i = Math.floor(Math.log(bytes) / Math.log(k))
+		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+	}
 
 	return {
-		// State
-		isUpdateDialogVisible: readonly(isUpdateDialogVisible),
+		updateInfo: readonly(updateInfo),
+		isChecking: readonly(isChecking),
 		isDownloading: readonly(isDownloading),
+		isInstalling: readonly(isInstalling),
 		downloadProgress: readonly(downloadProgress),
-		updatePhase: readonly(updatePhase),
-
-		// Computed
-		dialogTitle,
-		dialogMessage,
-		currentVersion,
-		newVersion,
-
-		// Actions
+		isUpdateDialogVisible: readonly(isUpdateDialogVisible),
 		checkForUpdates,
-		handleUpdateConfirm,
+		downloadAndInstall,
 		handleUpdateCancel,
+		formatBytes,
 		checkForUpdatesOnStartup
 	}
 }

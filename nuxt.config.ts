@@ -63,7 +63,7 @@ export default defineNuxtConfig({
 
 	runtimeConfig: {
 		public: {
-			version: process.env.VERSION ?? '0.0.0'
+			version: process.env.VERSION ?? 'N/A'
 			// ...other public config...
 		}
 		// ...other private config...

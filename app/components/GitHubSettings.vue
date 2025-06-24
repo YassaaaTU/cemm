@@ -12,7 +12,7 @@
       >
         <fieldset class="fieldset">
           <legend class="fieldset-legend">
-            GitHub Repository
+            Modpack Updates Repository
           </legend>
           <input
             id="github-repo"
@@ -24,7 +24,7 @@
             required
           />
           <p class="label">
-            Required: The GitHub repository where modpack updates will be stored
+            Required: The GitHub repository where modpack updates will be stored (not the app repository)
           </p>
         </fieldset>
 
