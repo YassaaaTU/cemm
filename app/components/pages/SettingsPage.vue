@@ -80,7 +80,8 @@
             </p>
             <p>
               <span class="font-semibold">Purpose:</span> ChillEcke Modpack Manager
-            </p>            <!-- Update Section -->
+            </p>
+            <!-- Update Section -->
             <div class="divider" />
             <div class="flex items-center justify-between">
               <span class="font-semibold">Updates:</span>

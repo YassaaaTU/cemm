@@ -1,4 +1,3 @@
-/* eslint-disable pino-logger/no-console-to-pino-logger */
 // bump.config.ts
 /**
  * Sample bumpp config for Rust + JS/TS monorepo
@@ -12,7 +11,6 @@ export default {
 		'package.json',
 		'src-tauri/Cargo.toml',
 		'src-tauri/tauri.conf.json',
-		'./app/components/pages/SettingsPage.vue',
 		'.github/workflows/release.yml',
 		'.env'
 	],
@@ -27,17 +25,11 @@ export default {
 			field: 'version'
 		}
 	],
-	commit: true,
-	tag: true,
+	commit: false,
+	tag: false,
 	push: false,
 	changelog: true,
 	replacers: [
-		{
-			file: './app/components/pages/SettingsPage.vue',
-			regex: /(<span class="font-semibold">Version:<\/span>\s*)[0-9.]+/g,
-			replacer: (content: string, version: string) =>
-				content.replace(/(<span class="font-semibold">Version:<\/span>\s*)[0-9.]+/g, `$1${version}`)
-		},
 		{
 			file: '.github/workflows/release.yml',
 			regex: /(tagName:\s*app-v)[0-9.]+/g,
