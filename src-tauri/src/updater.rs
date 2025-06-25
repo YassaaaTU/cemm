@@ -173,6 +173,11 @@ pub async fn install_updater_file(file_path: String) -> Result<(), String> {
 
     println!("DEBUG: File exists, OS: {}", std::env::consts::OS);
 
+    // Start the relaunch helper BEFORE running the installer
+    if let Err(e) = spawn_relaunch_helper() {
+        println!("WARNING: Failed to spawn relaunch helper: {}", e);
+    }
+
     let result = match std::env::consts::OS {
         "windows" => install_windows_update(&path),
         "macos" => install_macos_update(&path),
@@ -341,7 +346,7 @@ fn install_windows_update(path: &PathBuf) -> Result<(), String> {
     // For .exe files  
     else if path.extension().and_then(|s| s.to_str()) == Some("exe") {
         println!("DEBUG: Detected EXE installer");
-        
+        // Run the installer
         match Command::new(&path)
             .args(&["/S"]) // Silent install flag
             .spawn() {
@@ -383,5 +388,53 @@ fn install_linux_update(path: &PathBuf) -> Result<(), String> {
             .map_err(|e| format!("Failed to launch new version: {}", e))?;
     }
     
+    Ok(())
+}
+
+// Cross-platform helper to spawn a detached process that will relaunch the app after update
+fn spawn_relaunch_helper() -> Result<(), String> {
+    let current_exe = std::env::current_exe()
+        .map_err(|e| format!("Failed to get current exe path: {}", e))?;
+    
+    let exe_path = current_exe.to_string_lossy().to_string();
+    println!("DEBUG: Spawning relaunch helper for: {}", exe_path);
+
+    #[cfg(target_os = "windows")]
+    {
+        // Use PowerShell to create a detached process that waits and then launches the app
+        let script = format!(
+            "Start-Process powershell -ArgumentList '-Command', 'Start-Sleep -Seconds 8; Start-Process \\\"{}\\\"; exit' -WindowStyle Hidden",
+            exe_path
+        );
+        
+        Command::new("powershell")
+            .args(&["-Command", &script])
+            .spawn()
+            .map_err(|e| format!("Failed to spawn Windows relaunch helper: {}", e))?;
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        // Use shell script to wait and relaunch
+        let script = format!("sleep 8 && open \"{}\" &", exe_path);
+        
+        Command::new("sh")
+            .args(&["-c", &script])
+            .spawn()
+            .map_err(|e| format!("Failed to spawn macOS relaunch helper: {}", e))?;
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        // Use shell script to wait and relaunch  
+        let script = format!("sleep 8 && \"{}\" &", exe_path);
+        
+        Command::new("sh")
+            .args(&["-c", &script])
+            .spawn()
+            .map_err(|e| format!("Failed to spawn Linux relaunch helper: {}", e))?;
+    }
+
+    println!("DEBUG: Relaunch helper spawned successfully");
     Ok(())
 }
