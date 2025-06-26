@@ -35,7 +35,8 @@
             />
             Theme
           </h2>
-        </div>        <div class="card-body">
+        </div>
+        <div class="card-body">
           <fieldset class="fieldset">
             <legend class="fieldset-legend">
               Application Theme

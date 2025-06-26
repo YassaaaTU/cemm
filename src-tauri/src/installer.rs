@@ -170,7 +170,26 @@ pub async fn install_update(
             if let Some(parent) = dest.parent() {
                 async_fs::create_dir_all(parent).await.map_err(|e| format!("Failed to create directory {}: {}", parent.display(), e))?;
             }
-            async_fs::write(&dest, config.content).await.map_err(|e| format!("Failed to write config file {}: {}", dest.display(), e))?;
+            
+            // Handle binary files that are base64-encoded
+            if config.content.starts_with("data:application/octet-stream;base64,") {
+                // Decode base64 binary content
+                let base64_content = config.content.strip_prefix("data:application/octet-stream;base64,").unwrap_or(&config.content);
+                use base64::engine::general_purpose::STANDARD;
+                use base64::Engine;
+                match STANDARD.decode(base64_content) {
+                    Ok(binary_data) => {
+                        async_fs::write(&dest, binary_data).await.map_err(|e| format!("Failed to write binary config file {}: {}", dest.display(), e))?;
+                    }
+                    Err(e) => {
+                        return Err(format!("Failed to decode base64 config file {}: {}", dest.display(), e));
+                    }
+                }
+            } else {
+                // Regular text content
+                async_fs::write(&dest, config.content.as_bytes()).await.map_err(|e| format!("Failed to write config file {}: {}", dest.display(), e))?;
+            }
+            
             installed_paths.push(dest.clone());
             current += 1;
             emit_progress(window.as_ref(), current, total_files, &format!("Installed config: {}", dest.display()));
@@ -375,8 +394,27 @@ pub async fn install_update_optimized(
                 .ok_or("Invalid config file path")?;
             std::fs::create_dir_all(parent_dir)
                 .map_err(|e| format!("Failed to create config directory: {}", e))?;
-            std::fs::write(&file_path, &config_file.content)
-                .map_err(|e| format!("Failed to write config file {}: {}", config_file.relative_path, e))?;
+            
+            // Handle binary files that are base64-encoded
+            if config_file.content.starts_with("data:application/octet-stream;base64,") {
+                // Decode base64 binary content
+                let base64_content = config_file.content.strip_prefix("data:application/octet-stream;base64,").unwrap_or(&config_file.content);
+                use base64::engine::general_purpose::STANDARD;
+                use base64::Engine;
+                match STANDARD.decode(base64_content) {
+                    Ok(binary_data) => {
+                        std::fs::write(&file_path, binary_data)
+                            .map_err(|e| format!("Failed to write binary config file {}: {}", config_file.relative_path, e))?;
+                    }
+                    Err(e) => {
+                        return Err(format!("Failed to decode base64 config file {}: {}", config_file.relative_path, e));
+                    }
+                }
+            } else {
+                // Regular text content
+                std::fs::write(&file_path, config_file.content.as_bytes())
+                    .map_err(|e| format!("Failed to write config file {}: {}", config_file.relative_path, e))?;
+            }
         }
         
         emit_progress(config_files.len(), config_files.len(), "Config-only update complete!");
@@ -572,9 +610,28 @@ async fn install_changed_addons(
             })?;
         }
         
-        async_fs::write(&dest, config.content).await.map_err(|e| {
-            format!("Failed to write config file {}: {}", dest.display(), e)
-        })?;
+        // Handle binary files that are base64-encoded
+        if config.content.starts_with("data:application/octet-stream;base64,") {
+            // Decode base64 binary content
+            let base64_content = config.content.strip_prefix("data:application/octet-stream;base64,").unwrap_or(&config.content);
+            use base64::engine::general_purpose::STANDARD;
+            use base64::Engine;
+            match STANDARD.decode(base64_content) {
+                Ok(binary_data) => {
+                    async_fs::write(&dest, binary_data).await.map_err(|e| {
+                        format!("Failed to write binary config file {}: {}", dest.display(), e)
+                    })?;
+                }
+                Err(e) => {
+                    return Err(format!("Failed to decode base64 config file {}: {}", dest.display(), e));
+                }
+            }
+        } else {
+            // Regular text content
+            async_fs::write(&dest, config.content.as_bytes()).await.map_err(|e| {
+                format!("Failed to write config file {}: {}", dest.display(), e)
+            })?;
+        }
         
         installed_paths.push(dest.clone());
         current_progress += 1;

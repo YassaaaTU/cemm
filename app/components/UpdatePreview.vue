@@ -224,17 +224,29 @@
             >
               <div class="flex items-center space-x-2">
                 <span class="w-4 h-4 bg-info rounded-full flex items-center justify-center">
-                  <span class="text-xs text-white">📄</span>
+                  <span class="text-xs text-white">
+                    {{ configFile.is_binary ? '📦' : '📄' }}
+                  </span>
                 </span>
                 <div class="flex flex-col">
                   <span class="font-mono text-sm">{{ configFile.relative_path }}</span>
                   <span class="text-xs opacity-60">
-                    {{ Math.round(configFile.content.length / 1024 * 100) / 100 }} KB
+                    <template v-if="configFile.is_binary">
+                      Binary file ({{ configFile.filename.split('.').pop()?.toUpperCase() || 'BINARY' }})
+                    </template>
+                    <template v-else>
+                      {{ Math.round(configFile.content.length / 1024 * 100) / 100 }} KB
+                    </template>
                   </span>
                 </div>
               </div>
               <div class="flex items-center space-x-2">
-                <span class="badge badge-info">CONFIG</span>
+                <span
+                  class="badge"
+                  :class="configFile.is_binary ? 'badge-secondary' : 'badge-info'"
+                >
+                  {{ configFile.is_binary ? 'BINARY' : 'CONFIG' }}
+                </span>
                 <span
                   v-if="!configFilesDownloaded"
                   class="badge badge-warning badge-xs"

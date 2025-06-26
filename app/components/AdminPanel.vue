@@ -31,7 +31,8 @@
           @click="saveManifest"
         >
           Save Manifest
-        </button>        <button
+        </button>
+        <button
           class="btn btn-accent"
           :disabled="(manifest == null && selectedConfigFiles.length === 0) || uploading"
           :aria-describedby="getUploadButtonDescription()"
@@ -194,12 +195,20 @@
             class="flex items-center justify-between p-3 bg-base-100 rounded-lg"
           >
             <div class="flex items-center gap-3">
-              <div class="badge badge-primary badge-sm">
-                CONFIG
+              <div
+                class="badge badge-sm"
+                :class="configFile.is_binary ? 'badge-secondary' : 'badge-primary'"
+              >
+                {{ configFile.is_binary ? 'BINARY' : 'CONFIG' }}
               </div>
               <span class="font-mono text-sm">{{ configFile.relative_path }}</span>
               <span class="text-xs opacity-60">
-                ({{ Math.round(configFile.content.length / 1024 * 100) / 100 }} KB)
+                <template v-if="configFile.is_binary">
+                  Binary file ({{ configFile.filename.split('.').pop()?.toUpperCase() || 'BINARY' }})
+                </template>
+                <template v-else>
+                  ({{ Math.round(configFile.content.length / 1024 * 100) / 100 }} KB)
+                </template>
               </span>
             </div>
             <button
@@ -277,7 +286,7 @@ const retryCurrentOperation = async () =>
 // Config file management
 const selectedConfigFiles = ref<ConfigFileWithContent[]>([])
 
-const { selectFile, selectSaveFile, selectMultipleFiles, selectConfigDirectory: selectDirectory, readDirectoryRecursive, writeFile, parseMinecraftInstance, compareManifests, readFile } = useTauri()
+const { selectFile, selectSaveFile, selectMultipleFiles, selectConfigDirectory: selectDirectory, readDirectoryRecursive, writeFile, parseMinecraftInstance, compareManifests, readFile, isBinaryFile } = useTauri()
 const manifestStore = useManifestStore()
 const manifest = computed(() => manifestStore.manifest)
 
@@ -330,28 +339,82 @@ async function selectConfigFiles()
 
 		for (const filePath of filePaths)
 		{
-			const content = await readFile(filePath)
-			if (content !== null)
-			{ // Extract filename and calculate relative path from modpack root
+			// Check if this is a binary file first
+			const isBinary = await isBinaryFile(filePath)
+
+			let content: string | null
+			if (isBinary)
+			{
+				// For binary files, get the content from backend (which will return base64 data URI)
+				content = await readFile(filePath)
+			}
+			else
+			{
+				// For text files, read normally
+				content = await readFile(filePath)
+			}
+
+			if (content !== null && content.length > 0)
+			{
+				// Extract filename and calculate relative path from modpack root
 				const fileName = filePath.split(/[/\\]/).pop()
 				if (fileName !== undefined && fileName.length > 0)
 				{
-				// Calculate relative path from modpack directory
-					let relativePath = fileName // Default to root if we can't determine
+					// Calculate relative path from modpack directory
+					let relativePath = fileName // Default to just filename if we can't determine better
 					const modpackPath = appStore.modpackPath
 
 					if (modpackPath && filePath.startsWith(modpackPath))
 					{
-					// Calculate actual relative path from modpack root
+						// Calculate actual relative path from modpack root
 						const normalizedModpackPath = modpackPath.replace(/\\/g, '/')
 						const normalizedFilePath = filePath.replace(/\\/g, '/')
 						relativePath = normalizedFilePath.substring(normalizedModpackPath.length + 1)
+					}
+					else
+					{
+						// File is outside modpack directory or no modpack loaded
+						// Try to infer relative path based on file location structure
+						const normalizedFilePath = filePath.replace(/\\/g, '/')
+						const pathParts = normalizedFilePath.split('/')
+
+						// Look for common config directory patterns in the path
+						const configIndex = pathParts.findIndex((part) =>
+							part === 'config'
+							|| part === 'defaultconfigs'
+							|| part === 'kubejs'
+							|| part === 'resourcepacks'
+							|| part === 'shaderpacks'
+							|| part === 'emotes'
+						)
+
+						if (configIndex !== -1)
+						{
+							// Use everything from the config directory onwards
+							relativePath = pathParts.slice(configIndex).join('/')
+						}
+						else
+						{
+							// Special handling for known file types that should go in specific directories
+							const fileExtension = fileName.toLowerCase().split('.').pop()
+							if (fileExtension === 'emotecraft')
+							{
+								// .emotecraft files should go in the emotes directory
+								relativePath = `emotes/${fileName}`
+							}
+							else
+							{
+								// Fallback: use just the filename (will be placed in modpack root)
+								relativePath = fileName
+							}
+						}
 					}
 
 					newConfigFiles.push({
 						filename: fileName,
 						relative_path: relativePath,
-						content
+						content,
+						is_binary: isBinary
 					})
 				}
 			}

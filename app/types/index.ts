@@ -21,6 +21,7 @@ export interface ConfigFile
 export interface ConfigFileWithContent extends ConfigFile
 {
 	content: string
+	is_binary?: boolean // true if this is a binary file (content will be base64 data URI)
 }
 
 export interface Manifest

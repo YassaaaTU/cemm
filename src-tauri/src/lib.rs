@@ -48,7 +48,8 @@ pub fn run() {
             get_app_data_dir,
             select_multiple_files,
             select_config_directory,
-            read_directory_recursive
+            read_directory_recursive,
+            is_binary_file
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -131,14 +132,42 @@ fn select_file(app: tauri::AppHandle) -> Result<String, String> {
 #[tauri::command]
 fn read_file(path: String) -> Result<String, String> {
     log::info!("read_file: attempting to read {path}");
+    
+    // Check if file exists first
+    if !std::path::Path::new(&path).exists() {
+        log::error!("read_file: file does not exist: {path}");
+        return Err(format!("File does not exist: {}", path));
+    }
+    
     match fs::read_to_string(&path) {
         Ok(content) => {
-            log::info!("read_file: successfully read {path}");
+            log::info!("read_file: successfully read {path}, content length: {}", content.len());
             Ok(content)
         }
         Err(e) => {
             log::error!("read_file: failed to read {path}: {e}");
-            Err(e.to_string())
+            
+            // Check if this might be a binary file
+            if e.to_string().contains("invalid utf-8") || e.to_string().contains("stream did not contain valid UTF-8") {
+                log::warn!("read_file: file appears to be binary, attempting to read as base64: {path}");
+                
+                // For binary files like .emotecraft, read as bytes and encode as base64
+                match fs::read(&path) {
+                    Ok(bytes) => {
+                        use base64::engine::general_purpose::STANDARD;
+                        use base64::Engine;
+                        let encoded = STANDARD.encode(&bytes);
+                        log::info!("read_file: successfully read binary file as base64: {path}");
+                        Ok(format!("data:application/octet-stream;base64,{}", encoded))
+                    }
+                    Err(read_err) => {
+                        log::error!("read_file: failed to read binary file: {path}: {read_err}");
+                        Err(format!("Failed to read file as text or binary: {}", read_err))
+                    }
+                }
+            } else {
+                Err(e.to_string())
+            }
         }
     }
 }
@@ -217,7 +246,7 @@ fn select_multiple_files(window: tauri::Window) -> Result<Vec<String>, String> {
         .add_filter("Config Files", &[
             "cfg", "txt", "json", "json5", "toml", "properties", "conf",
             "yaml", "yml", "ini", "xml", "js", "ts", "groovy", "kts",
-            "mcmeta", "snbt", "nbt", "dat"
+            "mcmeta", "snbt", "nbt", "dat", "emotecraft"
         ])
         .add_filter("All Files", &["*"]);
     
@@ -267,26 +296,45 @@ fn read_directory_recursive(dir_path: String, base_path: String) -> Result<Vec<C
                     if matches!(ext_str.as_str(), 
                         "cfg" | "txt" | "json" | "json5" | "toml" | "properties" | 
                         "conf" | "yaml" | "yml" | "ini" | "xml" | "js" | "ts" | 
-                        "groovy" | "kts" | "mcmeta" | "snbt" | "nbt" | "dat"
+                        "groovy" | "kts" | "mcmeta" | "snbt" | "nbt" | "dat" |
+                        "emotecraft" // Added support for .emotecraft files
                     ) {
-                        let content = std::fs::read_to_string(&path)
-                            .map_err(|e| format!("Failed to read file {}: {}", path.display(), e))?;
+                        // Try reading as text first, fallback to binary for files like .emotecraft
+                        let content = match std::fs::read_to_string(&path) {
+                            Ok(text_content) => text_content,
+                            Err(_) => {
+                                // File is likely binary, read as bytes and encode as base64
+                                match std::fs::read(&path) {
+                                    Ok(bytes) => {
+                                        use base64::engine::general_purpose::STANDARD;
+                                        use base64::Engine;
+                                        let encoded = STANDARD.encode(&bytes);
+                                        format!("data:application/octet-stream;base64,{}", encoded)
+                                    }
+                                    Err(e) => return Err(format!("Failed to read file {}: {}", path.display(), e))
+                                }
+                            }
+                        };
                         
                         // Calculate relative path from base directory
                         let relative_path = path.strip_prefix(base)
                             .map_err(|_| format!("Failed to make path relative: {}", path.display()))?
                             .to_string_lossy()
                             .replace('\\', "/"); // Normalize path separators
-                        
                         let filename = path.file_name()
                             .ok_or_else(|| format!("Failed to get filename from path: {}", path.display()))?
                             .to_string_lossy()
                             .to_string();
                         
+                        // Check if this is a binary file based on content or extension
+                        let is_binary = content.starts_with("data:application/octet-stream;base64,") 
+                            || ext_str == "emotecraft";
+                        
                         config_files.push(ConfigFileWithContent {
                             filename,
                             relative_path,
                             content,
+                            is_binary: Some(is_binary),
                         });
                     }
                 }
@@ -300,6 +348,44 @@ fn read_directory_recursive(dir_path: String, base_path: String) -> Result<Vec<C
     
     collect_files(dir, base, &mut config_files)?;
     Ok(config_files)
+}
+
+#[tauri::command]
+fn is_binary_file(path: String) -> Result<bool, String> {
+    log::info!("is_binary_file: checking {path}");
+    
+    if !std::path::Path::new(&path).exists() {
+        return Err(format!("File does not exist: {}", path));
+    }
+    
+    // Read first 512 bytes to check for binary content
+    match fs::read(&path) {
+        Ok(bytes) => {
+            let sample_size = std::cmp::min(512, bytes.len());
+            let sample = &bytes[0..sample_size];
+            
+            // Check for null bytes (common indicator of binary files)
+            let has_null_bytes = sample.contains(&0);
+            
+            // Check file extension for known binary types
+            let path_lower = path.to_lowercase();
+            let is_known_binary = path_lower.ends_with(".emotecraft") 
+                || path_lower.ends_with(".exe") 
+                || path_lower.ends_with(".dll")
+                || path_lower.ends_with(".bin")
+                || path_lower.ends_with(".dat")
+                || path_lower.ends_with(".zip")
+                || path_lower.ends_with(".jar");
+            
+            let is_binary = has_null_bytes || is_known_binary;
+            log::info!("is_binary_file: {path} is binary: {is_binary}");
+            Ok(is_binary)
+        }
+        Err(e) => {
+            log::error!("is_binary_file: failed to read {path}: {e}");
+            Err(e.to_string())
+        }
+    }
 }
 
 use crate::composables::github::ConfigFileWithContent;

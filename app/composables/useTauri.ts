@@ -52,6 +52,18 @@ export const useTauri = () =>
 		}
 	}
 
+	const isBinaryFile = async (path: string): Promise<boolean> =>
+	{
+		try
+		{
+			return await invoke<boolean>('is_binary_file', { path })
+		}
+		catch (_e)
+		{
+			return false // Default to false if check fails
+		}
+	}
+
 	const readFile = async (path: string): Promise<string | null> =>
 	{
 		try
@@ -320,6 +332,7 @@ export const useTauri = () =>
 		selectMultipleFiles,
 		readFile,
 		writeFile,
+		isBinaryFile,
 		parseMinecraftInstance,
 		compareManifests,
 		openCurseforgeUrl,

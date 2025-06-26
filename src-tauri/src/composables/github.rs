@@ -9,6 +9,8 @@ pub struct ConfigFileWithContent {
     pub filename: String,
     pub relative_path: String,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_binary: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -99,13 +101,23 @@ pub async fn upload_update(
     // Create blobs for config files
     let mut config_blob_shas = Vec::new();
     for file in &config_files {
+        // Check if content is already base64-encoded (binary files)
+        let (content, encoding) = if file.content.starts_with("data:application/octet-stream;base64,") {
+            // Already base64-encoded binary content, extract the base64 part
+            let base64_content = file.content.strip_prefix("data:application/octet-stream;base64,").unwrap_or(&file.content);
+            (base64_content.to_string(), "base64")
+        } else {
+            // Text content, encode as base64
+            (STANDARD.encode(&file.content), "base64")
+        };
+        
         let config_blob_response = client
             .post(&manifest_blob_url) // Same URL for creating blobs
             .header("Authorization", format!("token {}", token))
             .header("User-Agent", user_agent)
             .json(&json!({
-                "content": STANDARD.encode(&file.content),
-                "encoding": "base64"
+                "content": content,
+                "encoding": encoding
             }))
             .send()
             .await
@@ -365,6 +377,7 @@ pub async fn download_config_files(
             filename: config_file.filename,
             relative_path: config_file.relative_path,
             content,
+            is_binary: None, // Will be determined during installation
         });
     }
     
