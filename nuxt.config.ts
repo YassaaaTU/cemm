@@ -71,7 +71,9 @@ export default defineNuxtConfig({
 
 	future: {
 		compatibilityVersion: 4
-	},	experimental: {
+	},
+
+	experimental: {
 		typedPages: true,
 		payloadExtraction: false, // Better for Tauri apps
 		writeEarlyHints: false,

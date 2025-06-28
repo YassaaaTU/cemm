@@ -212,7 +212,7 @@ fn select_save_file(app: tauri::AppHandle) -> Result<String, String> {
     FileDialogBuilder::new(dialog)
         .set_title("Save Manifest As...")
         .add_filter("Manifest JSON", &["json"])
-        .set_file_name("manifest.json")
+        .set_file_name("cemm-manifest.json")
         .save_file(move |file| {
             let _ = tx.send(file);
         });

@@ -45,7 +45,7 @@ export const ERROR_DEFINITIONS: Record<string, Omit<ErrorDetails, 'message'>> = 
 	INVALID_JSON: {
 		code: 'INVALID_JSON',
 		userMessage: 'The file contains invalid JSON data.',
-		suggestion: 'Please select a valid manifest.json or minecraftinstance.json file.',
+		suggestion: 'Please select a valid cemm-manifest.json or minecraftinstance.json file.',
 		canRetry: false,
 		severity: 'medium'
 	},

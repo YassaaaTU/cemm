@@ -59,6 +59,15 @@
       </div>
     </section>
 
+    <div class="mt-6 flex flex-col gap-2">
+      <progress-bar
+        :progress="progress"
+        :label="uploading ? 'Uploading to GitHub...' : ''"
+        :color="uploading ? 'primary' : 'success'"
+        :show-percentage="uploading"
+      />
+    </div>
+
     <!-- Error Handling -->
     <app-alert
       v-if="errorState.error"
@@ -241,14 +250,6 @@
           </p>
         </div>
       </div>
-    </div>
-    <div class="mt-6 flex flex-col gap-2">
-      <progress-bar
-        :progress="progress"
-        :label="uploading ? 'Uploading to GitHub...' : ''"
-        :color="uploading ? 'primary' : 'success'"
-        :show-percentage="uploading"
-      />
     </div>
   </div>
 </template>

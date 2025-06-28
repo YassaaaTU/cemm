@@ -185,7 +185,7 @@ export const useTauri = () =>
 	{
 		try
 		{
-			const manifestPath = `${modpackPath}/manifest.json`
+			const manifestPath = `${modpackPath}/cemm-manifest.json`
 			const content = await readFile(manifestPath)
 			if (content === null) return null
 			return JSON.parse(content) as Manifest

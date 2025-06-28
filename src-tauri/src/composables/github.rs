@@ -136,7 +136,7 @@ pub async fn upload_update(
     // because Git tree creation replaces the entire directory structure
     let mut tree_items = vec![
         json!({
-            "path": format!("{}/manifest.json", uuid),
+            "path": format!("{}/cemm-manifest.json", uuid),
             "mode": "100644",
             "type": "blob",
             "sha": manifest_blob_sha
@@ -277,24 +277,24 @@ pub async fn download_manifest(
         }
     }
 
-    // Find manifest.json
+    // Find cemm-manifest.json
     let manifest_file = files
         .iter()
-        .find(|f| f["name"] == "manifest.json")
+        .find(|f| f["name"] == "cemm-manifest.json")
         .ok_or_else(|| {
-            eprintln!("manifest.json not found in directory listing");
-            "manifest.json not found".to_string()
+            eprintln!("cemm-manifest.json not found in directory listing");
+            "cemm-manifest.json not found".to_string()
         })?;
     let manifest_url = manifest_file["download_url"]
         .as_str()
         .ok_or_else(|| {
-            eprintln!("No download_url found for manifest.json");
-            "No download_url for manifest.json".to_string()
+            eprintln!("No download_url found for cemm-manifest.json");
+            "No download_url for cemm-manifest.json".to_string()
         })?;
     
     eprintln!("Downloading manifest from: {}", manifest_url);
     
-    // Download manifest.json directly
+    // Download cemm-manifest.json directly
     let manifest_res = client
         .get(manifest_url)
         .header("User-Agent", user_agent)

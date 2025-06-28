@@ -27,7 +27,7 @@
             @blur="saveGithubRepo"
           />
         </div>
-        <p class="label">
+        <p class="text-xs opacity-70 mb-4">
           Required for downloading updates from GitHub. This is usually provided by the modpack developer.
         </p>
       </fieldset>
@@ -122,6 +122,15 @@
         </button>
       </div>
     </section>
+
+    <div class="mt-6 flex flex-col gap-2">
+      <progress-bar
+        :progress="progress"
+        :label="getProgressLabel()"
+        :color="getProgressColor()"
+        :show-percentage="downloading || installing"
+      />
+    </div>
     <!-- Error Handling -->
     <app-alert
       v-if="errorState.error"
@@ -169,14 +178,6 @@
         title="Data Packs"
         category="datapacks"
         class="mb-4"
-      />
-    </div>
-    <div class="mt-6 flex flex-col gap-2">
-      <progress-bar
-        :progress="progress"
-        :label="getProgressLabel()"
-        :color="getProgressColor()"
-        :show-percentage="downloading || installing"
       />
     </div>
     <!-- Update Preview Modal -->
@@ -452,16 +453,16 @@ async function downloadFromGithub()
 		{
 			await executeWithRecovery(async () =>
 			{
-				// IMPROVED: Always generate manifest_old.json from minecraftinstance.json (actual installed state)
+				// IMPROVED: Always generate cemm-manifest_old.json from minecraftinstance.json (actual installed state)
 				progress.value = 60
-				statusMessage.value = 'Generating manifest_old.json from current installation...'
+				statusMessage.value = 'Generating cemm-manifest_old.json from current installation...'
 
 				await generateManifestOldFromMinecraftInstance(modpackPath)
 			}, 'generateManifestOld')
 
-			// Write new manifest.json (target state)
+			// Write new cemm-manifest.json (target state)
 			progress.value = 80
-			statusMessage.value = 'Writing new manifest.json...'
+			statusMessage.value = 'Writing new cemm-manifest.json...'
 
 			await executeWithRecovery(async () =>
 			{
@@ -754,30 +755,30 @@ async function generateManifestOldFromMinecraftInstance(modpackPath: string)
 {
 	try
 	{
-		// Always generate manifest_old.json from minecraftinstance.json to represent actual installed state
+		// Always generate cemm-manifest_old.json from minecraftinstance.json to represent actual installed state
 		const minecraftInstancePath = `${modpackPath}/minecraftinstance.json`
 		const minecraftInstanceContent = await readFile(minecraftInstancePath)
 
 		if (minecraftInstanceContent !== null && minecraftInstanceContent.trim().length > 0)
 		{
-			console.info('Generating manifest_old.json from minecraftinstance.json (actual installed state)')
+			console.info('Generating cemm-manifest_old.json from minecraftinstance.json (actual installed state)')
 
 			// Parse minecraftinstance.json into manifest format
 			const parsedManifest = await parseMinecraftInstance(minecraftInstancePath)
 
 			if (parsedManifest !== null)
 			{
-				// Write as manifest_old.json (represents current installed state)
-				const oldManifestPath = `${modpackPath}/manifest_old.json`
+				// Write as cemm-manifest_old.json (represents current installed state)
+				const oldManifestPath = `${modpackPath}/cemm-manifest_old.json`
 				const manifestContent = JSON.stringify(parsedManifest, null, 2)
 				const writeSuccess = await writeFile(oldManifestPath, manifestContent)
 
 				if (!writeSuccess)
 				{
-					throw new Error('Failed to write manifest_old.json from minecraftinstance.json')
+					throw new Error('Failed to write cemm-manifest_old.json from minecraftinstance.json')
 				}
 
-				console.info('Successfully generated manifest_old.json from actual installed state')
+				console.info('Successfully generated cemm-manifest_old.json from actual installed state')
 
 				// Load as previous manifest for comparison
 				manifestStore.loadInstalledManifest(parsedManifest)
@@ -800,7 +801,7 @@ async function generateManifestOldFromMinecraftInstance(modpackPath: string)
 	}
 	catch (err)
 	{
-		console.error('Failed to generate manifest_old.json from minecraftinstance.json', { err })
+		console.error('Failed to generate cemm-manifest_old.json from minecraftinstance.json', { err })
 		// Fall back to fresh install
 		manifestStore.loadInstalledManifest(null)
 		return false
@@ -811,21 +812,21 @@ async function writeNewManifest(modpackPath: string, newManifest: Manifest)
 {
 	try
 	{
-		// Simply write the new manifest.json (target state)
-		const manifestPath = `${modpackPath}/manifest.json`
+		// Simply write the new cemm-manifest.json (target state)
+		const manifestPath = `${modpackPath}/cemm-manifest.json`
 		const writeSuccess = await writeFile(manifestPath, JSON.stringify(newManifest, null, 2))
 
 		if (!writeSuccess)
 		{
-			throw new Error('Failed to write new manifest.json')
+			throw new Error('Failed to write new cemm-manifest.json')
 		}
 
-		console.info('Successfully wrote new manifest.json')
+		console.info('Successfully wrote new cemm-manifest.json')
 		return true
 	}
 	catch (err)
 	{
-		console.error('Failed to write new manifest.json', { err })
+		console.error('Failed to write new cemm-manifest.json', { err })
 		throw err
 	}
 }
