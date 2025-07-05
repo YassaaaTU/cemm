@@ -325,6 +325,35 @@ export const useTauri = () =>
 			configFiles
 		})
 	}
+	const validatePath = async (path: string): Promise<{
+		exists: boolean
+		is_directory?: boolean
+		is_file?: boolean
+		can_read?: boolean
+		has_minecraft_instance?: boolean
+		has_mods_folder?: boolean
+		has_config_folder?: boolean
+		is_likely_modpack?: boolean
+		is_valid_config?: boolean
+		extension?: string
+		absolute_path?: string
+		original_path: string
+	}> =>
+	{
+		try
+		{
+			return await invoke('validate_path', { path })
+		}
+		catch (e)
+		{
+			console.error('validatePath error:', e)
+			return {
+				exists: false,
+				original_path: path
+			}
+		}
+	}
+
 	return {
 		selectDirectory,
 		selectFile,
@@ -347,6 +376,7 @@ export const useTauri = () =>
 		downloadManifest,
 		downloadConfigFiles,
 		selectConfigDirectory,
-		readDirectoryRecursive
+		readDirectoryRecursive,
+		validatePath
 	}
 }

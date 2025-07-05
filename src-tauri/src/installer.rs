@@ -365,8 +365,9 @@ async fn remove_old_files(modpack_path: &str, old_manifest: &Manifest, diff: &Up
     Ok(())
 }
 
-#[command]
+#[tauri::command]
 pub async fn install_update_optimized(
+    window: Window,
     modpack_path: String,
     old_manifest: Option<Manifest>,
     new_manifest: Manifest,
@@ -381,6 +382,11 @@ pub async fn install_update_optimized(
         let emit_progress = |current: usize, total: usize, msg: &str| {
             let progress = if total > 0 { current as f64 / total as f64 * 100.0 } else { 100.0 };
             println!("Progress: {:.1}% - {}", progress, msg);
+            // Emit Tauri event
+            let _ = Emitter::emit(&window, "install-progress", Some(serde_json::json!({
+                "progress": progress,
+                "message": msg
+            })));
         };
         
         emit_progress(1, 10, "Installing config files only...");
@@ -436,7 +442,7 @@ pub async fn install_update_optimized(
     remove_old_files(&modpack_path, &old_manifest, &calculate_update_diff(&old_manifest, &new_manifest)?).await?;
     
     // Step 3: Only download and install changed addons (optimized!)
-    install_changed_addons(&client, &modpack_path, &new_manifest, &diff, config_files).await
+    install_changed_addons(&client, &modpack_path, &new_manifest, &diff, config_files, &window).await
 }
 
 #[derive(Debug, Clone)]
@@ -508,6 +514,7 @@ async fn install_changed_addons(
     _new_manifest: &Manifest,
     diff: &DetailedUpdateDiff,
     config_files: Vec<ConfigFile>,
+    window: &Window,
 ) -> Result<(), String> {
     // Calculate total work: only addons that need downloading + config files
     let total_downloads = diff.addons_to_add.len() + diff.addons_to_update.len() + config_files.len();
@@ -521,9 +528,13 @@ async fn install_changed_addons(
         config_files.len()
     );    // Helper to emit progress 
     let emit_progress = |current: usize, total: usize, msg: &str| {
-        // Note: In real implementation, you'd emit to window here
         let progress = if total > 0 { current as f64 / total as f64 * 100.0 } else { 100.0 };
         println!("Progress: {:.1}% - {}", progress, msg);
+        // Emit Tauri event
+        let _ = Emitter::emit(window, "install-progress", Some(serde_json::json!({
+            "progress": progress,
+            "message": msg
+        })));
     };    // Helper async function to download and install a single addon
     async fn download_addon_helper(
         client: &Client,

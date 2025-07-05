@@ -153,7 +153,10 @@
         </h3>
         <p class="text-sm opacity-70 mb-4">
           Select configuration files to include with your modpack update.
-        </p>        <div class="flex gap-2 mb-4">
+        </p>
+
+        <!-- Config File Selection Buttons -->
+        <div class="flex gap-2 mb-4">
           <button
             class="btn btn-outline btn-sm"
             @click="selectConfigFiles"
@@ -167,7 +170,7 @@
           </button>
           <button
             class="btn btn-outline btn-sm"
-            @click="selectConfigDirectory"
+            @click="showDirectorySelector = true"
           >
             <Icon
               name="mdi:folder-plus"
@@ -189,6 +192,40 @@
             Clear All
           </button>
         </div>
+
+        <!-- Directory Selector Modal -->
+        <dialog
+          :class="['modal', { 'modal-open': showDirectorySelector }]"
+        >
+          <div class="modal-box w-11/12 max-w-2xl">
+            <h3 class="font-bold text-lg mb-4">
+              Select Config Directory
+            </h3>
+            <p class="text-sm opacity-70 mb-4">
+              Choose a directory to scan for config files. All supported files will be added automatically.
+            </p>
+
+            <path-selector
+              type="directory"
+              title="Select Config Directory"
+              @selected="handleDirectorySelected"
+              @error="handleDirectoryError"
+            />
+
+            <div class="modal-action">
+              <button
+                class="btn btn-ghost"
+                @click="showDirectorySelector = false"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+          <div
+            class="modal-backdrop"
+            @click="showDirectorySelector = false"
+          />
+        </dialog>
 
         <!-- Selected Config Files List -->
         <div
@@ -287,7 +324,82 @@ const retryCurrentOperation = async () =>
 // Config file management
 const selectedConfigFiles = ref<ConfigFileWithContent[]>([])
 
-const { selectFile, selectSaveFile, selectMultipleFiles, selectConfigDirectory: selectDirectory, readDirectoryRecursive, writeFile, parseMinecraftInstance, compareManifests, readFile, isBinaryFile } = useTauri()
+// PathSelector modal state
+const showDirectorySelector = ref(false)
+
+// PathSelector event handlers
+const handleDirectorySelected = async (dirPath: string | string[]) =>
+{
+	showDirectorySelector.value = false
+	const pathToUse = Array.isArray(dirPath) ? dirPath[0] : dirPath
+
+	if (typeof pathToUse !== 'string' || pathToUse.trim().length === 0)
+	{
+		statusMessage.value = 'No directory selected.'
+		statusType.value = 'warning'
+		return
+	}
+
+	try
+	{
+		statusMessage.value = 'Scanning directory for config files...'
+		statusType.value = 'info'
+
+		// Calculate the parent directory to use as base path
+		const lastBackslash = pathToUse.lastIndexOf('\\')
+		const lastForwardslash = pathToUse.lastIndexOf('/')
+		const lastSeparator = Math.max(lastBackslash, lastForwardslash)
+
+		let parentPath: string
+		if (lastSeparator > 0)
+		{
+			parentPath = pathToUse.substring(0, lastSeparator)
+		}
+		else
+		{
+			parentPath = pathToUse
+		}
+
+		const configFiles = await readDirectoryRecursive(pathToUse, parentPath)
+
+		if (configFiles.length === 0)
+		{
+			statusMessage.value = 'No config files found in the selected directory.'
+			statusType.value = 'warning'
+			return
+		}
+
+		selectedConfigFiles.value = [...selectedConfigFiles.value, ...configFiles]
+		statusMessage.value = `Added ${configFiles.length} config file(s) from directory.`
+		statusType.value = 'success'
+	}
+	catch (err)
+	{
+		statusMessage.value = `Failed to read config files from directory: ${err instanceof Error ? err.message : 'Unknown error'}`
+		statusType.value = 'error'
+	}
+}
+
+const handleDirectoryError = (error: string) =>
+{
+	showDirectorySelector.value = false
+	statusMessage.value = `Directory selection error: ${error}`
+	statusType.value = 'error'
+}
+
+// Import Tauri functions
+const {
+	selectFile,
+	selectSaveFile,
+	selectMultipleFiles,
+	readDirectoryRecursive,
+	writeFile,
+	parseMinecraftInstance,
+	compareManifests,
+	readFile,
+	isBinaryFile
+} = useTauri()
+
 const manifestStore = useManifestStore()
 const manifest = computed(() => manifestStore.manifest)
 
@@ -664,63 +776,6 @@ async function uploadToGithub()
 	// Set current operation for retry functionality
 	currentOperation.value = uploadOperation
 	await uploadOperation()
-}
-
-// New function for directory-based config file selection
-async function selectConfigDirectory()
-{
-	statusMessage.value = ''
-	const dirPath = await selectDirectory()
-
-	if (dirPath === null)
-	{
-		statusMessage.value = 'No directory selected.'
-		statusType.value = 'warning'
-		return
-	}
-	try
-	{
-		statusMessage.value = 'Scanning directory for config files...'
-		statusType.value = 'info'
-
-		// Calculate the parent directory to use as base path
-		// This ensures the selected directory name is included in relative paths
-		// Handle both Windows (\) and Unix (/) path separators
-		const lastBackslash = dirPath.lastIndexOf('\\')
-		const lastForwardslash = dirPath.lastIndexOf('/')
-		const lastSeparator = Math.max(lastBackslash, lastForwardslash)
-
-		let parentPath: string
-		if (lastSeparator > 0)
-		{
-			parentPath = dirPath.substring(0, lastSeparator)
-		}
-		else
-		{
-			// If no separator found, use the directory itself as fallback
-			parentPath = dirPath
-		}
-
-		// Use the selected directory for scanning, but parent directory as base for relative paths
-		const configFiles = await readDirectoryRecursive(dirPath, parentPath)
-
-		if (configFiles.length === 0)
-		{
-			statusMessage.value = 'No config files found in the selected directory.'
-			statusType.value = 'warning'
-			return
-		}
-
-		// Add the found config files to the selection
-		selectedConfigFiles.value = [...selectedConfigFiles.value, ...configFiles]
-		statusMessage.value = `Added ${configFiles.length} config file(s) from directory.`
-		statusType.value = 'success'
-	}
-	catch (err)
-	{
-		statusMessage.value = `Failed to read config files from directory: ${err instanceof Error ? err.message : 'Unknown error'}`
-		statusType.value = 'error'
-	}
 }
 
 // Navigation state management - fix for settings → dashboard bug

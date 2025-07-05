@@ -40,12 +40,19 @@
     >
       <label
         id="file-help"
-        for="file-selector"
+        for="modpack-path-selector"
         class="w-full label label-text"
       >
         Select the modpack directory where you want to install the update:
       </label>
-      <file-selector />
+      <path-selector
+        id="modpack-path-selector"
+        type="directory"
+        title="Select Modpack Directory"
+        :model-value="path"
+        @update:model-value="updateModpackPath"
+        @error="handlePathSelectorError"
+      />
     </section>
 
     <!-- UUID Input Section -->
@@ -124,6 +131,14 @@
     </section>
 
     <div class="mt-6 flex flex-col gap-2">
+      <!-- Debug progress display -->
+      <div
+        v-if="installing"
+        class="text-sm opacity-70 mb-2"
+      >
+        Debug: Progress = {{ progress }}%, Installing = {{ installing }}, Status = {{ statusMessage }}
+      </div>
+
       <progress-bar
         :progress="progress"
         :label="getProgressLabel()"
@@ -240,6 +255,26 @@ const saveGithubRepo = () =>
 // Enhanced error handling
 const errorHandler = createErrorHandler(statusMessage, statusType, logger)
 const { errorState, handleError, retry, clearError, executeWithRecovery } = errorHandler
+
+// PathSelector event handlers
+const updateModpackPath = (newPath: string | string[] | null) =>
+{
+	// Handle both single path (string) and multiple paths (string[])
+	const singlePath = Array.isArray(newPath) ? newPath[0] : newPath
+
+	if (singlePath !== null && singlePath !== undefined && singlePath.trim().length > 0)
+	{
+		appStore.modpackPath = singlePath
+		logger.info('Modpack path updated via PathSelector', { path: singlePath })
+	}
+}
+
+const handlePathSelectorError = (error: string) =>
+{
+	logger.error('PathSelector error', { error })
+	statusMessage.value = `Path selection error: ${error}`
+	statusType.value = 'error'
+}
 
 // Track current operation for retry functionality
 const currentOperation = ref<(() => Promise<void>) | null>(null)
@@ -589,8 +624,20 @@ async function installUpdate()
 		{
 			const prog = (event as InstallProgressEvent).payload?.progress
 			const message = (event as InstallProgressEvent).payload?.message
-			if (typeof prog === 'number') progress.value = prog
-			if (typeof message === 'string') statusMessage.value = message
+
+			// Debug logging to see what we're receiving
+			console.log('Install progress event:', { progress: prog, message, fullEvent: event })
+
+			if (typeof prog === 'number')
+			{
+				progress.value = prog
+				console.log('Updated progress to:', prog)
+			}
+			if (typeof message === 'string')
+			{
+				statusMessage.value = message
+				console.log('Updated status message to:', message)
+			}
 		})
 		const previousManifest = manifestStore.previousManifest
 		if (manifest.value === null)
