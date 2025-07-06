@@ -75,9 +75,9 @@ pub async fn check_for_updates(repo: String) -> Result<UpdateInfo, String> {
             size: None,        });
     }
 
-    // Compare versions - handle both "v1.2.0" and "app-v1.2.0" formats
+    // Compare versions - handle both "v1.2.0" and "cemm-v1.2.0" formats
     let latest_version = release.tag_name
-        .trim_start_matches("app-v")  // Remove "app-v" prefix first
+        .trim_start_matches("cemm-v")  // Remove "cemm-v" prefix first
         .trim_start_matches('v');     // Then remove standalone "v" prefix
     println!("DEBUG: Comparing versions - Current: '{}', Latest: '{}'", current_version, latest_version);
     

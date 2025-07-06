@@ -1,18 +1,22 @@
 [package]
-name = "app"
-version = "1.4.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+name = "cemm"
+version = "1.4.1"
+description = "ChillEcke Modpack Manager"
+authors = ["Yasir Jumaah"]
+license = "MIT"
+repository = "https://github.com/yasirjumaah/cemm"
 edition = "2021"
 rust-version = "1.77.2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "app_lib"
+name = "cemm_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "cemm"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.2.0", features = [] }
@@ -43,3 +47,7 @@ tauri-plugin-process = "2.0.0"
 # Linux-specific dependencies for better file dialog support
 [target.'cfg(target_os = "linux")'.dependencies]
 nfd = "0.0.4"  # Native File Dialog - better Linux compatibility
+
+# macOS-specific dependencies for better compatibility
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26.1"  # macOS native APIs

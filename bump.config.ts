@@ -32,10 +32,10 @@ export default {
 	replacers: [
 		{
 			file: '.github/workflows/release.yml',
-			regex: /(tagName:\s*app-v)[0-9.]+/g,
+			regex: /(tagName:\s*cemm-v)[0-9.]+/g,
 			replacer: (content: string, version: string) =>
-				content.replace(/(tagName:\s*app-v)[0-9.]+/g, `$1${version}`)
-					.replace(/(releaseName:\s*'App v)[0-9.]+/g, `$1${version}'`)
+				content.replace(/(tagName:\s*cemm-v)[0-9.]+/g, `$1${version}`)
+					.replace(/(releaseName:\s*'CEMM v)[0-9.]+/g, `$1${version}'`)
 		},
 		{
 			file: '.env',
