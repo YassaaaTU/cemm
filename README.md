@@ -14,7 +14,28 @@ CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes
 - **Automatic Installation**: Users can install modifications with a single UUID code
 - **Cross-Platform**: Works on Windows *AND SHOULD* work on macOS and Linux, never tested on these platforms
 
-## Getting Started
+## Usage
+
+### Admin Mode
+1. Select your modpack directory containing `minecraftinstance.json`
+2. Select the minecraftinstance.json file to generate `manifest.json`
+   - This file contains metadata about your modpack
+   - It will be used to track updates and changes
+3. Choose config files to distribute (optional)
+4. Generate UUID and upload to your GitHub repository
+5. Share the UUID with users for easy installation
+
+### User Mode
+1. Configure your GitHub repository settings
+2. Enter the UUID code provided by the admin
+3. Preview what changes will be applied
+4. Install the update to your modpack directory
+
+### Settings
+- GitHub repository name from which to download updates using the UUID
+- Github token for secure access to private repositories (only needed for admin mode)
+
+## Getting Started (Contribute/Development)
 
 ### Prerequisites
 - Node.js (>= 18.x)
@@ -44,29 +65,6 @@ To build for production:
 ```bash
 bun app:build
 ```
-
-## Usage
-
-### Admin Mode
-1. Select your modpack directory containing `minecraftinstance.json`
-2. Select the minecraftinstance.json file to generate `manifest.json`
-   - This file contains metadata about your modpack
-   - It will be used to track updates and changes
-3. Choose config files to distribute (optional)
-4. Generate UUID and upload to your GitHub repository
-5. Share the UUID with users for easy installation
-
-### User Mode
-1. Configure your GitHub repository settings
-2. Enter the UUID code provided by the admin
-3. Preview what changes will be applied
-4. Install the update to your modpack directory
-
-### Settings
-- GitHub repository name from which to download updates using the UUID
-- Github token for secure access to private repositories (only needed for admin mode)
-
-## Development
 
 ### Project Structure
 ```
