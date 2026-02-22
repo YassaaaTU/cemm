@@ -1,6 +1,6 @@
 [package]
 name = "cemm"
-version = "1.4.1"
+version = "1.4.2"
 description = "ChillEcke Modpack Manager"
 authors = ["Yasir Jumaah"]
 license = "MIT"
