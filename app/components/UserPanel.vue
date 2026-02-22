@@ -492,7 +492,14 @@ async function downloadFromGithub()
 				progress.value = 60
 				statusMessage.value = 'Generating cemm-manifest_old.json from current installation...'
 
-				await generateManifestOldFromMinecraftInstance(modpackPath)
+				const result = await generateManifestOldFromMinecraftInstance(modpackPath)
+				if (!result.success)
+				{
+					const errorMsg = result.error ?? 'Unknown error'
+					console.warn('Previous manifest generation failed:', errorMsg)
+					// This is not a fatal error - we'll just do a fresh install instead
+					statusMessage.value = errorMsg
+				}
 			}, 'generateManifestOld')
 
 			// Write new cemm-manifest.json (target state)
@@ -798,7 +805,7 @@ onUnmounted(() =>
 	console.info('UserPanel unmounted')
 })
 
-async function generateManifestOldFromMinecraftInstance(modpackPath: string)
+async function generateManifestOldFromMinecraftInstance(modpackPath: string): Promise<{ success: boolean, error?: string }>
 {
 	try
 	{
@@ -822,7 +829,10 @@ async function generateManifestOldFromMinecraftInstance(modpackPath: string)
 
 				if (!writeSuccess)
 				{
-					throw new Error('Failed to write cemm-manifest_old.json from minecraftinstance.json')
+					const errorMsg = 'Failed to write cemm-manifest_old.json from minecraftinstance.json'
+					console.error(errorMsg)
+					manifestStore.loadInstalledManifest(null)
+					return { success: false, error: errorMsg }
 				}
 
 				console.info('Successfully generated cemm-manifest_old.json from actual installed state')
@@ -830,28 +840,31 @@ async function generateManifestOldFromMinecraftInstance(modpackPath: string)
 				// Load as previous manifest for comparison
 				manifestStore.loadInstalledManifest(parsedManifest)
 
-				return true
+				return { success: true }
 			}
 			else
 			{
-				console.error('Failed to parse minecraftinstance.json')
-				throw new Error('Invalid minecraftinstance.json format')
+				const errorMsg = 'Invalid minecraftinstance.json format - failed to parse'
+				console.error(errorMsg)
+				manifestStore.loadInstalledManifest(null)
+				return { success: false, error: errorMsg }
 			}
 		}
 		else
 		{
 			// No minecraftinstance.json found - fresh install
-			console.debug('No minecraftinstance.json found, treating as fresh install')
+			console.info('No minecraftinstance.json found, treating as fresh install (no previous manifest available)')
 			manifestStore.loadInstalledManifest(null)
-			return false
+			return { success: false, error: 'No previous installation found - will perform fresh install' }
 		}
 	}
 	catch (err)
 	{
-		console.error('Failed to generate cemm-manifest_old.json from minecraftinstance.json', { err })
+		const errorMsg = err instanceof Error ? err.message : 'Unknown error generating previous manifest'
+		console.error('Failed to generate cemm-manifest_old.json from minecraftinstance.json', { error: errorMsg })
 		// Fall back to fresh install
 		manifestStore.loadInstalledManifest(null)
-		return false
+		return { success: false, error: errorMsg }
 	}
 }
 

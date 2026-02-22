@@ -6,7 +6,6 @@ export const useManifestStore = defineStore('manifest', () =>
 {
 	const manifest = ref<Manifest | null>(null)
 	const selectedAddons = ref<string[]>([])
-	const removedAddons = ref<string[]>([])
 	const previousManifest = ref<Manifest | null>(null)
 	const updateInfo = ref<UpdateInfo | null>(null)
 	const excludedAddons = ref<Set<string>>(new Set())
@@ -66,7 +65,6 @@ export const useManifestStore = defineStore('manifest', () =>
 	return {
 		manifest,
 		selectedAddons,
-		removedAddons,
 		previousManifest,
 		updateInfo,
 		excludedAddons,

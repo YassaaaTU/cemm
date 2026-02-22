@@ -210,29 +210,54 @@ fn find_disabled_files(dir: PathBuf) -> Vec<String> {
 #[command]
 pub fn compare_manifests(old: Manifest, new: Manifest) -> Result<UpdateInfo, String> {
     log::info!("compare_manifests: comparing manifests");
-    let old_ids: std::collections::HashSet<_> = old.mods.iter().map(|a| &a.addon_name).collect();
-    let new_ids: std::collections::HashSet<_> = new.mods.iter().map(|a| &a.addon_name).collect();
-    let added: Vec<Addon> = new
-        .mods
-        .iter()
-        .filter(|a| !old_ids.contains(&a.addon_name) && a.disabled != Some(true))
-        .cloned()
-        .collect();
-    // Build a set of disabled addon names in the new manifest
-    let disabled_in_new: std::collections::HashSet<_> = new
-        .mods
-        .iter()
-        .filter(|a| a.disabled == Some(true))
-        .map(|a| &a.addon_name)
-        .collect();
-    let removed: Vec<String> = old
-        .mods
-        .iter()
-        .filter(|a| {
-            !new_ids.contains(&a.addon_name) || disabled_in_new.contains(&a.addon_name)
-        })
-        .map(|a| a.addon_name.clone())
-        .collect();
+    
+    // Helper function to process a single addon category
+    fn process_category(
+        old_addons: &[Addon],
+        new_addons: &[Addon],
+        added: &mut Vec<Addon>,
+        removed: &mut Vec<String>,
+    ) {
+        let old_ids: std::collections::HashSet<_> = old_addons.iter().map(|a| &a.addon_name).collect();
+        let new_ids: std::collections::HashSet<_> = new_addons.iter().map(|a| &a.addon_name).collect();
+        
+        // Find added addons (in new but not in old, and not disabled)
+        for new_addon in new_addons {
+            if !old_ids.contains(&new_addon.addon_name) && new_addon.disabled != Some(true) {
+                added.push(new_addon.clone());
+            }
+        }
+        
+        // Build a set of disabled addon names in the new manifest
+        let disabled_in_new: std::collections::HashSet<_> = new_addons
+            .iter()
+            .filter(|a| a.disabled == Some(true))
+            .map(|a| &a.addon_name)
+            .collect();
+        
+        // Find removed addons (in old but not in new, or disabled in new)
+        // Skip if old addon was already disabled - can't "remove" something that wasn't active
+        for old_addon in old_addons {
+            if old_addon.disabled.unwrap_or(false) {
+                continue; // Skip disabled addons in old manifest
+            }
+            if !new_ids.contains(&old_addon.addon_name) || disabled_in_new.contains(&old_addon.addon_name) {
+                removed.push(old_addon.addon_name.clone());
+            }
+        }
+    }
+    
+    let mut added: Vec<Addon> = Vec::new();
+    let mut removed: Vec<String> = Vec::new();
+    
+    // Process all addon categories
+    process_category(&old.mods, &new.mods, &mut added, &mut removed);
+    process_category(&old.resourcepacks, &new.resourcepacks, &mut added, &mut removed);
+    process_category(&old.shaderpacks, &new.shaderpacks, &mut added, &mut removed);
+    process_category(&old.datapacks, &new.datapacks, &mut added, &mut removed);
+    
+    log::info!("compare_manifests: {} added, {} removed", added.len(), removed.len());
+    
     let update_info = UpdateInfo {
         uuid: Uuid::new_v4().to_string(),
         timestamp: Utc::now().to_rfc3339(),

@@ -244,6 +244,10 @@ fn calculate_update_diff(old_manifest: &Manifest, new_manifest: &Manifest) -> Re
     ) where F: Fn(&str) -> Option<String> {
         // Find removed addons (in old but not in new, or disabled in new)
         for old_addon in old_addons {
+            // Skip if old addon was already disabled - can't "remove" something that wasn't active
+            if old_addon.disabled.unwrap_or(false) {
+                continue;
+            }
             let maybe_new = new_addons.iter().find(|new_addon| new_addon.addon_project_id == old_addon.addon_project_id);
             if maybe_new.is_none() {
                 diff.removed_addons.push(old_addon.addon_name.clone());
@@ -293,6 +297,9 @@ fn calculate_update_diff(old_manifest: &Manifest, new_manifest: &Manifest) -> Re
 }
 
 async fn remove_old_files(modpack_path: &str, old_manifest: &Manifest, diff: &UpdateDiff) -> Result<(), String> {
+    log::info!("remove_old_files: Starting removal process for {} removed addons, {} updated addons",
+        diff.removed_addons.len(), diff.updated_addons.len());
+    
     // Helper to remove files from a category directory
     async fn remove_category_files(
         modpack_path: &str,
@@ -305,14 +312,18 @@ async fn remove_old_files(modpack_path: &str, old_manifest: &Manifest, diff: &Up
         let category_path = Path::new(modpack_path).join(category_dir);
         
         if !category_path.exists() {
+            log::debug!("remove_old_files: Directory {} doesn't exist, skipping", category_path.display());
             return Ok(()); // Directory doesn't exist, nothing to remove
         }
+
+        log::info!("remove_old_files: Scanning directory {} for files to remove", category_path.display());
 
         // Read directory contents
         let dir_entries = async_fs::read_dir(&category_path).await
             .map_err(|e| format!("Failed to read directory {}: {}", category_path.display(), e))?;
 
         let mut dir_stream = ReadDirStream::new(dir_entries);
+        let mut files_removed = 0;
 
         while let Some(entry_result) = dir_stream.next().await {
             let entry = entry_result
@@ -329,8 +340,10 @@ async fn remove_old_files(modpack_path: &str, old_manifest: &Manifest, diff: &Up
                     
                     // Remove if matches exact filename or .disabled variant
                     if file_name == exact_filename || file_name == disabled_filename {
+                        log::info!("remove_old_files: Removing file for addon '{}': {}", removed_addon, file_path.display());
                         async_fs::remove_file(&file_path).await
                             .map_err(|e| format!("Failed to remove file {}: {}", file_path.display(), e))?;
+                        files_removed += 1;
                         break; // File removed, no need to check other conditions
                     }
                 }
@@ -343,16 +356,30 @@ async fn remove_old_files(modpack_path: &str, old_manifest: &Manifest, diff: &Up
                     let expected_filename = extract_filename_from_url(&old_addon.cdn_download_url)
                         .unwrap_or_else(|| format!("{}-{}", old_addon.addon_name.replace(" ", "_"), old_addon.version));
                     
-                    if file_name == expected_filename || 
+                    if file_name == expected_filename ||
                        (file_name.contains(&old_addon.addon_name.replace(" ", "_")) && file_name.contains(&old_addon.version)) {
+                        log::info!("remove_old_files: Removing old version of '{}': {}", old_addon.addon_name, file_path.display());
                         async_fs::remove_file(&file_path).await
                             .map_err(|e| format!("Failed to remove old version {}: {}", file_path.display(), e))?;
+                        files_removed += 1;
                         break; // File removed, no need to check other conditions
                     }
                 }
             }
         }
+        
+        // Log warnings for removed addons whose files weren't found
+        for removed_addon in &diff.removed_addons {
+            if let Some(old_addon) = old_addons.iter().find(|a| &a.addon_name == removed_addon) {
+                let exact_filename = &old_addon.file_name_on_disk;
+                let disabled_filename = format!("{}.disabled", exact_filename);
+                // This is just a warning - the file might have been manually deleted already
+                log::warn!("remove_old_files: File for removed addon '{}' not found in {} (expected: {} or {})",
+                    removed_addon, category_dir, exact_filename, disabled_filename);
+            }
+        }
 
+        log::info!("remove_old_files: Finished processing {} - {} files removed", category_dir, files_removed);
         Ok(())
     }
 
@@ -362,6 +389,7 @@ async fn remove_old_files(modpack_path: &str, old_manifest: &Manifest, diff: &Up
     remove_category_files(modpack_path, "shaderpacks", &old_manifest.shaderpacks, diff).await?;
     remove_category_files(modpack_path, "datapacks", &old_manifest.datapacks, diff).await?;
 
+    log::info!("remove_old_files: Removal process complete");
     Ok(())
 }
 
@@ -469,6 +497,10 @@ fn calculate_detailed_update_diff(old_manifest: &Manifest, new_manifest: &Manife
     ) {
         // Process each old addon
         for old_addon in old_addons {
+            // Skip if old addon was already disabled - can't "remove" something that wasn't active
+            if old_addon.disabled.unwrap_or(false) {
+                continue;
+            }
             if let Some(new_addon) = new_addons.iter().find(|a| a.addon_project_id == old_addon.addon_project_id) {
                 if new_addon.disabled == Some(true) {
                     // Old addon exists but new one is disabled = removal
