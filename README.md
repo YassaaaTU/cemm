@@ -8,6 +8,7 @@ CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes
 
 ## Features
 - **Modpack Modification**: Add, remove, or update mods/resourcepacks/shaderpacks from CurseForge modpacks
+- **Addon Exclusion**: Exclude specific mods or resourcepacks from the uploaded instance without removing them locally
 - **Config File Distribution**: Share custom configuration files with your friends
 - **Easy Sharing**: Generate UUID codes for simple modpack distribution
 - **GitHub Integration**: Secure distribution via GitHub repositories
@@ -53,8 +54,12 @@ bun app:build
    - This file contains metadata about your modpack
    - It will be used to track updates and changes
 3. Choose config files to distribute (optional)
-4. Generate UUID and upload to your GitHub repository
-5. Share the UUID with users for easy installation
+4. **Exclude addons (optional)**: Click the ban icon (🚫) on any mod or resourcepack to exclude it from the upload
+   - Excluded addons are marked with strikethrough styling
+   - They remain in your local modpack but won't be included in the distributed instance
+   - Useful for keeping server-side mods private or excluding platform-specific addons
+5. Generate UUID and upload to your GitHub repository
+6. Share the UUID with users for easy installation
 
 ### User Mode
 1. Configure your GitHub repository settings

@@ -90,35 +90,71 @@
       v-if="manifest"
       class="mt-4"
     >
+      <!-- Exclusion summary -->
+      <div
+        v-if="excludedCount > 0"
+        class="mb-4 p-3 bg-warning/10 border border-warning/30 rounded-lg"
+      >
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <Icon
+              name="mdi:information-outline"
+              class="text-warning"
+            />
+            <span class="text-sm">
+              <strong>{{ excludedCount }}</strong> addon(s) excluded from upload
+            </span>
+          </div>
+          <button
+            class="btn btn-ghost btn-xs text-warning"
+            @click="clearAllExclusions"
+          >
+            Clear All
+          </button>
+        </div>
+      </div>
+
       <addon-list
         :addons="manifest.mods"
         :update-info="manifestStore.updateInfo"
+        :excluded-addons="manifestStore.excludedAddons"
+        :show-exclusion="true"
         title="Mods"
         category="mods"
         class="mb-4"
+        @toggle-exclusion="handleToggleExclusion"
       />
       <addon-list
         v-if="manifest.resourcepacks.length > 0"
         :addons="manifest.resourcepacks"
         :update-info="manifestStore.updateInfo"
+        :excluded-addons="manifestStore.excludedAddons"
+        :show-exclusion="true"
         title="Resource Packs"
         category="resourcepacks"
         class="mb-4"
+        @toggle-exclusion="handleToggleExclusion"
       />
       <addon-list
         v-if="manifest.shaderpacks.length > 0"
         :addons="manifest.shaderpacks"
         :update-info="manifestStore.updateInfo"
+        :excluded-addons="manifestStore.excludedAddons"
+        :show-exclusion="true"
         title="Shader Packs"
         category="shaderpacks"
         class="mb-4"
+        @toggle-exclusion="handleToggleExclusion"
       />
       <addon-list
         v-if="manifest.datapacks.length > 0"
         :addons="manifest.datapacks"
         :update-info="manifestStore.updateInfo"
+        :excluded-addons="manifestStore.excludedAddons"
+        :show-exclusion="true"
         title="Data Packs"
         category="datapacks"
+        @toggle-exclusion="handleToggleExclusion"
       />
     </div>
 
@@ -402,6 +438,19 @@ const {
 
 const manifestStore = useManifestStore()
 const manifest = computed(() => manifestStore.manifest)
+
+// Exclusion handling
+const excludedCount = computed(() => manifestStore.excludedAddons.size)
+
+function handleToggleExclusion(addonName: string)
+{
+	manifestStore.toggleExclusion(addonName)
+}
+
+function clearAllExclusions()
+{
+	manifestStore.clearExclusions()
+}
 
 // UI helper functions for upload button
 const getUploadButtonText = () =>
@@ -704,13 +753,15 @@ async function uploadToGithub()
 			if (manifest.value !== null)
 			{
 				// Full manifest with addons + config files
+				// Filter out excluded addons
+				const excludedSet = manifestStore.excludedAddons
 				const currentManifest = manifest.value as Manifest
 				manifestWithConfig = {
 					updateType: 'full',
-					mods: currentManifest.mods,
-					resourcepacks: currentManifest.resourcepacks,
-					shaderpacks: currentManifest.shaderpacks,
-					datapacks: currentManifest.datapacks,
+					mods: currentManifest.mods.filter((m) => !excludedSet.has(m.addon_name)),
+					resourcepacks: currentManifest.resourcepacks.filter((r) => !excludedSet.has(r.addon_name)),
+					shaderpacks: currentManifest.shaderpacks.filter((s) => !excludedSet.has(s.addon_name)),
+					datapacks: currentManifest.datapacks.filter((d) => !excludedSet.has(d.addon_name)),
 					config_files: selectedConfigFiles.value.map((cf) => ({
 						filename: cf.filename,
 						relative_path: cf.relative_path

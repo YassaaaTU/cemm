@@ -73,8 +73,11 @@
         :selected="selectedAddons.includes(addon.addon_name)"
         :show-selection="showSelection"
         :status="getAddonStatus(addon)"
+        :excluded="excludedAddons.has(addon.addon_name)"
+        :show-exclusion="showExclusion"
         @toggle-selection="handleToggleSelection"
         @open-link="openCurseforge(addon)"
+        @toggle-exclusion="handleToggleExclusion"
       />
     </v-list>
 
@@ -91,8 +94,11 @@
         :selected="selectedAddons.includes(addon.addon_name)"
         :show-selection="showSelection"
         :status="getAddonStatus(addon)"
+        :excluded="excludedAddons.has(addon.addon_name)"
+        :show-exclusion="showExclusion"
         @toggle-selection="handleToggleSelection"
         @open-link="openCurseforge(addon)"
+        @toggle-exclusion="handleToggleExclusion"
       />
     </div>
     <!-- Performance stats (dev only) -->
@@ -137,6 +143,8 @@ interface Props
 	containerHeight?: number
 	showStats?: boolean
 	updateInfo?: UpdateInfo | null
+	excludedAddons?: Set<string>
+	showExclusion?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -149,7 +157,9 @@ const props = withDefaults(defineProps<Props>(), {
 	virtualScrollThreshold: 100,
 	containerHeight: 400,
 	showStats: false,
-	updateInfo: null
+	updateInfo: null,
+	excludedAddons: () => new Set(),
+	showExclusion: false
 })
 
 // Composables
@@ -167,11 +177,19 @@ const { searchTerm, isSearching, filteredItems } = useSearchOptimized(
 const useVirtualScrolling = computed(() => filteredItems.value.length > props.virtualScrollThreshold)
 
 // Event handlers
-const emit = defineEmits<{ toggleSelection: [addonName: string] }>()
+const emit = defineEmits<{
+	toggleSelection: [addonName: string]
+	toggleExclusion: [addonName: string]
+}>()
 
 const handleToggleSelection = (addonName: string) =>
 {
 	emit('toggleSelection', addonName)
+}
+
+const handleToggleExclusion = (addonName: string) =>
+{
+	emit('toggleExclusion', addonName)
 }
 
 // Open CurseForge/addon URL logic (from ManifestPreview)

@@ -9,6 +9,8 @@ export const useManifestStore = defineStore('manifest', () =>
 	const removedAddons = ref<string[]>([])
 	const previousManifest = ref<Manifest | null>(null)
 	const updateInfo = ref<UpdateInfo | null>(null)
+	const excludedAddons = ref<Set<string>>(new Set())
+
 	function setManifest(newManifest: Manifest | null)
 	{
 		// Store the current manifest as previous before setting new one
@@ -17,6 +19,8 @@ export const useManifestStore = defineStore('manifest', () =>
 			previousManifest.value = manifest.value
 		}
 		manifest.value = newManifest
+		// Clear exclusions when loading a new manifest
+		excludedAddons.value = new Set()
 	}
 
 	function loadInstalledManifest(installedManifest: Manifest | null)
@@ -34,15 +38,44 @@ export const useManifestStore = defineStore('manifest', () =>
 	{
 		updateInfo.value = info
 	}
+
+	function toggleExclusion(addonName: string)
+	{
+		const newSet = new Set(excludedAddons.value)
+		if (newSet.has(addonName))
+		{
+			newSet.delete(addonName)
+		}
+		else
+		{
+			newSet.add(addonName)
+		}
+		excludedAddons.value = newSet
+	}
+
+	function isExcluded(addonName: string): boolean
+	{
+		return excludedAddons.value.has(addonName)
+	}
+
+	function clearExclusions()
+	{
+		excludedAddons.value = new Set()
+	}
+
 	return {
 		manifest,
 		selectedAddons,
 		removedAddons,
 		previousManifest,
 		updateInfo,
+		excludedAddons,
 		setManifest,
 		loadInstalledManifest,
 		setPreviousManifest,
-		setUpdateInfo
+		setUpdateInfo,
+		toggleExclusion,
+		isExcluded,
+		clearExclusions
 	}
 })
