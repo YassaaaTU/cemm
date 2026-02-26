@@ -1,4 +1,3 @@
-<!-- Console logging for debugging update checks -->
 <template>
   <div class="p-6">
     <button
@@ -6,9 +5,12 @@
       @click="goBack"
     >
       ← Back
-    </button>    <h1 class="text-2xl font-bold mb-6">
+    </button>
+    <h1 class="text-2xl font-bold mb-6">
       Settings
-    </h1>    <!-- GitHub Settings -->
+    </h1>
+
+    <!-- GitHub Settings -->
     <div class="card bg-base-200 mb-6">
       <div class="card-body">
         <h2 class="card-title">
@@ -21,8 +23,49 @@
       </div>
     </div>
 
+    <!-- Theme Settings -->
+    <div class="card bg-base-200 mb-6">
+      <div class="card-body">
+        <h2 class="card-title">
+          Appearance
+        </h2>
+        <p class="text-sm text-base-content/70 mb-4">
+          Customize the look and feel of the application.
+        </p>
+        <div class="flex items-center gap-4">
+          <span class="text-sm">Theme:</span>
+          <div class="join">
+            <button
+              class="btn join-item"
+              :class="{ 'btn-primary': currentTheme === 'nord' }"
+              @click="setTheme('nord')"
+            >
+              <Icon
+                name="mdi:white-balance-sunny"
+                size="1.2rem"
+                class="mr-2"
+              />
+              Light
+            </button>
+            <button
+              class="btn join-item"
+              :class="{ 'btn-primary': currentTheme === 'dracula' }"
+              @click="setTheme('dracula')"
+            >
+              <Icon
+                name="mdi:moon-waning-crescent"
+                size="1.2rem"
+                class="mr-2"
+              />
+              Dark
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Update Settings -->
-    <div class="card bg-base-200">
+    <div class="card bg-base-200 mb-6">
       <div class="card-body">
         <h2 class="card-title">
           Application Updates
@@ -56,7 +99,9 @@
           >
             Last checked: {{ lastUpdateCheck }}
           </div>
-        </div>        <!-- Update Status -->
+        </div>
+
+        <!-- Update Status -->
         <div
           v-if="updateStatus"
           class="mt-4"
@@ -73,19 +118,98 @@
         </div>
       </div>
     </div>
+
+    <!-- About CEMM -->
+    <div class="card bg-base-200">
+      <div class="card-body">
+        <h2 class="card-title">
+          About CEMM
+        </h2>
+        <p class="text-sm text-base-content/70 mb-4">
+          Custom Edition Modpack Manager - A tool for managing and distributing Minecraft modpack updates.
+        </p>
+        <div class="space-y-2">
+          <div class="flex items-center gap-2">
+            <Icon
+              name="mdi:tag"
+              size="1.2rem"
+            />
+            <span class="text-sm">Version: {{ appVersion }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <Icon
+              name="mdi:github"
+              size="1.2rem"
+            />
+            <a
+              href="https://github.com/YassaaaTU/cemm"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="link link-primary text-sm"
+            >
+              GitHub Repository
+            </a>
+          </div>
+          <div class="flex items-center gap-2">
+            <Icon
+              name="mdi:file-document"
+              size="1.2rem"
+            />
+            <a
+              href="https://github.com/YassaaaTU/cemm/blob/main/LICENSE"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="link link-primary text-sm"
+            >
+              MIT License
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useThemeStore } from '~/stores/theme'
+
 const router = useRouter()
 const updater = useUpdater()
-// const { $logger } = useNuxtApp()
+const themeStore = useThemeStore()
 
 const lastUpdateCheck = ref<string>('')
 const updateStatus = ref<{
 	type: 'success' | 'error' | 'info'
 	message: string
 } | null>(null)
+
+// Theme computed properties
+const currentTheme = computed(() => themeStore.current)
+const setTheme = (theme: 'nord' | 'dracula') =>
+{
+	themeStore.setTheme(theme)
+}
+
+// App version (from package.json or Tauri)
+const appVersion = ref('1.0.0')
+
+// Get version from Tauri if available
+onMounted(async () =>
+{
+	if (import.meta.client)
+	{
+		try
+		{
+			const { getVersion } = await import('@tauri-apps/api/app')
+			const version = await getVersion()
+			appVersion.value = version
+		}
+		catch
+		{
+			// Fallback to package.json version - not running in Tauri
+		}
+	}
+})
 
 const goBack = () =>
 {
@@ -144,4 +268,9 @@ const handleCheckForUpdates = async () =>
 		}
 	}
 }
+
+// Use the default layout (with sidebar)
+definePageMeta({
+	layout: 'default'
+})
 </script>

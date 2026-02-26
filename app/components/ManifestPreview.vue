@@ -3,11 +3,11 @@ import { invoke } from '@tauri-apps/api/core'
 import { computed, ref } from 'vue'
 
 import { useManifestStore } from '~/stores/manifest'
-import type { Addon, Manifest, UpdateInfo } from '~/types'
+import type { Addon, Manifest, ManifestUpdateInfo } from '~/types'
 
-const logger = usePinoLogger()
+const { $logger: logger } = useNuxtApp()
 
-const props = defineProps<{ manifest?: Manifest | null, updateInfo?: UpdateInfo | null }>()
+const props = defineProps<{ manifest?: Manifest | null, updateInfo?: ManifestUpdateInfo | null }>()
 
 const manifestStore = useManifestStore()
 const manifest = computed(() => props.manifest ?? manifestStore.manifest)

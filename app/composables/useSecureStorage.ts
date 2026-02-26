@@ -1,7 +1,5 @@
 import { deletePassword, getPassword, setPassword } from 'tauri-plugin-keyring-api'
 
-import { usePinoLogger } from './usePinoLogger'
-
 /**
  * Composable for secure storage using tauri-plugin-keyring
  *
@@ -12,7 +10,22 @@ import { usePinoLogger } from './usePinoLogger'
  */
 export const useSecureStorage = () =>
 {
-	const logger = usePinoLogger()
+	const { $logger: logger } = useNuxtApp()
+
+	/**
+	 * Simple hash function to obscure key names in logs for security
+	 */
+	const hashKey = (key: string): string =>
+	{
+		let hash = 0
+		for (let i = 0; i < key.length; i++)
+		{
+			const char = key.charCodeAt(i)
+			hash = ((hash << 5) - hash) + char
+			hash = hash & hash // Convert to 32-bit integer
+		}
+		return Math.abs(hash).toString(16).padStart(8, '0')
+	}
 
 	/**
 	 * Store a value securely
@@ -21,13 +34,13 @@ export const useSecureStorage = () =>
 	{
 		try
 		{
-			logger.info('Setting secure value', { key, valueLength: value.length })
+			logger.debug('Secure storage operation', { operation: 'set', keyHash: hashKey(key), valueLength: value.length })
 			await setPassword('com.yasirjumaah.cemm', key, value)
-			logger.info('✅ Secure value set successfully', { key })
+			logger.debug('Secure storage operation completed', { operation: 'set', keyHash: hashKey(key) })
 		}
 		catch (error)
 		{
-			logger.error('❌ Failed to set secure value', { key, error })
+			logger.error('Secure storage operation failed', { operation: 'set', keyHash: hashKey(key), error })
 			throw error
 		}
 	}
@@ -39,14 +52,14 @@ export const useSecureStorage = () =>
 	{
 		try
 		{
-			logger.info('Getting secure value', { key })
+			logger.debug('Secure storage operation', { operation: 'get', keyHash: hashKey(key) })
 			const value = await getPassword('com.yasirjumaah.cemm', key)
-			logger.info('✅ Secure value retrieved', { key, hasValue: value !== null, valueLength: value?.length ?? 0 })
+			logger.debug('Secure storage operation completed', { operation: 'get', keyHash: hashKey(key), hasValue: value !== null })
 			return value
 		}
 		catch (error)
 		{
-			logger.error('❌ Failed to get secure value', { key, error })
+			logger.error('Secure storage operation failed', { operation: 'get', keyHash: hashKey(key), error })
 			return null
 		}
 	}
@@ -58,13 +71,13 @@ export const useSecureStorage = () =>
 	{
 		try
 		{
-			logger.info('Removing secure value', { key })
+			logger.debug('Secure storage operation', { operation: 'remove', keyHash: hashKey(key) })
 			await deletePassword('com.yasirjumaah.cemm', key)
-			logger.info('✅ Secure value removed successfully', { key })
+			logger.debug('Secure storage operation completed', { operation: 'remove', keyHash: hashKey(key) })
 		}
 		catch (error)
 		{
-			logger.error('❌ Failed to remove secure value', { key, error })
+			logger.error('Secure storage operation failed', { operation: 'remove', keyHash: hashKey(key), error })
 			throw error
 		}
 	}

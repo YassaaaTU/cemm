@@ -60,7 +60,7 @@
               Updated Addons
             </div>
             <div class="stat-value text-warning">
-              {{ preview.diff.updated_addons.length }}
+              {{ preview.diff.updated_addon_ids.length }}
             </div>
           </div>
           <div class="stat">
@@ -85,7 +85,7 @@
             :class="{ 'tab-active': activeTab === 'updated' }"
             @click="activeTab = 'updated'"
           >
-            Updated ({{ preview.diff.updated_addons.length }})
+            Updated ({{ preview.diff.updated_addon_ids.length }})
           </button>
           <button
             class="tab"
@@ -143,23 +143,23 @@
             class="space-y-2"
           >
             <div
-              v-if="preview.diff.updated_addons.length === 0"
+              v-if="preview.diff.updated_addon_ids.length === 0"
               class="text-center text-gray-500"
             >
               No addons to update
             </div>
             <div
-              v-for="([oldVersion, newVersion], index) in preview.diff.updated_addons"
-              :key="index"
+              v-for="projectId in preview.diff.updated_addon_ids"
+              :key="projectId"
               class="flex items-center justify-between p-3 bg-warning/10 border border-warning/20 rounded"
             >
               <div class="flex items-center space-x-2">
                 <span class="w-4 h-4 bg-warning rounded-full flex items-center justify-center">
                   <span class="text-xs text-white">↑</span>
                 </span>
-                <span>Version {{ oldVersion }} → {{ newVersion }}</span>
+                <span>{{ getAddonNameByProjectId(projectId) }}</span>
               </div>
-              <span class="badge badge-warning">UPDATE</span>
+              <span class="badge badge-warning">UPDATED</span>
             </div>
           </div>
 
@@ -277,7 +277,7 @@
             />
           </svg>
           <span>
-            This update will remove {{ preview.diff.removed_addons.length }} addon(s) and update {{ preview.diff.updated_addons.length }} addon(s).
+            This update will remove {{ preview.diff.removed_addons.length }} addon(s) and update {{ preview.diff.updated_addon_ids.length }} addon(s).
             Old files will be deleted. This action cannot be undone.
           </span>
         </div>
@@ -335,8 +335,25 @@ defineEmits<Emits>()
 const activeTab = ref<'new' | 'updated' | 'removed' | 'config'>('new')
 
 const hasDestructiveChanges = computed(() =>
-	props.preview.diff.removed_addons.length > 0 || props.preview.diff.updated_addons.length > 0
+	props.preview.diff.removed_addons.length > 0 || props.preview.diff.updated_addon_ids.length > 0
 )
+
+// Helper to get addon name by project ID from either manifest
+const getAddonNameByProjectId = (projectId: number): string =>
+{
+	const allAddons = [
+		...props.preview.oldManifest?.mods ?? [],
+		...props.preview.oldManifest?.resourcepacks ?? [],
+		...props.preview.oldManifest?.shaderpacks ?? [],
+		...props.preview.oldManifest?.datapacks ?? [],
+		...props.preview.newManifest.mods,
+		...props.preview.newManifest.resourcepacks,
+		...props.preview.newManifest.shaderpacks,
+		...props.preview.newManifest.datapacks
+	]
+	const addon = allAddons.find((a) => a.addon_project_id === projectId)
+	return addon?.addon_name ?? `Unknown (ID: ${projectId})`
+}
 
 // Set initial tab to the one with content
 watch(
@@ -347,7 +364,7 @@ watch(
 		{
 			activeTab.value = 'new'
 		}
-		else if (newPreview.diff.updated_addons.length > 0)
+		else if (newPreview.diff.updated_addon_ids.length > 0)
 		{
 			activeTab.value = 'updated'
 		}

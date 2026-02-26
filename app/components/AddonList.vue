@@ -125,10 +125,9 @@
 import { invoke } from '@tauri-apps/api/core'
 import { VList } from 'virtua/vue'
 
-import { useSearchOptimized } from '~/composables/usePerformance'
-import type { Addon, UpdateInfo } from '~/types'
+import type { Addon, ManifestUpdateInfo } from '~/types'
 
-const logger = usePinoLogger()
+const { $logger: logger } = useNuxtApp()
 
 interface Props
 {
@@ -142,7 +141,7 @@ interface Props
 	virtualScrollThreshold?: number
 	containerHeight?: number
 	showStats?: boolean
-	updateInfo?: UpdateInfo | null
+	updateInfo?: ManifestUpdateInfo | null
 	excludedAddons?: Set<string>
 	showExclusion?: boolean
 }
@@ -162,16 +161,20 @@ const props = withDefaults(defineProps<Props>(), {
 	showExclusion: false
 })
 
-// Composables
-const { searchTerm, isSearching, filteredItems } = useSearchOptimized(
-	computed(() => props.addons),
-	['addon_name', 'version'],
-	{
-		debounceMs: 200,
-		minLength: 1,
-		maxResults: 500
-	}
-)
+// Search functionality (replacing deleted useSearchOptimized)
+const searchTerm = ref('')
+const isSearching = computed(() => searchTerm.value.length > 0)
+
+const filteredItems = computed(() =>
+{
+	if (searchTerm.value.length === 0) return props.addons
+
+	const term = searchTerm.value.toLowerCase()
+	return props.addons.filter((addon) =>
+		addon.addon_name.toLowerCase().includes(term)
+		|| addon.version.toLowerCase().includes(term)
+	)
+})
 
 // Virtual scrolling for large lists
 const useVirtualScrolling = computed(() => filteredItems.value.length > props.virtualScrollThreshold)

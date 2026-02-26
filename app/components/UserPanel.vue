@@ -10,7 +10,7 @@
       User Mode
     </h2>
 
-    <!-- Quick GitHub Repo Input (top, for user convenience) -->
+    <!-- Quick GitHub Repo Input -->
     <section class="mb-4">
       <fieldset class="fieldset">
         <legend class="fieldset-legend">
@@ -72,7 +72,7 @@
           class="btn btn-accent join-item"
           :disabled="downloading || uuid.trim().length === 0 || (path == '' || undefined)"
           :aria-describedby="getDownloadButtonDescription()"
-          @click="downloadFromGithub"
+          @click="handleDownloadFromGithub"
         >
           <span
             v-if="!downloading"
@@ -131,14 +131,6 @@
     </section>
 
     <div class="mt-6 flex flex-col gap-2">
-      <!-- Debug progress display -->
-      <div
-        v-if="installing"
-        class="text-sm opacity-70 mb-2"
-      >
-        Debug: Progress = {{ progress }}%, Installing = {{ installing }}, Status = {{ statusMessage }}
-      </div>
-
       <progress-bar
         :progress="progress"
         :label="getProgressLabel()"
@@ -146,23 +138,16 @@
         :show-percentage="downloading || installing"
       />
     </div>
-    <!-- Error Handling -->
+
+    <!-- Status messages -->
     <app-alert
-      v-if="errorState.error"
-      class="mt-4"
-      :error-state="errorState"
-      :retry-operation="retryCurrentOperation"
-      :show-technical-details="true"
-      @retry="retryCurrentOperation"
-      @close="clearError"
-    />
-    <!-- Simple status messages (for non-error messages) -->
-    <app-alert
-      v-else-if="statusMessage"
+      v-if="statusMessage"
       class="mt-4"
       :message="statusMessage"
       :type="statusType"
+      @close="clearStatus"
     />
+
     <div
       v-if="manifest"
       class="mt-4"
@@ -195,6 +180,7 @@
         class="mb-4"
       />
     </div>
+
     <!-- Update Preview Modal -->
     <update-preview
       v-if="showPreview && previewData"
@@ -210,7 +196,7 @@
 <script setup lang="ts">
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
-import type { ConfigFileWithContent, Manifest } from '~/types'
+import type { ConfigFileWithContent } from '~/types'
 
 interface InstallProgressEvent
 {
@@ -220,21 +206,27 @@ interface InstallProgressEvent
 	}
 }
 
+const { downloadFromGithub, downloadConfigFiles, installUpdate } = useUserApi()
+const manifestStore = useManifestStore()
+const appStore = useAppStore()
+const { $logger: logger } = useNuxtApp()
+
+// Component state
 const uuid = ref('')
 const progress = ref(0)
 const statusMessage = ref('')
 const statusType = ref<'success' | 'error' | 'info' | 'warning'>('info')
-const { writeFile, readFile, parseMinecraftInstance, installUpdateOptimized } = useTauri()
-const manifestStore = useManifestStore()
-const manifest = computed(() => manifestStore.manifest)
-const appStore = useAppStore()
 const downloading = ref(false)
 const installing = ref(false)
+const showPreview = ref(false)
+const configFilesDownloaded = ref(false)
 const downloadedConfigFiles = ref<ConfigFileWithContent[]>([])
-const logger = usePinoLogger()
-const path = computed(() => appStore.modpackPath)
 
-// GitHub repository reactive property with computed binding to app store
+// Computed properties
+const manifest = computed(() => manifestStore.manifest)
+const path = computed(() => appStore.modpackPath)
+const previousManifest = computed(() => manifestStore.previousManifest)
+
 const githubRepo = computed({
 	get: () => appStore.githubRepo,
 	set: (val: string) =>
@@ -243,49 +235,6 @@ const githubRepo = computed({
 	}
 })
 
-// Save GitHub repository function
-const saveGithubRepo = () =>
-{
-	if (githubRepo.value.trim())
-	{
-		console.info('GitHub repository saved', { repo: githubRepo.value })
-	}
-}
-
-// Enhanced error handling
-const errorHandler = createErrorHandler(statusMessage, statusType, logger)
-const { errorState, handleError, retry, clearError, executeWithRecovery } = errorHandler
-
-// PathSelector event handlers
-const updateModpackPath = (newPath: string | string[] | null) =>
-{
-	// Handle both single path (string) and multiple paths (string[])
-	const singlePath = Array.isArray(newPath) ? newPath[0] : newPath
-
-	if (singlePath !== null && singlePath !== undefined && singlePath.trim().length > 0)
-	{
-		appStore.modpackPath = singlePath
-		logger.info('Modpack path updated via PathSelector', { path: singlePath })
-	}
-}
-
-const handlePathSelectorError = (error: string) =>
-{
-	logger.error('PathSelector error', { error })
-	statusMessage.value = `Path selection error: ${error}`
-	statusType.value = 'error'
-}
-
-// Track current operation for retry functionality
-const currentOperation = ref<(() => Promise<void>) | null>(null)
-const retryCurrentOperation = async () =>
-{
-	if (currentOperation.value !== null)
-	{
-		await retry(currentOperation.value)
-	}
-}
-
 const canInstall = computed(() =>
 	manifest.value !== null
 	&& appStore.modpackPath.trim().length > 0
@@ -293,10 +242,7 @@ const canInstall = computed(() =>
 	&& !downloading.value
 )
 
-const showPreview = ref(false)
-const configFilesDownloaded = ref(false)
-
-// Create preview data for the new UpdatePreview component
+// Preview data for UpdatePreview component
 const previewData = computed(() =>
 {
 	if (manifest.value === null) return null
@@ -304,29 +250,22 @@ const previewData = computed(() =>
 	const oldManifest = manifestStore.previousManifest
 	const newManifest = manifest.value
 
-	// Calculate diff using our new helper function
 	const diff = {
 		removed_addons: [] as string[],
-		updated_addons: [] as Array<[string, string]>,
+		updated_addon_ids: [] as number[],
 		new_addons: [] as string[]
 	}
 
 	if (oldManifest !== null)
 	{
-		// Helper function to process addon categories
 		const processCategory = (
 			oldAddons: Array<{ addon_project_id: number, addon_name: string, version: string, disabled?: boolean }>,
 			newAddons: Array<{ addon_project_id: number, addon_name: string, version: string, disabled?: boolean }>
 		) =>
 		{
-			// Find removed addons - only count as removed if:
-			// 1. Old addon was enabled (not disabled) AND new addon is missing or disabled
-			// 2. This prevents showing "will remove" for addons that were already disabled/removed
 			for (const oldAddon of oldAddons)
 			{
-				// Skip if old addon was already disabled - can't "remove" something that wasn't active
 				if (oldAddon.disabled === true) continue
-
 				const newAddon = newAddons.find((a) => a.addon_project_id === oldAddon.addon_project_id)
 				if (newAddon === undefined || newAddon.disabled === true)
 				{
@@ -334,20 +273,18 @@ const previewData = computed(() =>
 				}
 			}
 
-			// Find updated addons (same project ID, different version, not disabled)
 			for (const oldAddon of oldAddons)
 			{
 				const newAddon = newAddons.find((a) => a.addon_project_id === oldAddon.addon_project_id)
 				if (newAddon !== undefined && newAddon.disabled !== true && oldAddon.version !== newAddon.version)
 				{
-					diff.updated_addons.push([oldAddon.version, newAddon.version])
+					diff.updated_addon_ids.push(oldAddon.addon_project_id)
 				}
 			}
 
-			// Find new addons (in new but not old, and not disabled)
 			for (const newAddon of newAddons)
 			{
-				if (newAddon.disabled === true) continue // Skip disabled addons
+				if (newAddon.disabled === true) continue
 				const found = oldAddons.find((a) => a.addon_project_id === newAddon.addon_project_id)
 				if (found === undefined)
 				{
@@ -355,18 +292,15 @@ const previewData = computed(() =>
 				}
 			}
 		}
-		// Check if this is a config-only update
+
 		if (newManifest.updateType === 'config')
 		{
-			// For config-only updates, don't process addons at all
-			// This means no addons will be added, removed, or updated
 			diff.removed_addons = []
-			diff.updated_addons = []
+			diff.updated_addon_ids = []
 			diff.new_addons = []
 		}
 		else
 		{
-			// Process each category for full updates
 			processCategory(oldManifest.mods, newManifest.mods)
 			processCategory(oldManifest.resourcepacks, newManifest.resourcepacks)
 			processCategory(oldManifest.shaderpacks, newManifest.shaderpacks)
@@ -375,7 +309,6 @@ const previewData = computed(() =>
 	}
 	else
 	{
-		// Fresh install - only add new addons if it's not a config-only update
 		if (newManifest.updateType !== 'config')
 		{
 			diff.new_addons = [
@@ -389,9 +322,10 @@ const previewData = computed(() =>
 
 	const hasChanges = oldManifest !== null && (
 		diff.removed_addons.length > 0
-		|| diff.updated_addons.length > 0
+		|| diff.updated_addon_ids.length > 0
 		|| diff.new_addons.length > 0
 	)
+
 	return {
 		oldManifest,
 		newManifest,
@@ -401,230 +335,123 @@ const previewData = computed(() =>
 	}
 })
 
+// Status management
+const clearStatus = () =>
+{
+	statusMessage.value = ''
+	statusType.value = 'info'
+}
+
+const setStatus = (message: string, type: 'success' | 'error' | 'info' | 'warning') =>
+{
+	statusMessage.value = message
+	statusType.value = type
+}
+
+// PathSelector event handlers
+const updateModpackPath = (newPath: string | string[] | null) =>
+{
+	const singlePath = Array.isArray(newPath) ? newPath[0] : newPath
+	if (singlePath !== null && singlePath !== undefined && singlePath.trim().length > 0)
+	{
+		appStore.modpackPath = singlePath
+		logger.info('Modpack path updated via PathSelector', { path: singlePath })
+	}
+}
+
+const handlePathSelectorError = (error: string) =>
+{
+	logger.error('PathSelector error', { error })
+	setStatus(`Path selection error: ${error}`, 'error')
+}
+
+const saveGithubRepo = () =>
+{
+	if (githubRepo.value.trim())
+	{
+		logger.info('GitHub repository saved', { repo: githubRepo.value })
+	}
+}
+
+// Action handlers
+async function handleDownloadFromGithub()
+{
+	if (uuid.value.trim().length === 0)
+	{
+		setStatus('Please enter a valid UUID code.', 'error')
+		return
+	}
+
+	clearStatus()
+	progress.value = 0
+	downloading.value = true
+
+	try
+	{
+		await downloadFromGithub(
+			uuid.value,
+			(p: number, msg?: string) =>
+			{
+				progress.value = p
+				if (msg !== undefined) setStatus(msg, 'info')
+			},
+			setStatus
+		)
+	}
+	finally
+	{
+		downloading.value = false
+		progress.value = 100
+	}
+}
+
 async function confirmInstall()
 {
-	showPreview.value = false	// Download config files if not already downloaded and if manifest has config files
+	showPreview.value = false
+
+	// Download config files if not already downloaded
 	if (!configFilesDownloaded.value && uuid.value.trim().length > 0 && manifest.value !== null && manifest.value.config_files.length > 0)
 	{
 		try
 		{
-			await downloadConfigFiles()
+			downloading.value = true
+			progress.value = 0
+			const result = await downloadConfigFiles(
+				uuid.value,
+				manifest.value,
+				(p: number, msg?: string) =>
+				{
+					progress.value = p
+					if (msg !== undefined) setStatus(msg, 'info')
+				},
+				setStatus
+			)
+			downloadedConfigFiles.value = result.configFiles
+			configFilesDownloaded.value = true
 		}
 		catch (error)
 		{
-			statusMessage.value = `Failed to download config files: ${error instanceof Error ? error.message : 'Unknown error'}`
-			statusType.value = 'error'
-			return // Don't proceed with installation if config download fails
+			setStatus(`Failed to download config files: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+			return
+		}
+		finally
+		{
+			downloading.value = false
+			progress.value = 100
 		}
 	}
-	installUpdate()
+
+	await performInstall()
 }
 
-async function downloadFromGithub()
+async function performInstall()
 {
-	if (uuid.value.trim().length === 0)
-	{
-		handleError('INVALID_UUID', 'downloadFromGithub')
-		return
-	}
+	if (!canInstall.value || manifest.value === null) return
 
-	const repo = appStore.githubRepo
-	if (repo.trim().length === 0)
-	{
-		handleError('MISSING_GITHUB_SETTINGS', 'downloadFromGithub')
-		return
-	}
-
-	// Set current operation for retry functionality
-	currentOperation.value = downloadFromGithub
-
-	clearError()
-	statusType.value = 'info'
-	progress.value = 0
-	downloading.value = true
-
-	try
-	{
-		// Debug logging
-		console.info('Starting manifest download', {
-			repo,
-			uuid: uuid.value.trim(),
-			repoLength: repo.length,
-			uuidLength: uuid.value.trim().length
-		})
-
-		// Phase 1: Download only the manifest with network retry
-		progress.value = 10
-		statusMessage.value = 'Downloading manifest...'
-
-		const { downloadManifest } = useGithubApi()
-
-		const manifest = await withNetworkRetry(
-			async () => await downloadManifest({
-				repo,
-				uuid: uuid.value.trim(),
-				onProgress: (p, msg) =>
-				{
-					progress.value = Math.min(p / 2, 50) // First half of progress
-					if (typeof msg === 'string' && msg.length > 0)
-					{
-						statusMessage.value = msg
-					}
-				}
-			}),
-			3, // maxRetries
-			1000 // backoffMs
-		)
-
-		console.info('Manifest download successful', { manifest })
-
-		// Update manifest in store for preview
-		manifestStore.setManifest(manifest)
-		progress.value = 50
-		statusMessage.value = 'Manifest downloaded. Ready to preview update.'
-		// Load existing manifest for comparison if modpack path is selected
-		const modpackPath = appStore.modpackPath
-		if (modpackPath && modpackPath.trim().length > 0)
-		{
-			await executeWithRecovery(async () =>
-			{
-				// IMPROVED: Always generate cemm-manifest_old.json from minecraftinstance.json (actual installed state)
-				progress.value = 60
-				statusMessage.value = 'Generating cemm-manifest_old.json from current installation...'
-
-				const result = await generateManifestOldFromMinecraftInstance(modpackPath)
-				if (!result.success)
-				{
-					const errorMsg = result.error ?? 'Unknown error'
-					console.warn('Previous manifest generation failed:', errorMsg)
-					// This is not a fatal error - we'll just do a fresh install instead
-					statusMessage.value = errorMsg
-				}
-			}, 'generateManifestOld')
-
-			// Write new cemm-manifest.json (target state)
-			progress.value = 80
-			statusMessage.value = 'Writing new cemm-manifest.json...'
-
-			await executeWithRecovery(async () =>
-			{
-				await writeNewManifest(modpackPath, manifest)
-			}, 'writeNewManifest')
-
-			console.info('Phase 1 complete: Manifest downloaded with improved backup system')
-		}
-		else
-		{
-			console.info('Phase 1 complete: Manifest downloaded (no modpack path selected)')
-		}
-
-		statusMessage.value = 'Manifest ready for preview. Config files will be downloaded after confirmation.'
-		statusType.value = 'success'
-		currentOperation.value = null // Clear operation on success
-	}
-	catch (err)
-	{
-		handleError(err as Error, 'downloadFromGithub')
-	}
-	finally
-	{
-		downloading.value = false
-		progress.value = 100
-	}
-}
-
-// New function to download config files after user confirmation
-async function downloadConfigFiles()
-{
-	if (uuid.value.trim().length === 0 || manifest.value === null)
-	{
-		return
-	}
-
-	statusMessage.value = 'Downloading config files...'
-	statusType.value = 'info'
-	progress.value = 0
-	downloading.value = true
-
-	try
-	{
-		const repo = appStore.githubRepo
-		const { downloadConfigFiles } = useGithubApi()
-		const configFiles = await downloadConfigFiles({
-			repo,
-			uuid: uuid.value.trim(),
-			manifest: manifest.value,
-			onProgress: (p, msg) =>
-			{
-				progress.value = p
-				if (typeof msg === 'string' && msg.length > 0)
-				{
-					statusMessage.value = msg
-				}
-			}
-		})
-
-		downloadedConfigFiles.value = configFiles
-		configFilesDownloaded.value = true
-
-		// Write config files to disk if modpack path is selected
-		const modpackPath = appStore.modpackPath
-		if (modpackPath && modpackPath.trim().length > 0 && configFiles.length > 0)
-		{
-			const filesToWrite: Array<[string, string]> = []
-
-			// Add config files
-			for (const configFile of configFiles)
-			{
-				filesToWrite.push([configFile.relative_path, configFile.content])
-			}
-
-			// Write config files to modpack directory
-			const writeSuccess = await writeFile(modpackPath, filesToWrite)
-			if (!writeSuccess)
-			{
-				statusMessage.value = 'Config files downloaded but failed to write to disk.'
-				statusType.value = 'warning'
-				return
-			}
-
-			statusMessage.value = `Config files downloaded and written to ${modpackPath}`
-		}
-		else
-		{
-			statusMessage.value = configFiles.length > 0
-				? 'Config files downloaded (no modpack path selected)'
-				: 'No config files to download'
-		}
-
-		statusType.value = 'success'
-	}
-	catch (err)
-	{
-		const errorMessage = err instanceof Error ? err.message : 'Failed to download config files'
-		statusMessage.value = errorMessage
-		statusType.value = 'error'
-		console.error('Failed to download config files', { error: err, uuid: uuid.value, repo: appStore.githubRepo })
-		throw new Error(`Config download failed: ${errorMessage}`) // Re-throw to be caught by confirmInstall
-	}
-	finally
-	{
-		downloading.value = false
-		progress.value = 100
-	}
-}
-
-async function installUpdate()
-{
-	if (!canInstall.value)
-	{
-		return
-	}
 	installing.value = true
-	statusMessage.value = 'Starting installation...'
-	statusType.value = 'info'
 	progress.value = 0
 	let unlisten: UnlistenFn | null = null
+
 	try
 	{
 		unlisten = await listen('install-progress', (event) =>
@@ -632,52 +459,27 @@ async function installUpdate()
 			const prog = (event as InstallProgressEvent).payload?.progress
 			const message = (event as InstallProgressEvent).payload?.message
 
-			// Debug logging to see what we're receiving
-			console.log('Install progress event:', { progress: prog, message, fullEvent: event })
-
 			if (typeof prog === 'number')
 			{
 				progress.value = prog
-				console.log('Updated progress to:', prog)
 			}
 			if (typeof message === 'string')
 			{
 				statusMessage.value = message
-				console.log('Updated status message to:', message)
 			}
 		})
-		const previousManifest = manifestStore.previousManifest
-		if (manifest.value === null)
-		{
-			throw new Error('No manifest available for installation')
-		}
-		// Validate config files structure before installation
-		const configFiles = downloadedConfigFiles.value
-		for (const configFile of configFiles)
-		{
-			if (!configFile.filename || !configFile.relative_path || typeof configFile.content !== 'string')
-			{
-				throw new Error(`Invalid config file structure: ${JSON.stringify(configFile)}`)
-			}
-		}
 
-		// Use optimized installation that only downloads/installs changed or new addons
-		// This avoids redownloading unchanged addons, making updates much faster for large modpacks
-		await installUpdateOptimized(
-			appStore.modpackPath,
-			previousManifest, // Can be null, optimized installer will handle it
+		await installUpdate(
 			manifest.value,
-			configFiles
+			downloadedConfigFiles.value,
+			previousManifest.value,
+			(p: number, msg?: string) =>
+			{
+				progress.value = p
+				if (msg !== undefined) setStatus(msg, 'info')
+			},
+			setStatus
 		)
-		statusMessage.value = previousManifest !== null ? 'Update installation complete!' : 'Fresh installation complete!'
-
-		statusType.value = 'success'
-	}
-	catch (err)
-	{
-		statusMessage.value = (err instanceof Error ? err.message : 'Installation failed')
-		console.error(err)
-		statusType.value = 'error'
 	}
 	finally
 	{
@@ -690,14 +492,10 @@ async function installUpdate()
 	}
 }
 
-// Accessibility helper methods for button descriptions
+// Accessibility helper methods
 const getDownloadButtonDescription = () =>
 {
-	if (downloading.value)
-	{
-		return 'download-disabled-help'
-	}
-	if (uuid.value.trim().length === 0)
+	if (downloading.value || uuid.value.trim().length === 0)
 	{
 		return 'download-disabled-help'
 	}
@@ -716,42 +514,24 @@ const getInstallButtonDescription = () =>
 // Progress bar helper functions
 const getProgressLabel = () =>
 {
-	if (downloading.value)
-	{
-		return 'Downloading from GitHub...'
-	}
-	if (installing.value)
-	{
-		return 'Installing addons and config files...'
-	}
+	if (downloading.value) return 'Downloading from GitHub...'
+	if (installing.value) return 'Installing addons and config files...'
 	return ''
 }
 
 const getProgressColor = (): 'primary' | 'secondary' | 'accent' | 'success' | 'warning' | 'error' | 'info' =>
 {
-	if (downloading.value)
-	{
-		return 'info'
-	}
-	if (installing.value)
-	{
-		return 'primary'
-	}
-	if (progress.value === 100)
-	{
-		return 'success'
-	}
+	if (downloading.value) return 'info'
+	if (installing.value) return 'primary'
+	if (progress.value === 100) return 'success'
 	return 'primary'
 }
 
-// Navigation state management - fix for settings → dashboard bug
+// Navigation state management
 const route = useRoute()
-const isNavigatingFromSettings = ref(false)
 
-// Reset component state when navigating back from settings
 const resetComponentState = () =>
 {
-	// Reset all local state that might be stale
 	uuid.value = ''
 	progress.value = 0
 	statusMessage.value = ''
@@ -761,133 +541,25 @@ const resetComponentState = () =>
 	showPreview.value = false
 	configFilesDownloaded.value = false
 	downloadedConfigFiles.value = []
-	currentOperation.value = null
-
-	// Clear any errors
-	clearError()
-
-	console.info('Component state reset after navigation')
+	logger.info('Component state reset after navigation')
 }
 
-// Watch for route changes to detect navigation back from settings
 watch(() => route.name, (newRouteName, oldRouteName) =>
 {
 	if (oldRouteName === 'settings' && newRouteName === 'dashboard')
 	{
-		isNavigatingFromSettings.value = true
 		resetComponentState()
-		console.info('Detected navigation from settings to dashboard, state reset')
+		logger.info('Detected navigation from settings to dashboard, state reset')
 	}
 })
 
-// Ensure component is properly initialized on mount
 onMounted(() =>
 {
-	// If we just navigated from settings, ensure UI is in proper state
-	if (isNavigatingFromSettings.value)
-	{
-		nextTick(() =>
-		{
-			isNavigatingFromSettings.value = false
-		})
-	}
-	console.info('UserPanel mounted')
+	logger.info('UserPanel mounted')
 })
 
-// Cleanup on unmount
 onUnmounted(() =>
 {
-	// Cancel any ongoing operations
-	if (currentOperation.value !== null)
-	{
-		currentOperation.value = null
-	}
-	console.info('UserPanel unmounted')
+	logger.info('UserPanel unmounted')
 })
-
-async function generateManifestOldFromMinecraftInstance(modpackPath: string): Promise<{ success: boolean, error?: string }>
-{
-	try
-	{
-		// Always generate cemm-manifest_old.json from minecraftinstance.json to represent actual installed state
-		const minecraftInstancePath = `${modpackPath}/minecraftinstance.json`
-		const minecraftInstanceContent = await readFile(minecraftInstancePath)
-
-		if (minecraftInstanceContent !== null && minecraftInstanceContent.trim().length > 0)
-		{
-			console.info('Generating cemm-manifest_old.json from minecraftinstance.json (actual installed state)')
-
-			// Parse minecraftinstance.json into manifest format
-			const parsedManifest = await parseMinecraftInstance(minecraftInstancePath)
-
-			if (parsedManifest !== null)
-			{
-				// Write as cemm-manifest_old.json (represents current installed state)
-				const oldManifestPath = `${modpackPath}/cemm-manifest_old.json`
-				const manifestContent = JSON.stringify(parsedManifest, null, 2)
-				const writeSuccess = await writeFile(oldManifestPath, manifestContent)
-
-				if (!writeSuccess)
-				{
-					const errorMsg = 'Failed to write cemm-manifest_old.json from minecraftinstance.json'
-					console.error(errorMsg)
-					manifestStore.loadInstalledManifest(null)
-					return { success: false, error: errorMsg }
-				}
-
-				console.info('Successfully generated cemm-manifest_old.json from actual installed state')
-
-				// Load as previous manifest for comparison
-				manifestStore.loadInstalledManifest(parsedManifest)
-
-				return { success: true }
-			}
-			else
-			{
-				const errorMsg = 'Invalid minecraftinstance.json format - failed to parse'
-				console.error(errorMsg)
-				manifestStore.loadInstalledManifest(null)
-				return { success: false, error: errorMsg }
-			}
-		}
-		else
-		{
-			// No minecraftinstance.json found - fresh install
-			console.info('No minecraftinstance.json found, treating as fresh install (no previous manifest available)')
-			manifestStore.loadInstalledManifest(null)
-			return { success: false, error: 'No previous installation found - will perform fresh install' }
-		}
-	}
-	catch (err)
-	{
-		const errorMsg = err instanceof Error ? err.message : 'Unknown error generating previous manifest'
-		console.error('Failed to generate cemm-manifest_old.json from minecraftinstance.json', { error: errorMsg })
-		// Fall back to fresh install
-		manifestStore.loadInstalledManifest(null)
-		return { success: false, error: errorMsg }
-	}
-}
-
-async function writeNewManifest(modpackPath: string, newManifest: Manifest)
-{
-	try
-	{
-		// Simply write the new cemm-manifest.json (target state)
-		const manifestPath = `${modpackPath}/cemm-manifest.json`
-		const writeSuccess = await writeFile(manifestPath, JSON.stringify(newManifest, null, 2))
-
-		if (!writeSuccess)
-		{
-			throw new Error('Failed to write new cemm-manifest.json')
-		}
-
-		console.info('Successfully wrote new cemm-manifest.json')
-		return true
-	}
-	catch (err)
-	{
-		console.error('Failed to write new cemm-manifest.json', { err })
-		throw err
-	}
-}
 </script>

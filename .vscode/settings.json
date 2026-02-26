@@ -68,5 +68,12 @@
 	{
 		"file": "./.vscode/syntax.instructions.md"
 	}
-  ]
+],
+"chat.tools.terminal.autoApprove": {
+	"/^bun run typecheck$/": {
+		"approve": true,
+		"matchCommandLine": true
+	},
+	"ConvertFrom-Json": true
+}
 }

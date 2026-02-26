@@ -4,6 +4,14 @@ use tauri::command;
 
 use crate::composables::manifest::Manifest;
 
+/// Configuration file with content for GitHub upload/download operations.
+///
+/// This struct is mirrored in multiple locations across the codebase:
+/// - Rust: src-tauri/src/composables/github.rs (this file)
+/// - Rust: src-tauri/src/installer.rs (ConfigFile struct)
+/// - TypeScript: app/types/index.ts (ConfigFile and ConfigFileWithContent interfaces)
+///
+/// When modifying this struct, ensure all definitions remain consistent.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ConfigFileWithContent {
     pub filename: String,

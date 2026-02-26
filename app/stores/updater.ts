@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-export interface UpdateInfo
+export interface AppUpdateInfo
 {
 	available: boolean
 	current_version: string
@@ -13,7 +13,7 @@ export interface UpdateInfo
 
 export const useUpdaterStore = defineStore('updater', () =>
 {
-	const updateInfo = ref<UpdateInfo | null>(null)
+	const updateInfo = ref<AppUpdateInfo | null>(null)
 	const isChecking = ref(false)
 	const isDownloading = ref(false)
 	const isInstalling = ref(false)

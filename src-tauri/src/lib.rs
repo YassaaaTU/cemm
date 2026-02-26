@@ -28,7 +28,7 @@ pub use composables::manifest::{
     UpdateInfo,
 };
 mod installer;
-pub use installer::{install_update, install_update_with_cleanup, install_update_optimized, ConfigFile as InstallerConfigFile};
+pub use installer::{install_update, ConfigFile as InstallerConfigFile, InstallOptions};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -52,8 +52,6 @@ pub fn run() {
             download_manifest,
             download_config_files,
             install_update,
-            install_update_with_cleanup,
-            install_update_optimized,
             check_for_updates,
             download_updater_file,
             install_updater_file,
@@ -92,35 +90,34 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+/// Opens a native directory selection dialog.
+///
+/// This function uses Tauri's built-in dialog API which provides native file dialogs
+/// on all platforms (Windows, macOS, and Linux). On Linux, the dialog requires either
+/// GTK or Zenity to be installed (typically available on most desktop environments).
+///
+/// If the native dialog fails or times out, users can manually input the path
+/// through the UI's text input field as a fallback option.
+///
+/// # Arguments
+/// * `app` - Tauri application handle for accessing the dialog API
+///
+/// # Returns
+/// * `Ok(String)` - The selected directory path
+/// * `Err(String)` - Error message with suggestion to use manual path input
 #[tauri::command]
 async fn select_directory(app: tauri::AppHandle) -> Result<String, String> {
     log::info!("select_directory: attempting to open dialog");
     
-    // Try multiple approaches for better Linux compatibility
-    #[cfg(target_os = "linux")]
-    {
-        // First try NFD (Native File Dialog) for better Ubuntu support
-        if let Ok(result) = try_nfd_directory_dialog().await {
-            log::info!("select_directory: NFD dialog succeeded: {}", result);
-            return Ok(result);
-        }
-        log::warn!("NFD dialog failed, trying native system dialogs");
-        
-        // Fallback to native system dialogs (zenity/kdialog)
-        if let Ok(result) = try_native_directory_dialog().await {
-            log::info!("select_directory: Native dialog succeeded: {}", result);
-            return Ok(result);
-        }
-        log::warn!("Native dialogs failed, falling back to Tauri dialog");
-    }
-    
-    // Fallback to Tauri dialog with timeout
+    // Use Tauri's built-in dialog with timeout
+    // Note: On Linux, this requires GTK or Zenity. If unavailable, users should
+    // use the manual path input option in the UI.
     match tokio::time::timeout(
-        std::time::Duration::from_secs(10),
+        std::time::Duration::from_secs(30),
         async_directory_dialog(app)
     ).await {
         Ok(Ok(path)) => {
-            log::info!("select_directory: Tauri dialog succeeded: {}", path);
+            log::info!("select_directory: dialog succeeded: {}", path);
             Ok(path)
         }
         Ok(Err(e)) => {
@@ -132,110 +129,6 @@ async fn select_directory(app: tauri::AppHandle) -> Result<String, String> {
             Err("Dialog timeout - the system dialog may be unresponsive. Please try manual path input.".to_string())
         }
     }
-}
-
-// NFD-based directory dialog for better Linux support
-#[cfg(target_os = "linux")]
-async fn try_nfd_directory_dialog() -> Result<String, String> {
-    use nfd::Response;
-    
-    log::info!("Attempting NFD directory dialog");
-    
-    // Run NFD in a separate thread to avoid blocking
-    let result = tokio::task::spawn_blocking(|| {
-        nfd::open_pick_folder(None)
-    }).await;
-    
-    match result {
-        Ok(Ok(Response::Okay(path))) => {
-            let normalized_path = normalize_path(&path);
-            log::info!("NFD directory dialog successful: {}", normalized_path);
-            Ok(normalized_path)
-        }
-        Ok(Ok(Response::OkayMultiple(_))) => {
-            Err("Unexpected multiple selection".to_string())
-        }
-        Ok(Ok(Response::Cancel)) => {
-            Err("User cancelled dialog".to_string())
-        }
-        Ok(Err(e)) => {
-            log::warn!("NFD dialog error: {}", e);
-            Err(format!("NFD error: {}", e))
-        }
-        Err(e) => {
-            log::warn!("NFD task error: {}", e);
-            Err(format!("NFD task error: {}", e))
-        }
-    }
-}
-
-// Linux-specific native dialog implementation
-#[cfg(target_os = "linux")]
-async fn try_native_directory_dialog() -> Result<String, String> {
-    use std::process::Command;
-    
-    log::info!("Attempting native Linux directory dialogs");
-    
-    // Try zenity first (most common on Ubuntu)
-    log::info!("Trying zenity...");
-    if let Ok(output) = tokio::task::spawn_blocking(|| {
-        Command::new("zenity")
-            .args(&["--file-selection", "--directory", "--title", "Select Modpack Directory"])
-            .output()
-    }).await {
-        if let Ok(cmd_output) = output {
-            if cmd_output.status.success() {
-                let path = String::from_utf8_lossy(&cmd_output.stdout).trim().to_string();
-                if !path.is_empty() {
-                    let normalized_path = normalize_path(&path);
-                    log::info!("Zenity succeeded: {}", normalized_path);
-                    return Ok(normalized_path);
-                }
-            } else {
-                let stderr = String::from_utf8_lossy(&cmd_output.stderr);
-                log::warn!("Zenity failed with status: {}, stderr: {}", cmd_output.status, stderr);
-            }
-        }
-    }
-    
-    // Try kdialog (KDE)
-    log::info!("Trying kdialog...");
-    if let Ok(output) = tokio::task::spawn_blocking(|| {
-        Command::new("kdialog")
-            .args(&["--getexistingdirectory", ".", "--title", "Select Modpack Directory"])
-            .output()
-    }).await {
-        if let Ok(cmd_output) = output {
-            if cmd_output.status.success() {
-                let path = String::from_utf8_lossy(&cmd_output.stdout).trim().to_string();
-                if !path.is_empty() {
-                    let normalized_path = normalize_path(&path);
-                    log::info!("Kdialog succeeded: {}", normalized_path);
-                    return Ok(normalized_path);
-                }
-            } else {
-                let stderr = String::from_utf8_lossy(&cmd_output.stderr);
-                log::warn!("Kdialog failed with status: {}, stderr: {}", cmd_output.status, stderr);
-            }
-        }
-    }
-    
-    // Try xdg-open with a custom approach (last resort)
-    log::info!("Trying file manager fallback...");
-    if let Ok(output) = tokio::task::spawn_blocking(|| {
-        // Check if we can at least open a file manager as verification
-        Command::new("which")
-            .args(&["nautilus"])
-            .output()
-    }).await {
-        if let Ok(cmd_output) = output {
-            if cmd_output.status.success() {
-                log::info!("Nautilus file manager detected, but no direct folder picker available");
-            }
-        }
-    }
-    
-    Err("No native dialog available - please use manual path input".to_string())
 }
 
 // Async wrapper for Tauri dialog
@@ -280,29 +173,13 @@ async fn async_directory_dialog(app: tauri::AppHandle) -> Result<String, String>
 async fn select_file(app: tauri::AppHandle) -> Result<String, String> {
     log::info!("select_file: attempting to open dialog");
     
-    #[cfg(target_os = "linux")]
-    {
-        // First try NFD for better Ubuntu support
-        if let Ok(result) = try_nfd_file_dialog().await {
-            log::info!("select_file: NFD dialog succeeded: {}", result);
-            return Ok(result);
-        }
-        log::warn!("NFD file dialog failed, trying native system dialogs");
-        
-        // Fallback to native system dialogs
-        if let Ok(result) = try_native_file_dialog().await {
-            log::info!("select_file: Native dialog succeeded: {}", result);
-            return Ok(result);
-        }
-        log::warn!("Native file dialogs failed, falling back to Tauri dialog");
-    }
-    
+    // Use Tauri's built-in dialog with timeout
     match tokio::time::timeout(
-        std::time::Duration::from_secs(10),
+        std::time::Duration::from_secs(30),
         async_file_dialog(app)
     ).await {
         Ok(Ok(path)) => {
-            log::info!("select_file: Tauri dialog succeeded: {}", path);
+            log::info!("select_file: dialog succeeded: {}", path);
             Ok(path)
         }
         Ok(Err(e)) => {
@@ -314,95 +191,6 @@ async fn select_file(app: tauri::AppHandle) -> Result<String, String> {
             Err("Dialog timeout - the system dialog may be unresponsive. Please try manual path input.".to_string())
         }
     }
-}
-
-// NFD-based file dialog for better Linux support
-#[cfg(target_os = "linux")]
-async fn try_nfd_file_dialog() -> Result<String, String> {
-    use nfd::Response;
-    
-    log::info!("Attempting NFD file dialog");
-    
-    // Run NFD in a separate thread to avoid blocking
-    let result = tokio::task::spawn_blocking(|| {
-        nfd::open_file_dialog(None, None)
-    }).await;
-    
-    match result {
-        Ok(Ok(Response::Okay(path))) => {
-            let normalized_path = normalize_path(&path);
-            log::info!("NFD file dialog successful: {}", normalized_path);
-            Ok(normalized_path)
-        }
-        Ok(Ok(Response::OkayMultiple(_))) => {
-            Err("Unexpected multiple selection".to_string())
-        }
-        Ok(Ok(Response::Cancel)) => {
-            Err("User cancelled dialog".to_string())
-        }
-        Ok(Err(e)) => {
-            log::warn!("NFD file dialog error: {}", e);
-            Err(format!("NFD error: {}", e))
-        }
-        Err(e) => {
-            log::warn!("NFD file task error: {}", e);
-            Err(format!("NFD task error: {}", e))
-        }
-    }
-}
-
-// Linux-specific native file dialog
-#[cfg(target_os = "linux")]
-async fn try_native_file_dialog() -> Result<String, String> {
-    use std::process::Command;
-    
-    log::info!("Attempting native Linux file dialogs");
-    
-    // Try zenity for file selection
-    log::info!("Trying zenity for file selection...");
-    if let Ok(output) = tokio::task::spawn_blocking(|| {
-        Command::new("zenity")
-            .args(&["--file-selection", "--title", "Select File"])
-            .output()
-    }).await {
-        if let Ok(cmd_output) = output {
-            if cmd_output.status.success() {
-                let path = String::from_utf8_lossy(&cmd_output.stdout).trim().to_string();
-                if !path.is_empty() {
-                    let normalized_path = normalize_path(&path);
-                    log::info!("Zenity file dialog succeeded: {}", normalized_path);
-                    return Ok(normalized_path);
-                }
-            } else {
-                let stderr = String::from_utf8_lossy(&cmd_output.stderr);
-                log::warn!("Zenity file dialog failed with status: {}, stderr: {}", cmd_output.status, stderr);
-            }
-        }
-    }
-    
-    // Try kdialog
-    log::info!("Trying kdialog for file selection...");
-    if let Ok(output) = tokio::task::spawn_blocking(|| {
-        Command::new("kdialog")
-            .args(&["--getopenfilename", ".", "--title", "Select File"])
-            .output()
-    }).await {
-        if let Ok(cmd_output) = output {
-            if cmd_output.status.success() {
-                let path = String::from_utf8_lossy(&cmd_output.stdout).trim().to_string();
-                if !path.is_empty() {
-                    let normalized_path = normalize_path(&path);
-                    log::info!("Kdialog file dialog succeeded: {}", normalized_path);
-                    return Ok(normalized_path);
-                }
-            } else {
-                let stderr = String::from_utf8_lossy(&cmd_output.stderr);
-                log::warn!("Kdialog file dialog failed with status: {}, stderr: {}", cmd_output.status, stderr);
-            }
-        }
-    }
-    
-    Err("No native file dialog available - please use manual path input".to_string())
 }
 
 async fn async_file_dialog(app: tauri::AppHandle) -> Result<String, String> {

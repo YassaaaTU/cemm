@@ -38,7 +38,7 @@ import { useAppStore } from '~/stores/app'
 
 const appStore = useAppStore()
 const { selectDirectory } = useTauri()
-const logger = usePinoLogger()
+const { $logger: logger } = useNuxtApp()
 
 const path = computed(() => appStore.modpackPath)
 

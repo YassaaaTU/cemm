@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { Addon, ConfigFileWithContent, Manifest, UpdateDiff, UpdateInfo } from '~/types'
+import type { Addon, ConfigFileWithContent, Manifest, ManifestUpdateInfo, UpdateDiff } from '~/types'
 
 export const useTauri = () =>
 {
@@ -10,8 +10,9 @@ export const useTauri = () =>
 		{
 			return await invoke<string>('select_directory')
 		}
-		catch (_e)
+		catch (error)
 		{
+			console.error('[useTauri] selectDirectory failed:', error)
 			return null
 		}
 	}
@@ -22,8 +23,9 @@ export const useTauri = () =>
 		{
 			return await invoke<string>('select_file')
 		}
-		catch (_e)
+		catch (error)
 		{
+			console.error('[useTauri] selectFile failed:', error)
 			return null
 		}
 	}
@@ -34,8 +36,9 @@ export const useTauri = () =>
 		{
 			return await invoke<string>('select_save_file')
 		}
-		catch (_e)
+		catch (error)
 		{
+			console.error('[useTauri] selectSaveFile failed:', error)
 			return null
 		}
 	}
@@ -46,8 +49,9 @@ export const useTauri = () =>
 		{
 			return await invoke<string[]>('select_multiple_files')
 		}
-		catch (_e)
+		catch (error)
 		{
+			console.error('[useTauri] selectMultipleFiles failed:', error)
 			return []
 		}
 	}
@@ -58,8 +62,9 @@ export const useTauri = () =>
 		{
 			return await invoke<boolean>('is_binary_file', { path })
 		}
-		catch (_e)
+		catch (error)
 		{
+			console.error('[useTauri] isBinaryFile failed:', { path, error })
 			return false // Default to false if check fails
 		}
 	}
@@ -70,8 +75,9 @@ export const useTauri = () =>
 		{
 			return await invoke<string>('read_file', { path })
 		}
-		catch (_e)
+		catch (error)
 		{
+			console.error('[useTauri] readFile failed:', { path, error })
 			return null
 		}
 	}
@@ -93,8 +99,9 @@ export const useTauri = () =>
 			}
 			return true
 		}
-		catch (_e)
+		catch (error)
 		{
+			console.error('[useTauri] writeFile failed:', { pathOrDir, error })
 			return false
 		}
 	}
@@ -105,20 +112,22 @@ export const useTauri = () =>
 		{
 			return await invoke<Manifest>('parse_minecraft_instance', { path })
 		}
-		catch (_e)
+		catch (error)
 		{
+			console.error('[useTauri] parseMinecraftInstance failed:', { path, error })
 			return null
 		}
 	}
 
-	const compareManifests = async (oldManifest: Manifest, newManifest: Manifest): Promise<UpdateInfo | null> =>
+	const compareManifests = async (oldManifest: Manifest, newManifest: Manifest): Promise<ManifestUpdateInfo | null> =>
 	{
 		try
 		{
-			return await invoke<UpdateInfo>('compare_manifests', { old: oldManifest, new: newManifest })
+			return await invoke<ManifestUpdateInfo>('compare_manifests', { old: oldManifest, new: newManifest })
 		}
-		catch (_e)
+		catch (error)
 		{
+			console.error('[useTauri] compareManifests failed:', error)
 			return null
 		}
 	}
@@ -129,9 +138,9 @@ export const useTauri = () =>
 		{
 			await invoke('open_curseforge_url', { addonName })
 		}
-		catch (_e)
+		catch (error)
 		{
-			// Optionally log error
+			console.error('[useTauri] openCurseforgeUrl failed:', { addonName, error })
 		}
 	}
 
@@ -141,37 +150,34 @@ export const useTauri = () =>
 		{
 			await invoke('open_url', { url })
 		}
-		catch (_e)
+		catch (error)
 		{
-			// Optionally log error
+			console.error('[useTauri] openUrl failed:', { url, error })
 		}
 	}
 	const installUpdate = async (
 		modpackPath: string,
 		manifest: Manifest,
-		configFiles: ConfigFileWithContent[]
+		configFiles: ConfigFileWithContent[],
+		options?: {
+			oldManifest?: Manifest | null
+			cleanupOld?: boolean
+		}
 	): Promise<void> =>
 	{
 		return await invoke('install_update', {
 			modpackPath,
 			manifest,
-			configFiles })
-	}
-
-	const installUpdateWithCleanup = async (
-		modpackPath: string,
-		oldManifest: Manifest | null,
-		newManifest: Manifest,
-		configFiles: ConfigFileWithContent[]
-	): Promise<void> =>
-	{
-		return await invoke('install_update_with_cleanup', {
-			modpackPath,
-			oldManifest,
-			newManifest,
-			configFiles
+			configFiles,
+			options: options !== undefined
+				? {
+					old_manifest: options.oldManifest ?? null,
+					cleanup_old: options.cleanupOld ?? (options.oldManifest !== null && options.oldManifest !== undefined)
+				}
+				: undefined
 		})
 	}
+
 	const keyringTestDirect = async (): Promise<string> =>
 	{
 		return await invoke<string>('keyring_test_direct')
@@ -190,9 +196,10 @@ export const useTauri = () =>
 			if (content === null) return null
 			return JSON.parse(content) as Manifest
 		}
-		catch (_e)
+		catch (_error)
 		{
 			// No existing manifest found, this is a fresh install
+			console.info('[useTauri] loadExistingManifest: No existing manifest found (fresh install)', { modpackPath })
 			return null
 		}
 	}
@@ -204,7 +211,7 @@ export const useTauri = () =>
 		{
 			return {
 				removed_addons: [],
-				updated_addons: [],
+				updated_addon_ids: [],
 				new_addons: [
 					...newManifest.mods.map((addon) => addon.addon_name),
 					...newManifest.resourcepacks.map((addon) => addon.addon_name),
@@ -216,7 +223,7 @@ export const useTauri = () =>
 
 		const diff: UpdateDiff = {
 			removed_addons: [],
-			updated_addons: [],
+			updated_addon_ids: [],
 			new_addons: []
 		}
 
@@ -234,12 +241,13 @@ export const useTauri = () =>
 			}
 
 			// Find updated addons (same project ID, different version)
+			// Store project_id for reliable matching during removal
 			for (const oldAddon of oldAddons)
 			{
 				const newAddon = newAddons.find((addon) => addon.addon_project_id === oldAddon.addon_project_id)
 				if (newAddon !== undefined && oldAddon.version !== newAddon.version)
 				{
-					diff.updated_addons.push([oldAddon.version, newAddon.version])
+					diff.updated_addon_ids.push(oldAddon.addon_project_id)
 				}
 			}
 
@@ -269,8 +277,9 @@ export const useTauri = () =>
 		{
 			return await invoke<Manifest>('download_manifest', { repo, uuid })
 		}
-		catch (_e)
+		catch (error)
 		{
+			console.error('[useTauri] downloadManifest failed:', { repo, uuid, error })
 			return null
 		}
 	}
@@ -281,8 +290,9 @@ export const useTauri = () =>
 		{
 			return await invoke<ConfigFileWithContent[]>('download_config_files', { repo, uuid })
 		}
-		catch (_e)
+		catch (error)
 		{
+			console.error('[useTauri] downloadConfigFiles failed:', { repo, uuid, error })
 			return []
 		}
 	}
@@ -293,8 +303,9 @@ export const useTauri = () =>
 		{
 			return await invoke<string>('select_config_directory')
 		}
-		catch (_e)
+		catch (error)
 		{
+			console.error('[useTauri] selectConfigDirectory failed:', error)
 			return null
 		}
 	}
@@ -305,26 +316,13 @@ export const useTauri = () =>
 		{
 			return await invoke<ConfigFileWithContent[]>('read_directory_recursive', { dirPath, basePath })
 		}
-		catch (_e)
+		catch (error)
 		{
+			console.error('[useTauri] readDirectoryRecursive failed:', { dirPath, basePath, error })
 			return []
 		}
 	}
 
-	const installUpdateOptimized = async (
-		modpackPath: string,
-		oldManifest: Manifest | null,
-		newManifest: Manifest,
-		configFiles: ConfigFileWithContent[]
-	): Promise<void> =>
-	{
-		return await invoke('install_update_optimized', {
-			modpackPath,
-			oldManifest,
-			newManifest,
-			configFiles
-		})
-	}
 	const validatePath = async (path: string): Promise<{
 		exists: boolean
 		is_directory?: boolean
@@ -344,9 +342,9 @@ export const useTauri = () =>
 		{
 			return await invoke('validate_path', { path })
 		}
-		catch (e)
+		catch (error)
 		{
-			console.error('validatePath error:', e)
+			console.error('[useTauri] validatePath failed:', { path, error })
 			return {
 				exists: false,
 				original_path: path
@@ -367,8 +365,6 @@ export const useTauri = () =>
 		openCurseforgeUrl,
 		openUrl,
 		installUpdate,
-		installUpdateWithCleanup,
-		installUpdateOptimized,
 		keyringTestDirect,
 		keyringSetAndVerify,
 		loadExistingManifest,

@@ -248,46 +248,6 @@ const inputPlaceholder = computed(() =>
 	return '/path/to/file.json or C:\\path\\to\\file.json'
 })
 
-const _showSuggestions = computed(() => props.type === 'directory')
-
-const _pathSuggestions = computed(() =>
-{
-	const suggestions = []
-
-	// Detect OS and provide relevant suggestions
-	if (typeof navigator !== 'undefined')
-	{
-		const userAgent = navigator.userAgent.toLowerCase()
-
-		if (userAgent.includes('linux'))
-		{
-			suggestions.push(
-				{ label: 'Home', path: '~/', icon: 'mdi:home' },
-				{ label: 'Downloads', path: '~/Downloads', icon: 'mdi:download' },
-				{ label: 'Documents', path: '~/Documents', icon: 'mdi:file-document' }
-			)
-		}
-		else if (userAgent.includes('win'))
-		{
-			suggestions.push(
-				{ label: 'Documents', path: 'C:\\Users\\%USERNAME%\\Documents', icon: 'mdi:file-document' },
-				{ label: 'Downloads', path: 'C:\\Users\\%USERNAME%\\Downloads', icon: 'mdi:download' },
-				{ label: 'CurseForge', path: 'C:\\Users\\%USERNAME%\\curseforge\\minecraft\\Instances', icon: 'mdi:minecraft' }
-			)
-		}
-		else if (userAgent.includes('mac'))
-		{
-			suggestions.push(
-				{ label: 'Home', path: '~/', icon: 'mdi:home' },
-				{ label: 'Downloads', path: '~/Downloads', icon: 'mdi:download' },
-				{ label: 'Documents', path: '~/Documents', icon: 'mdi:file-document' }
-			)
-		}
-	}
-
-	return suggestions
-})
-
 // Methods
 const openDialog = async () =>
 {

@@ -12,12 +12,33 @@ export interface Addon
 	fileNameOnDisk: string // exact filename on disk for reliable removal
 }
 
+/**
+ * Configuration file metadata without content.
+ *
+ * This type is mirrored in multiple locations across the codebase:
+ * - TypeScript: app/types/index.ts (this file)
+ * - Rust: src-tauri/src/installer.rs (ConfigFile struct with content)
+ * - Rust: src-tauri/src/composables/github.rs (ConfigFileWithContent struct)
+ *
+ * When modifying this type, ensure all definitions remain consistent.
+ */
 export interface ConfigFile
 {
 	filename: string
 	relative_path: string
 }
 
+/**
+ * Configuration file with content for upload/download operations.
+ *
+ * Extends ConfigFile with file content and binary flag.
+ *
+ * This type is mirrored in:
+ * - TypeScript: app/types/index.ts (this file)
+ * - Rust: src-tauri/src/composables/github.rs (ConfigFileWithContent struct)
+ *
+ * When modifying this type, ensure all definitions remain consistent.
+ */
 export interface ConfigFileWithContent extends ConfigFile
 {
 	content: string
@@ -34,7 +55,7 @@ export interface Manifest
 	config_files: ConfigFile[]
 }
 
-export interface UpdateInfo
+export interface ManifestUpdateInfo
 {
 	uuid: string
 	timestamp: string
@@ -43,10 +64,19 @@ export interface UpdateInfo
 	configFiles: string[]
 }
 
+/**
+ * Represents the difference between two manifest versions during an update.
+ *
+ * This type is mirrored in:
+ * - TypeScript: app/types/index.ts (this file)
+ * - Rust: src-tauri/src/installer.rs (UpdateDiff struct)
+ *
+ * When modifying this type, ensure all definitions remain consistent.
+ */
 export interface UpdateDiff
 {
 	removed_addons: string[] // addon names to remove
-	updated_addons: Array<[string, string]> // [old_version, new_version] pairs
+	updated_addon_ids: number[] // project IDs of addons that were updated (matched by project_id for reliability)
 	new_addons: string[] // completely new addon names
 }
 

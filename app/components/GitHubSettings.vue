@@ -79,7 +79,7 @@ import { useAppStore } from '~/stores/app'
 
 const appStore = useAppStore()
 const { setSecure, getSecure } = useSecureStorage()
-const logger = usePinoLogger()
+const { $logger: logger } = useNuxtApp()
 
 // Use computed for githubRepo to ensure reactivity and persistence
 const githubRepo = computed({

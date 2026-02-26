@@ -19,7 +19,7 @@
         <button
           class="btn btn-primary"
           aria-describedby="load-instance-help"
-          @click="loadInstance"
+          @click="handleLoadInstance"
         >
           Load Instance
         </button>
@@ -28,7 +28,7 @@
           class="btn btn-secondary"
           :disabled="manifest == null"
           :aria-describedby="manifest == null ? 'save-disabled-help' : 'save-manifest-help'"
-          @click="saveManifest"
+          @click="handleSaveManifest"
         >
           Save Manifest
         </button>
@@ -36,7 +36,7 @@
           class="btn btn-accent"
           :disabled="(manifest == null && selectedConfigFiles.length === 0) || uploading"
           :aria-describedby="getUploadButtonDescription()"
-          @click="uploadToGithub"
+          @click="handleUploadToGithub"
         >
           <span v-if="!uploading">
             {{ getUploadButtonText() }}
@@ -68,22 +68,13 @@
       />
     </div>
 
-    <!-- Error Handling -->
+    <!-- Status messages -->
     <app-alert
-      v-if="errorState.error"
-      class="mt-4"
-      :error-state="errorState"
-      :retry-operation="retryCurrentOperation"
-      @retry="retryCurrentOperation"
-      @close="clearError"
-    />
-
-    <!-- Simple status messages (for non-error messages) -->
-    <app-alert
-      v-else-if="statusMessage"
+      v-if="statusMessage"
       class="mt-4"
       :message="statusMessage"
       :type="statusType"
+      @close="clearStatus"
     />
 
     <div
@@ -182,266 +173,51 @@
     </div>
 
     <!-- Config Files Section -->
-    <div class="mt-6 card bg-base-200 shadow-lg">
-      <div class="card-body">
-        <h3 class="card-title text-lg">
-          Config Files (Optional)
-        </h3>
-        <p class="text-sm opacity-70 mb-4">
-          Select configuration files to include with your modpack update.
-        </p>
-
-        <!-- Config File Selection Buttons -->
-        <div class="flex gap-2 mb-4">
-          <button
-            class="btn btn-outline btn-sm"
-            @click="selectConfigFiles"
-          >
-            <Icon
-              name="mdi:file-plus"
-              size="1.2rem"
-              class="mr-1"
-            />
-            Add Config Files
-          </button>
-          <button
-            class="btn btn-outline btn-sm"
-            @click="showDirectorySelector = true"
-          >
-            <Icon
-              name="mdi:folder-plus"
-              size="1.2rem"
-              class="mr-1"
-            />
-            Add From Directory
-          </button>
-          <button
-            v-if="selectedConfigFiles.length > 0"
-            class="btn btn-outline btn-error btn-sm"
-            @click="clearConfigFiles"
-          >
-            <Icon
-              name="mdi:trash-can"
-              size="1.2rem"
-              class="mr-1"
-            />
-            Clear All
-          </button>
-        </div>
-
-        <!-- Directory Selector Modal -->
-        <dialog
-          :class="['modal', { 'modal-open': showDirectorySelector }]"
-        >
-          <div class="modal-box w-11/12 max-w-2xl">
-            <h3 class="font-bold text-lg mb-4">
-              Select Config Directory
-            </h3>
-            <p class="text-sm opacity-70 mb-4">
-              Choose a directory to scan for config files. All supported files will be added automatically.
-            </p>
-
-            <path-selector
-              type="directory"
-              title="Select Config Directory"
-              @selected="handleDirectorySelected"
-              @error="handleDirectoryError"
-            />
-
-            <div class="modal-action">
-              <button
-                class="btn btn-ghost"
-                @click="showDirectorySelector = false"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-          <div
-            class="modal-backdrop"
-            @click="showDirectorySelector = false"
-          />
-        </dialog>
-
-        <!-- Selected Config Files List -->
-        <div
-          v-if="selectedConfigFiles.length > 0"
-          class="space-y-2"
-        >
-          <div class="text-sm font-medium opacity-80">
-            Selected Files ({{ selectedConfigFiles.length }}):
-          </div>
-          <div
-            v-for="(configFile, index) in selectedConfigFiles"
-            :key="index"
-            class="flex items-center justify-between p-3 bg-base-100 rounded-lg"
-          >
-            <div class="flex items-center gap-3">
-              <div
-                class="badge badge-sm"
-                :class="configFile.is_binary ? 'badge-secondary' : 'badge-primary'"
-              >
-                {{ configFile.is_binary ? 'BINARY' : 'CONFIG' }}
-              </div>
-              <span class="font-mono text-sm">{{ configFile.relative_path }}</span>
-              <span class="text-xs opacity-60">
-                <template v-if="configFile.is_binary">
-                  Binary file ({{ configFile.filename.split('.').pop()?.toUpperCase() || 'BINARY' }})
-                </template>
-                <template v-else>
-                  ({{ Math.round(configFile.content.length / 1024 * 100) / 100 }} KB)
-                </template>
-              </span>
-            </div>
-            <button
-              class="btn btn-ghost btn-xs btn-circle"
-              @click="removeConfigFile(configFile)"
-            >
-              <Icon
-                name="mdi:close"
-                size="1.2rem"
-                class="text-error"
-              />
-            </button>
-          </div>
-        </div>
-
-        <div
-          v-else
-          class="text-center py-6 opacity-60"
-        >
-          <Icon
-            name="mdi:file-document-outline"
-            size="4rem"
-            class="text-gray-400 mb-2"
-          />
-          <p class="text-sm">
-            No config files selected
-          </p>
-          <p class="text-xs opacity-60">
-            Config files will be applied to the user's modpack directory
-          </p>
-        </div>
-      </div>
-    </div>
+    <config-files-section
+      v-model="selectedConfigFiles"
+      class="mt-6"
+      @status="handleStatus"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import type { ConfigFileWithContent, Manifest } from '~/types'
+import type { ConfigFileWithContent } from '~/types'
 
-const { uploadUpdate } = useGithubApi()
-const { getSecure } = useSecureStorage()
-const appStore = useAppStore()
+const { loadInstance, saveManifest, uploadToGithub } = useAdminApi()
+const manifestStore = useManifestStore()
+const { $logger: logger } = useNuxtApp()
+
+// Component state
 const uploading = ref(false)
-
 const progress = ref(0)
 const statusMessage = ref('')
 const statusType = ref<'success' | 'error' | 'info' | 'warning'>('info')
-
-// Enhanced error handling
-const logger = useNuxtApp().$logger
-const { errorState, handleError, retry, clearError } = createErrorHandler(
-	statusMessage,
-	statusType,
-	logger
-)
-
-// Track current operation for retry functionality
-const currentOperation = ref<(() => Promise<void>) | null>(null)
-const retryCurrentOperation = async () =>
-{
-	if (currentOperation.value !== null)
-	{
-		await retry(currentOperation.value)
-	}
-}
-
-// Config file management
 const selectedConfigFiles = ref<ConfigFileWithContent[]>([])
 
-// PathSelector modal state
-const showDirectorySelector = ref(false)
-
-// PathSelector event handlers
-const handleDirectorySelected = async (dirPath: string | string[]) =>
-{
-	showDirectorySelector.value = false
-	const pathToUse = Array.isArray(dirPath) ? dirPath[0] : dirPath
-
-	if (typeof pathToUse !== 'string' || pathToUse.trim().length === 0)
-	{
-		statusMessage.value = 'No directory selected.'
-		statusType.value = 'warning'
-		return
-	}
-
-	try
-	{
-		statusMessage.value = 'Scanning directory for config files...'
-		statusType.value = 'info'
-
-		// Calculate the parent directory to use as base path
-		const lastBackslash = pathToUse.lastIndexOf('\\')
-		const lastForwardslash = pathToUse.lastIndexOf('/')
-		const lastSeparator = Math.max(lastBackslash, lastForwardslash)
-
-		let parentPath: string
-		if (lastSeparator > 0)
-		{
-			parentPath = pathToUse.substring(0, lastSeparator)
-		}
-		else
-		{
-			parentPath = pathToUse
-		}
-
-		const configFiles = await readDirectoryRecursive(pathToUse, parentPath)
-
-		if (configFiles.length === 0)
-		{
-			statusMessage.value = 'No config files found in the selected directory.'
-			statusType.value = 'warning'
-			return
-		}
-
-		selectedConfigFiles.value = [...selectedConfigFiles.value, ...configFiles]
-		statusMessage.value = `Added ${configFiles.length} config file(s) from directory.`
-		statusType.value = 'success'
-	}
-	catch (err)
-	{
-		statusMessage.value = `Failed to read config files from directory: ${err instanceof Error ? err.message : 'Unknown error'}`
-		statusType.value = 'error'
-	}
-}
-
-const handleDirectoryError = (error: string) =>
-{
-	showDirectorySelector.value = false
-	statusMessage.value = `Directory selection error: ${error}`
-	statusType.value = 'error'
-}
-
-// Import Tauri functions
-const {
-	selectFile,
-	selectSaveFile,
-	selectMultipleFiles,
-	readDirectoryRecursive,
-	writeFile,
-	parseMinecraftInstance,
-	compareManifests,
-	readFile,
-	isBinaryFile
-} = useTauri()
-
-const manifestStore = useManifestStore()
+// Computed properties
 const manifest = computed(() => manifestStore.manifest)
-
-// Exclusion handling
 const excludedCount = computed(() => manifestStore.excludedAddons.size)
 
+// Status management
+const clearStatus = () =>
+{
+	statusMessage.value = ''
+	statusType.value = 'info'
+}
+
+const setStatus = (message: string, type: 'success' | 'error' | 'info' | 'warning') =>
+{
+	statusMessage.value = message
+	statusType.value = type
+}
+
+const handleStatus = (message: string, type: 'success' | 'error' | 'info' | 'warning') =>
+{
+	setStatus(message, type)
+}
+
+// Exclusion handling
 function handleToggleExclusion(addonName: string)
 {
 	manifestStore.toggleExclusion(addonName)
@@ -483,395 +259,81 @@ const getUploadButtonDescription = () =>
 	return 'upload-help'
 }
 
-// Config file selection functions
-async function selectConfigFiles()
+// Action handlers using the composable
+async function handleLoadInstance()
 {
-	statusMessage.value = ''
-	const filePaths = await selectMultipleFiles()
+	clearStatus()
+	await loadInstance(setStatus)
+}
 
-	if (filePaths.length === 0)
+async function handleSaveManifest()
+{
+	clearStatus()
+	if (manifest.value !== null)
 	{
-		statusMessage.value = 'No config files selected.'
-		statusType.value = 'warning'
-		return
-	}
-	try
-	{
-		const newConfigFiles: ConfigFileWithContent[] = []
-
-		for (const filePath of filePaths)
-		{
-			// Check if this is a binary file first
-			const isBinary = await isBinaryFile(filePath)
-
-			let content: string | null
-			if (isBinary)
-			{
-				// For binary files, get the content from backend (which will return base64 data URI)
-				content = await readFile(filePath)
-			}
-			else
-			{
-				// For text files, read normally
-				content = await readFile(filePath)
-			}
-
-			if (content !== null && content.length > 0)
-			{
-				// Extract filename and calculate relative path from modpack root
-				const fileName = filePath.split(/[/\\]/).pop()
-				if (fileName !== undefined && fileName.length > 0)
-				{
-					// Calculate relative path from modpack directory
-					let relativePath = fileName // Default to just filename if we can't determine better
-					const modpackPath = appStore.modpackPath
-
-					if (modpackPath && filePath.startsWith(modpackPath))
-					{
-						// Calculate actual relative path from modpack root
-						const normalizedModpackPath = modpackPath.replace(/\\/g, '/')
-						const normalizedFilePath = filePath.replace(/\\/g, '/')
-						relativePath = normalizedFilePath.substring(normalizedModpackPath.length + 1)
-					}
-					else
-					{
-						// File is outside modpack directory or no modpack loaded
-						// Try to infer relative path based on file location structure
-						const normalizedFilePath = filePath.replace(/\\/g, '/')
-						const pathParts = normalizedFilePath.split('/')
-
-						// Look for common config directory patterns in the path
-						const configIndex = pathParts.findIndex((part) =>
-							part === 'config'
-							|| part === 'defaultconfigs'
-							|| part === 'kubejs'
-							|| part === 'resourcepacks'
-							|| part === 'shaderpacks'
-							|| part === 'emotes'
-						)
-
-						if (configIndex !== -1)
-						{
-							// Use everything from the config directory onwards
-							relativePath = pathParts.slice(configIndex).join('/')
-						}
-						else
-						{
-							// Special handling for known file types that should go in specific directories
-							const fileExtension = fileName.toLowerCase().split('.').pop()
-							if (fileExtension === 'emotecraft')
-							{
-								// .emotecraft files should go in the emotes directory
-								relativePath = `emotes/${fileName}`
-							}
-							else
-							{
-								// Fallback: use just the filename (will be placed in modpack root)
-								relativePath = fileName
-							}
-						}
-					}
-
-					newConfigFiles.push({
-						filename: fileName,
-						relative_path: relativePath,
-						content,
-						is_binary: isBinary
-					})
-				}
-			}
-		}
-
-		selectedConfigFiles.value = [...selectedConfigFiles.value, ...newConfigFiles]
-		statusMessage.value = `Added ${newConfigFiles.length} config file(s).`
-		statusType.value = 'success'
-	}
-	catch (err)
-	{
-		statusMessage.value = `Failed to read config files: ${err instanceof Error ? err.message : 'Unknown error'}`
-		statusType.value = 'error'
+		await saveManifest(manifest.value, setStatus)
 	}
 }
 
-function removeConfigFile(configFile: ConfigFileWithContent)
+async function handleUploadToGithub()
 {
-	const index = selectedConfigFiles.value.findIndex((cf) => cf.relative_path === configFile.relative_path)
-	if (index !== -1)
-	{
-		selectedConfigFiles.value.splice(index, 1)
-		statusMessage.value = `Removed config file: ${configFile.relative_path}`
-		statusType.value = 'info'
-	}
-}
-
-function clearConfigFiles()
-{
-	selectedConfigFiles.value = []
-	statusMessage.value = 'Cleared all config files.'
-	statusType.value = 'info'
-}
-
-// Load a minecraftinstance.json and convert to manifest
-async function loadInstance()
-{
-	const loadOperation = async () =>
-	{
-		statusMessage.value = ''
-
-		// Select minecraftinstance.json
-		const filePath = await selectFile()
-		if (filePath == null || filePath.length === 0)
-		{
-			statusMessage.value = 'No file selected.'
-			statusType.value = 'warning'
-			return
-		}
-
-		try
-		{
-			// Parse minecraftinstance.json to Manifest
-			const parsed = await parseMinecraftInstance(filePath)
-			if (parsed == null)
-			{
-				throw new AppError('INVALID_MANIFEST', 'Failed to parse minecraftinstance.json')
-			}
-
-			// Save previous manifest for diffing (store in Pinia)
-			if (manifest.value != null)
-			{
-				manifestStore.setPreviousManifest(manifest.value)
-			}
-			manifestStore.setManifest(parsed)
-			statusMessage.value = 'Manifest generated from minecraftinstance.json.'
-			statusType.value = 'success'
-
-			// If previous manifest exists, show diff (store in Pinia)
-			if (manifestStore.previousManifest != null)
-			{
-				const diff = await compareManifests(manifestStore.previousManifest, parsed)
-				manifestStore.setUpdateInfo(diff)
-			}
-			else
-			{
-				manifestStore.setUpdateInfo(null)
-			}
-		}
-		catch (error)
-		{
-			if (error instanceof AppError)
-			{
-				handleError(error)
-			}
-			else
-			{
-				handleError(new AppError('FILE_READ_ERROR', error instanceof Error ? error : new Error(String(error))))
-			}
-		}
-	}
-
-	// Set current operation for retry functionality
-	currentOperation.value = loadOperation
-	await loadOperation()
-}
-
-// Save/export the generated manifest
-async function saveManifest()
-{
-	statusMessage.value = ''
-	if (manifest.value == null)
-	{
-		return
-	}
-	// Prompt user for save location (Save As dialog)
-	const filePath = await selectSaveFile()
-	if (filePath == null || filePath.length === 0)
-	{
-		statusMessage.value = 'No file selected.'
-		statusType.value = 'warning'
-		return
-	}
-	// Check if file exists (optional, for user feedback)
-	let fileExists = false
-	try
-	{
-		const existing = await readFile(filePath)
-		if (typeof existing === 'string' && existing.length > 0)
-		{
-			fileExists = true
-		}
-	}
-	catch (_err)
-	{
-		// File does not exist, proceed
-	}
-	if (fileExists)
-	{
-		statusMessage.value = 'File already exists. Overwriting.'
-		statusType.value = 'warning'
-	}
-	const ok = await writeFile(filePath, JSON.stringify(manifest.value, null, 2))
-	if (ok)
-	{
-		statusMessage.value = `Manifest saved as ${filePath}.`
-		statusType.value = 'success'
-	}
-	else
-	{
-		statusMessage.value = 'Failed to save manifest.'
-		statusType.value = 'error'
-	}
-}
-
-async function uploadToGithub()
-{
-	// Allow upload if we have either a manifest OR config files
 	if (manifest.value == null && selectedConfigFiles.value.length === 0)
 	{
 		return
 	}
 
-	const uploadOperation = async () =>
+	clearStatus()
+	progress.value = 0
+	uploading.value = true
+
+	try
 	{
-		statusMessage.value = ''
-		statusType.value = 'info'
-		progress.value = 0
-		uploading.value = true
-		try
-		{
-			// Get repo and token
-			const repo = appStore.githubRepo
-			const token = await getSecure('cemm_github_token')
-			if (repo.trim().length === 0 || token == null || token.trim().length === 0)
+		await uploadToGithub(
+			manifest.value,
+			selectedConfigFiles.value,
+			(p: number, msg?: string) =>
 			{
-				throw new Error('MISSING_GITHUB_SETTINGS')
-			}
-			// Generate UUID (for now, use Date.now as stub)
-			const uuid = Date.now().toString()
-
-			// Create manifest (either from existing or config-only)
-			let manifestWithConfig: Manifest
-			if (manifest.value !== null)
-			{
-				// Full manifest with addons + config files
-				// Filter out excluded addons
-				const excludedSet = manifestStore.excludedAddons
-				const currentManifest = manifest.value as Manifest
-				manifestWithConfig = {
-					updateType: 'full',
-					mods: currentManifest.mods.filter((m) => !excludedSet.has(m.addon_name)),
-					resourcepacks: currentManifest.resourcepacks.filter((r) => !excludedSet.has(r.addon_name)),
-					shaderpacks: currentManifest.shaderpacks.filter((s) => !excludedSet.has(s.addon_name)),
-					datapacks: currentManifest.datapacks.filter((d) => !excludedSet.has(d.addon_name)),
-					config_files: selectedConfigFiles.value.map((cf) => ({
-						filename: cf.filename,
-						relative_path: cf.relative_path
-					}))
-				}
-			}
-			else
-			{
-				// Config-only manifest (empty addons)
-				manifestWithConfig = {
-					updateType: 'config',
-					mods: [],
-					resourcepacks: [],
-					shaderpacks: [],
-					datapacks: [],
-					config_files: selectedConfigFiles.value.map((cf) => ({
-						filename: cf.filename,
-						relative_path: cf.relative_path
-					}))
-				}
-			}
-
-			// Use selected config files and wrap with network retry
-			const configFiles = selectedConfigFiles.value
-			await withNetworkRetry(async () =>
-			{
-				await uploadUpdate({
-					repo,
-					token,
-					uuid,
-					manifest: manifestWithConfig,
-					configFiles,
-					onProgress: (p, msg) =>
-					{
-						progress.value = p
-						if (typeof msg === 'string' && msg.length > 0)
-						{
-							statusMessage.value = msg
-						}
-					}
-				})
-			})
-
-			statusMessage.value = manifest.value !== null
-				? 'Upload successful!'
-				: 'Config files uploaded successfully!'
-			statusType.value = 'success'
-		}
-		catch (error)
-		{
-			const errorCode = error instanceof Error && error.message.startsWith('GITHUB_')
-				? error.message
-				: 'GITHUB_UPLOAD_FAILED'
-			const errorToHandle = error instanceof Error ? error : new Error(String(error))
-			handleError(new AppError(errorCode, errorToHandle), 'GitHub upload')
-		}
-		finally
-		{
-			uploading.value = false
-			progress.value = 100
-		}
+				progress.value = p
+				if (msg !== undefined) setStatus(msg, 'info')
+			},
+			setStatus
+		)
 	}
-	// Set current operation for retry functionality
-	currentOperation.value = uploadOperation
-	await uploadOperation()
+	finally
+	{
+		uploading.value = false
+		progress.value = 100
+	}
 }
 
-// Navigation state management - fix for settings → dashboard bug
+// Navigation state management
 const route = useRoute()
 
-// Reset component state when navigating back from settings
 const resetComponentState = () =>
 {
-	// Reset all local state that might be stale
 	uploading.value = false
 	progress.value = 0
 	statusMessage.value = ''
 	statusType.value = 'info'
-	currentOperation.value = null
-
-	// Clear any errors
-	clearError()
-
-	console.info('AdminPanel state reset after navigation')
+	logger.info('AdminPanel state reset after navigation')
 }
 
-// Watch for route changes to detect navigation back from settings
 watch(() => route.name, (newRouteName, oldRouteName) =>
 {
 	if (oldRouteName === 'settings' && newRouteName === 'dashboard')
 	{
 		resetComponentState()
-		console.info('Detected navigation from settings to dashboard, AdminPanel state reset')
+		logger.info('Detected navigation from settings to dashboard, AdminPanel state reset')
 	}
 })
 
-// Ensure component is properly initialized on mount
 onMounted(() =>
 {
-	console.info('AdminPanel mounted')
+	logger.info('AdminPanel mounted')
 })
 
-// Cleanup on unmount
 onUnmounted(() =>
 {
-	// Cancel any ongoing operations
-	if (currentOperation.value !== null)
-	{
-		currentOperation.value = null
-	}
-	console.info('AdminPanel unmounted')
+	logger.info('AdminPanel unmounted')
 })
 </script>

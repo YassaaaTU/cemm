@@ -16,8 +16,8 @@
       <button
         class="btn rounded-none m-0 btn-lg justify-start"
         aria-label="Home"
-        :class="{ 'btn-primary': navigation.isLanding }"
-        @click="navigation.navigateToLanding()"
+        :class="{ 'btn-primary': route.path === '/' }"
+        @click="navigateTo('/')"
       >
         <Icon
           name="mdi:home"
@@ -29,8 +29,8 @@
       <button
         class="btn rounded-none m-0 btn-lg justify-start"
         aria-label="Dashboard"
-        :class="{ 'btn-primary': navigation.isDashboard }"
-        @click="navigation.navigateToDashboard()"
+        :class="{ 'btn-primary': route.path === '/dashboard' }"
+        @click="navigateTo('/dashboard')"
       >
         <Icon
           name="mdi:view-dashboard"
@@ -42,8 +42,8 @@
       <button
         class="btn rounded-none m-0 btn-lg justify-start"
         aria-label="Settings"
-        :class="{ 'btn-primary': navigation.isSettings }"
-        @click="navigation.navigateToSettings()"
+        :class="{ 'btn-primary': route.path === '/settings' }"
+        @click="navigateTo('/settings')"
       >
         <Icon
           name="mdi:cog"
@@ -78,7 +78,7 @@
 import { useThemeStore } from '~/stores/theme'
 
 const themeStore = useThemeStore()
-const navigation = useNavigationStore()
+const route = useRoute()
 
 // Theme computed properties
 const isDark = computed(() => themeStore.isdark)

@@ -1,16 +1,8 @@
 import { defineStore } from 'pinia'
 
-interface ThemeStore
-{
-	current: Ref<'dracula' | 'nord'>
-	setTheme: (theme: 'nord' | 'dracula') => void
-	toggleTheme: () => void
-	isdark: ComputedRef<boolean>
-}
-
 export const useThemeStore = defineStore(
 	'themeStore',
-	(): ThemeStore =>
+	() =>
 	{
 		const current = ref<'nord' | 'dracula'>('dracula')
 

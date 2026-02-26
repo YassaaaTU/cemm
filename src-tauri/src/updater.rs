@@ -35,15 +35,15 @@ pub struct UpdateInfo {
 pub async fn check_for_updates(repo: String) -> Result<UpdateInfo, String> {
     let current_version = env!("CARGO_PKG_VERSION"); // Gets version from Cargo.toml
     
-    println!("DEBUG: Checking for updates...");
-    println!("DEBUG: Current version: {}", current_version);
-    println!("DEBUG: Repository: {}", repo);
+    log::debug!("Checking for updates...");
+    log::debug!("Current version: {}", current_version);
+    log::debug!("Repository: {}", repo);
     
     // Fetch latest release from GitHub
     let client = reqwest::Client::new();
     let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
     
-    println!("DEBUG: Fetching from URL: {}", url);
+    log::debug!("Fetching from URL: {}", url);
     
     let response = client
         .get(&url)
@@ -59,13 +59,13 @@ pub async fn check_for_updates(repo: String) -> Result<UpdateInfo, String> {
         .await
         .map_err(|e| format!("Failed to parse release data: {}", e))?;
 
-    println!("DEBUG: Latest release tag: {}", release.tag_name);
-    println!("DEBUG: Is prerelease: {}", release.prerelease);
-    println!("DEBUG: Assets count: {}", release.assets.len());
+    log::debug!("Latest release tag: {}", release.tag_name);
+    log::debug!("Is prerelease: {}", release.prerelease);
+    log::debug!("Assets count: {}", release.assets.len());
 
     // Skip prerelease versions
     if release.prerelease {
-        println!("DEBUG: Skipping prerelease version");
+        log::debug!("Skipping prerelease version");
         return Ok(UpdateInfo {
             available: false,
             current_version: current_version.to_string(),
@@ -79,10 +79,10 @@ pub async fn check_for_updates(repo: String) -> Result<UpdateInfo, String> {
     let latest_version = release.tag_name
         .trim_start_matches("cemm-v")  // Remove "cemm-v" prefix first
         .trim_start_matches('v');     // Then remove standalone "v" prefix
-    println!("DEBUG: Comparing versions - Current: '{}', Latest: '{}'", current_version, latest_version);
+    log::debug!("Comparing versions - Current: '{}', Latest: '{}'", current_version, latest_version);
     
     let update_available = is_newer_version(current_version, latest_version)?;
-    println!("DEBUG: Update available: {}", update_available);
+    log::debug!("Update available: {}", update_available);
 
     if !update_available {
         return Ok(UpdateInfo {
@@ -109,14 +109,15 @@ pub async fn check_for_updates(repo: String) -> Result<UpdateInfo, String> {
 
 #[tauri::command]
 pub async fn download_updater_file(download_url: String, asset_name: String) -> Result<String, String> {
-    println!("DEBUG: Starting download - URL: {}, Asset: {}", download_url, asset_name);    let temp_dir = std::env::temp_dir();
+    log::debug!("Starting download - URL: {}, Asset: {}", download_url, asset_name);
+    let temp_dir = std::env::temp_dir();
     let file_path = temp_dir.join(&asset_name);
     
-    println!("DEBUG: Download destination: {}", file_path.display());
+    log::debug!("Download destination: {}", file_path.display());
 
     // Download file
     let client = reqwest::Client::new();
-    println!("DEBUG: Making HTTP request to: {}", download_url);
+    log::debug!("Making HTTP request to: {}", download_url);
     
     let response = client
         .get(&download_url)
@@ -124,38 +125,38 @@ pub async fn download_updater_file(download_url: String, asset_name: String) -> 
         .await
         .map_err(|e| {
             let error_msg = format!("Download failed: {}", e);
-            println!("ERROR: {}", error_msg);
+            log::error!("{}", error_msg);
             error_msg
         })?;
 
     if !response.status().is_success() {
         let error_msg = format!("Download failed with status: {}", response.status());
-        println!("ERROR: {}", error_msg);
+        log::error!("{}", error_msg);
         return Err(error_msg);
     }
     
-    println!("DEBUG: HTTP request successful, reading bytes...");
+    log::debug!("HTTP request successful, reading bytes...");
 
     let bytes = response
         .bytes()
         .await
         .map_err(|e| {
             let error_msg = format!("Failed to read download: {}", e);
-            println!("ERROR: {}", error_msg);
+            log::error!("{}", error_msg);
             error_msg
         })?;
 
-    println!("DEBUG: Downloaded {} bytes, writing to file...", bytes.len());
+    log::debug!("Downloaded {} bytes, writing to file...", bytes.len());
 
     // Write to temp file
     std::fs::write(&file_path, bytes)
         .map_err(|e| {
             let error_msg = format!("Failed to write file: {}", e);
-            println!("ERROR: {}", error_msg);
+            log::error!("{}", error_msg);
             error_msg
         })?;
 
-    println!("DEBUG: File written successfully: {}", file_path.display());
+    log::debug!("File written successfully: {}", file_path.display());
     Ok(file_path.to_string_lossy().to_string())
 }
 
@@ -163,19 +164,19 @@ pub async fn download_updater_file(download_url: String, asset_name: String) -> 
 pub async fn install_updater_file(file_path: String) -> Result<(), String> {
     let path = PathBuf::from(&file_path);
     
-    println!("DEBUG: Starting installation - File: {}", file_path);
+    log::debug!("Starting installation - File: {}", file_path);
     
     if !path.exists() {
         let error_msg = "Update file not found".to_string();
-        println!("ERROR: {}", error_msg);
+        log::error!("{}", error_msg);
         return Err(error_msg);
     }
 
-    println!("DEBUG: File exists, OS: {}", std::env::consts::OS);
+    log::debug!("File exists, OS: {}", std::env::consts::OS);
 
     // Start the relaunch helper BEFORE running the installer
     if let Err(e) = spawn_relaunch_helper() {
-        println!("WARNING: Failed to spawn relaunch helper: {}", e);
+        log::warn!("Failed to spawn relaunch helper: {}", e);
     }
 
     let result = match std::env::consts::OS {
@@ -184,22 +185,22 @@ pub async fn install_updater_file(file_path: String) -> Result<(), String> {
         "linux" => install_linux_update(&path),
         _ => {
             let error_msg = "Unsupported platform for auto-update".to_string();
-            println!("ERROR: {}", error_msg);
+            log::error!("{}", error_msg);
             return Err(error_msg);
         }
     };
 
     match result {
         Ok(_) => {
-            println!("DEBUG: Installation started successfully");
+            log::debug!("Installation started successfully");
             // Clean up temp file
             if let Err(e) = std::fs::remove_file(&path) {
-                println!("WARNING: Failed to clean up temp file: {}", e);
+                log::warn!("Failed to clean up temp file: {}", e);
             }
             Ok(())
         }
         Err(e) => {
-            println!("ERROR: Installation failed: {}", e);
+            log::error!("Installation failed: {}", e);
             Err(e)
         }
     }
@@ -213,13 +214,13 @@ fn find_platform_asset(assets: &[GitHubAsset]) -> Result<&GitHubAsset, String> {
     if target_os == "windows" {
         for asset in assets {
             if asset.name.ends_with(".exe") {
-                println!("DEBUG: Selected asset for Windows: {}", asset.name);
+                log::debug!("Selected asset for Windows: {}", asset.name);
                 return Ok(asset);
             }
         }
         for asset in assets {
             if asset.name.ends_with(".msi") {
-                println!("DEBUG: Selected asset for Windows: {}", asset.name);
+                log::debug!("Selected asset for Windows: {}", asset.name);
                 return Ok(asset);
             }
         }
@@ -228,13 +229,13 @@ fn find_platform_asset(assets: &[GitHubAsset]) -> Result<&GitHubAsset, String> {
     else if target_os == "macos" {
         for asset in assets {
             if asset.name.ends_with(".dmg") {
-                println!("DEBUG: Selected asset for macOS: {}", asset.name);
+                log::debug!("Selected asset for macOS: {}", asset.name);
                 return Ok(asset);
             }
         }
         for asset in assets {
             if asset.name.ends_with(".zip") {
-                println!("DEBUG: Selected asset for macOS: {}", asset.name);
+                log::debug!("Selected asset for macOS: {}", asset.name);
                 return Ok(asset);
             }
         }
@@ -243,19 +244,19 @@ fn find_platform_asset(assets: &[GitHubAsset]) -> Result<&GitHubAsset, String> {
     else if target_os == "linux" {
         for asset in assets {
             if asset.name.ends_with(".AppImage") {
-                println!("DEBUG: Selected asset for Linux: {}", asset.name);
+                log::debug!("Selected asset for Linux: {}", asset.name);
                 return Ok(asset);
             }
         }
         for asset in assets {
             if asset.name.ends_with(".deb") {
-                println!("DEBUG: Selected asset for Linux: {}", asset.name);
+                log::debug!("Selected asset for Linux: {}", asset.name);
                 return Ok(asset);
             }
         }
         for asset in assets {
             if asset.name.ends_with(".tar.gz") {
-                println!("DEBUG: Selected asset for Linux: {}", asset.name);
+                log::debug!("Selected asset for Linux: {}", asset.name);
                 return Ok(asset);
             }
         }
@@ -263,7 +264,7 @@ fn find_platform_asset(assets: &[GitHubAsset]) -> Result<&GitHubAsset, String> {
 
     // Fallback: just pick the first asset and log a warning
     if let Some(asset) = assets.first() {
-        println!("WARNING: No platform-specific asset found, using first asset: {}", asset.name);
+        log::warn!("No platform-specific asset found, using first asset: {}", asset.name);
         return Ok(asset);
     }
 
@@ -271,7 +272,7 @@ fn find_platform_asset(assets: &[GitHubAsset]) -> Result<&GitHubAsset, String> {
 }
 
 fn is_newer_version(current: &str, latest: &str) -> Result<bool, String> {
-    println!("DEBUG: Parsing versions - Current: '{}', Latest: '{}'", current, latest);
+    log::debug!("Parsing versions - Current: '{}', Latest: '{}'", current, latest);
     
     // Parse semantic versions
     let current_parts: Vec<u32> = current
@@ -284,35 +285,35 @@ fn is_newer_version(current: &str, latest: &str) -> Result<bool, String> {
         .map(|s| s.parse().unwrap_or(0))
         .collect();
 
-    println!("DEBUG: Current parts: {:?}", current_parts);
-    println!("DEBUG: Latest parts: {:?}", latest_parts);
+    log::debug!("Current parts: {:?}", current_parts);
+    log::debug!("Latest parts: {:?}", latest_parts);
 
     // Compare major.minor.patch
     for i in 0..3 {
         let current_part = current_parts.get(i).unwrap_or(&0);
         let latest_part = latest_parts.get(i).unwrap_or(&0);
         
-        println!("DEBUG: Comparing part {}: {} vs {}", i, current_part, latest_part);
+        log::debug!("Comparing part {}: {} vs {}", i, current_part, latest_part);
         
         if latest_part > current_part {
-            println!("DEBUG: Latest is newer at part {}", i);
+            log::debug!("Latest is newer at part {}", i);
             return Ok(true);
         } else if latest_part < current_part {
-            println!("DEBUG: Current is newer at part {}", i);
+            log::debug!("Current is newer at part {}", i);
             return Ok(false);
         }
     }
     
-    println!("DEBUG: Versions are equal");
+    log::debug!("Versions are equal");
     Ok(false) // Versions are equal
 }
 
 fn install_windows_update(path: &PathBuf) -> Result<(), String> {
-    println!("DEBUG: Installing Windows update: {}", path.display());
+    log::debug!("Installing Windows update: {}", path.display());
     
     // For .msi files
     if path.extension().and_then(|s| s.to_str()) == Some("msi") {
-        println!("DEBUG: Detected MSI installer");
+        log::debug!("Detected MSI installer");
         
         // Try UAC elevation first
         let result = Command::new("powershell")
@@ -325,17 +326,17 @@ fn install_windows_update(path: &PathBuf) -> Result<(), String> {
         
         match result {
             Ok(_child) => {
-                println!("DEBUG: MSI installer started with UAC elevation");
+                log::debug!("MSI installer started with UAC elevation");
                 return Ok(());
             },
             Err(e) => {
-                println!("WARNING: UAC elevation failed: {}, trying fallback", e);
+                log::warn!("UAC elevation failed: {}, trying fallback", e);
                 // Fallback to normal execution
                 match Command::new("msiexec")
                     .args(&["/i", &path.to_string_lossy(), "/quiet", "/norestart"])
                     .spawn() {
                     Ok(_child) => {
-                        println!("DEBUG: MSI installer started without elevation");
+                        log::debug!("MSI installer started without elevation");
                         return Ok(());
                     },
                     Err(e) => return Err(format!("Failed to start MSI installer: {}", e))
@@ -345,20 +346,20 @@ fn install_windows_update(path: &PathBuf) -> Result<(), String> {
     }
     // For .exe files  
     else if path.extension().and_then(|s| s.to_str()) == Some("exe") {
-        println!("DEBUG: Detected EXE installer");
+        log::debug!("Detected EXE installer");
         // Run the installer
         match Command::new(&path)
             .args(&["/S"]) // Silent install flag
             .spawn() {
             Ok(_child) => {
-                println!("DEBUG: EXE installer started");
+                log::debug!("EXE installer started");
                 return Ok(());
             },
             Err(e) => return Err(format!("Failed to start EXE installer: {}", e))
         }
     } else {
         let error_msg = format!("Unsupported installer format: {:?}", path.extension());
-        println!("ERROR: {}", error_msg);
+        log::error!("{}", error_msg);
         return Err(error_msg);
     }
 }
@@ -397,7 +398,7 @@ fn spawn_relaunch_helper() -> Result<(), String> {
         .map_err(|e| format!("Failed to get current exe path: {}", e))?;
     
     let exe_path = current_exe.to_string_lossy().to_string();
-    println!("DEBUG: Spawning relaunch helper for: {}", exe_path);
+    log::debug!("Spawning relaunch helper for: {}", exe_path);
 
     #[cfg(target_os = "windows")]
     {
@@ -435,6 +436,6 @@ fn spawn_relaunch_helper() -> Result<(), String> {
             .map_err(|e| format!("Failed to spawn Linux relaunch helper: {}", e))?;
     }
 
-    println!("DEBUG: Relaunch helper spawned successfully");
+    log::debug!("Relaunch helper spawned successfully");
     Ok(())
 }

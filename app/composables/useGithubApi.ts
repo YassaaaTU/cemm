@@ -21,12 +21,8 @@ interface CachedGitHubData
 
 export const useGithubApi = () =>
 {
-	const cache = useCache<CachedGitHubData>('github', {
-		ttl: 600000, // 10 minutes
-		persistent: true,
-		maxSize: 50
-	})
-	const logger = usePinoLogger()
+	const cache = useCache<CachedGitHubData>('github', 600000) // 10 minutes
+	const { $logger: logger } = useNuxtApp()
 
 	/**
 	 * Uploads an update to GitHub. Accepts an options object for progress callback.

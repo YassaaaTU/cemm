@@ -1,13 +1,13 @@
 import { defineStore } from 'pinia'
 
-import type { Manifest, UpdateInfo } from '~/types'
+import type { Manifest, ManifestUpdateInfo } from '~/types'
 
 export const useManifestStore = defineStore('manifest', () =>
 {
 	const manifest = ref<Manifest | null>(null)
 	const selectedAddons = ref<string[]>([])
 	const previousManifest = ref<Manifest | null>(null)
-	const updateInfo = ref<UpdateInfo | null>(null)
+	const updateInfo = ref<ManifestUpdateInfo | null>(null)
 	const excludedAddons = ref<Set<string>>(new Set())
 
 	function setManifest(newManifest: Manifest | null)
@@ -33,7 +33,7 @@ export const useManifestStore = defineStore('manifest', () =>
 		previousManifest.value = prev
 	}
 
-	function setUpdateInfo(info: UpdateInfo | null)
+	function setUpdateInfo(info: ManifestUpdateInfo | null)
 	{
 		updateInfo.value = info
 	}

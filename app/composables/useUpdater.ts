@@ -4,7 +4,7 @@ import { storeToRefs } from 'pinia'
 import { nextTick, readonly } from 'vue'
 
 import { useAppStore } from '~/stores/app'
-import { type UpdateInfo, useUpdaterStore } from '~/stores/updater'
+import { type AppUpdateInfo, useUpdaterStore } from '~/stores/updater'
 
 export const useUpdater = () =>
 {
@@ -21,7 +21,7 @@ export const useUpdater = () =>
 		downloadProgress,
 		isUpdateDialogVisible
 	} = storeToRefs(updaterStore)
-	const checkForUpdates = async (): Promise<UpdateInfo> =>
+	const checkForUpdates = async (): Promise<AppUpdateInfo> =>
 	{
 		const appRepo = appStore.appRepo
 		if (!appRepo)
@@ -32,7 +32,7 @@ export const useUpdater = () =>
 		isChecking.value = true
 		try
 		{
-			const result = await invoke<UpdateInfo>('check_for_updates', { repo: appRepo })
+			const result = await invoke<AppUpdateInfo>('check_for_updates', { repo: appRepo })
 			updateInfo.value = result
 			console.info('✅ MANUAL update check completed', {
 				available: result.available, current: result.current_version,
@@ -79,10 +79,6 @@ export const useUpdater = () =>
 		{
 			isDownloading.value = true
 			downloadProgress.value = 0
-			const progressInterval = setInterval(() =>
-			{
-				downloadProgress.value = Math.min(downloadProgress.value + 10, 90)
-			}, 200)
 
 			console.info('Starting update download', {
 				url: info.download_url,
@@ -92,7 +88,7 @@ export const useUpdater = () =>
 				downloadUrl: info.download_url,
 				assetName: info.asset_name
 			}) as string
-			clearInterval(progressInterval)
+			// Set progress to 100% only after actual download completes
 			downloadProgress.value = 100
 			isDownloading.value = false
 			isInstalling.value = true
@@ -128,7 +124,7 @@ export const useUpdater = () =>
 		try
 		{
 			console.info('🚀 STARTUP update check starting', { repo: appRepo })
-			const result = await invoke<UpdateInfo>('check_for_updates', { repo: appRepo })
+			const result = await invoke<AppUpdateInfo>('check_for_updates', { repo: appRepo })
 			updateInfo.value = result
 			console.info('✅ STARTUP update check completed', {
 				available: result.available,

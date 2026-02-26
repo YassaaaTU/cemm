@@ -22,4 +22,9 @@ const appStore = useAppStore()
 const panelComponent = computed(() =>
 	appStore.mode === 'admin' ? AdminPanel : UserPanel
 )
+
+// Use the default layout (with sidebar)
+definePageMeta({
+	layout: 'default'
+})
 </script>
