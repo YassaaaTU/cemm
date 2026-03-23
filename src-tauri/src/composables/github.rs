@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use tauri::command;
+use tauri::{command, AppHandle, Emitter};
 
 use crate::composables::manifest::Manifest;
 
@@ -27,8 +27,24 @@ pub struct DownloadResult {
     pub config_files: Vec<ConfigFileWithContent>,
 }
 
+/// Progress event payload for upload operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UploadProgress {
+    pub progress: u8,
+    pub message: String,
+}
+
+/// Helper to emit progress events
+fn emit_progress(app: &AppHandle, progress: u8, message: &str) {
+    let _ = app.emit("upload_progress", UploadProgress {
+        progress,
+        message: message.to_string(),
+    });
+}
+
 #[command]
 pub async fn upload_update(
+    app: AppHandle,
     repo: String,
     token: String,
     uuid: String,
@@ -40,6 +56,8 @@ pub async fn upload_update(
     use reqwest::Client;
     use serde_json::json;
 
+    emit_progress(&app, 5, "Preparing upload...");
+
     // Parse repo as "owner/repo"
     let mut parts = repo.splitn(2, '/');
     let owner = parts.next().ok_or("Invalid repo format")?;
@@ -48,6 +66,7 @@ pub async fn upload_update(
     let user_agent = "cemm-app-tauri";
 
     // Step 1: Get the current commit SHA of main branch
+    emit_progress(&app, 10, "Getting branch reference...");
     let refs_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/refs/heads/main");
     let refs_response = client
         .get(&refs_url)
@@ -70,6 +89,7 @@ pub async fn upload_update(
         .ok_or("Could not find main branch SHA")?;
 
     // Step 2: Get the base tree SHA
+    emit_progress(&app, 15, "Getting tree structure...");
     let commit_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/commits/{base_commit_sha}");
     let commit_response = client
         .get(&commit_url)
@@ -85,6 +105,7 @@ pub async fn upload_update(
         .ok_or("Could not find base tree SHA")?;
 
     // Step 3: Create blobs for all files
+    emit_progress(&app, 20, "Uploading manifest...");
     let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     
     // Create blob for manifest
@@ -106,9 +127,14 @@ pub async fn upload_update(
         .as_str()
         .ok_or("Could not get manifest blob SHA")?;
 
-    // Create blobs for config files
+    // Create blobs for config files with progress
+    let total_config_files = config_files.len();
     let mut config_blob_shas = Vec::new();
-    for file in &config_files {
+    for (index, file) in config_files.iter().enumerate() {
+        // Calculate progress: 20-70% for config files
+        let progress = 20 + ((index + 1) as f32 / total_config_files as f32 * 50.0) as u8;
+        emit_progress(&app, progress, &format!("Uploading config file {}/{}...", index + 1, total_config_files));
+
         // Check if content is already base64-encoded (binary files)
         let (content, encoding) = if file.content.starts_with("data:application/octet-stream;base64,") {
             // Already base64-encoded binary content, extract the base64 part
@@ -140,6 +166,7 @@ pub async fn upload_update(
     }
 
     // Step 4: Create a new tree with all files
+    emit_progress(&app, 75, "Creating file tree...");
     // Note: This will automatically overwrite any existing files at the same paths
     // because Git tree creation replaces the entire directory structure
     let mut tree_items = vec![
@@ -180,6 +207,7 @@ pub async fn upload_update(
         .ok_or("Could not get new tree SHA")?;
 
     // Step 5: Create a commit
+    emit_progress(&app, 85, "Creating commit...");
     let config_count = config_files.len();
     let commit_message = if config_count > 0 {
         format!("Upload update {} (manifest + {} config files)", uuid, config_count)
@@ -207,6 +235,7 @@ pub async fn upload_update(
         .ok_or("Could not get new commit SHA")?;
 
     // Step 6: Update the main branch reference
+    emit_progress(&app, 95, "Finalizing...");
     let update_ref_response = client
         .patch(&refs_url)
         .header("Authorization", format!("token {}", token))
@@ -226,6 +255,7 @@ pub async fn upload_update(
         ));
     }
 
+    emit_progress(&app, 100, "Upload complete");
     Ok(())
 }
 

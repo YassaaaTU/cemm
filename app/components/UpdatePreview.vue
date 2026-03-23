@@ -1,6 +1,6 @@
 <template>
   <div class="modal modal-open">
-    <div class="modal-box w-11/12 max-w-5xl">
+    <div class="modal-box w-11/12 max-w-5xl h-2/3">
       <div class="flex justify-between items-center mb-4">
         <div>
           <h2 class="text-2xl font-bold">
@@ -27,7 +27,9 @@
         >
           ✕
         </button>
-      </div>      <div
+      </div>
+
+      <div
         v-if="!preview.hasChanges && preview.newManifest.updateType === 'config'"
         class="alert alert-info mb-4"
       >
@@ -71,7 +73,9 @@
               {{ preview.diff.removed_addons.length }}
             </div>
           </div>
-        </div>        <!-- Detailed Changes -->
+        </div>
+
+        <!-- Detailed Changes -->
         <div class="tabs tabs-boxed">
           <button
             class="tab"
@@ -93,7 +97,8 @@
             @click="activeTab = 'removed'"
           >
             Removed ({{ preview.diff.removed_addons.length }})
-          </button>          <button
+          </button>
+          <button
             v-if="preview.configFiles && preview.configFiles.length > 0"
             class="tab"
             :class="{ 'tab-active': activeTab === 'config' }"
@@ -111,10 +116,10 @@
 
         <!-- Tab Content -->
         <div class="min-h-48">
-          <!-- New Addons -->
+          <!-- New Addons by Category -->
           <div
             v-if="activeTab === 'new'"
-            class="space-y-2"
+            class="space-y-4"
           >
             <div
               v-if="preview.diff.new_addons.length === 0"
@@ -122,25 +127,22 @@
             >
               No new addons to install
             </div>
-            <div
-              v-for="addonName in preview.diff.new_addons"
-              :key="addonName"
-              class="flex items-center justify-between p-3 bg-success/10 border border-success/20 rounded"
-            >
-              <div class="flex items-center space-x-2">
-                <span class="w-4 h-4 bg-success rounded-full flex items-center justify-center">
-                  <span class="text-xs text-white">+</span>
-                </span>
-                <span>{{ addonName }}</span>
-              </div>
-              <span class="badge badge-success">NEW</span>
-            </div>
+            <template v-else>
+              <AddonCategorySection
+                v-for="category in visibleCategories.new"
+                :key="category.key"
+                :title="category.title"
+                :icon="category.icon"
+                :items="categorizedNewAddons[category.key]"
+                type="new"
+              />
+            </template>
           </div>
 
-          <!-- Updated Addons -->
+          <!-- Updated Addons by Category -->
           <div
             v-if="activeTab === 'updated'"
-            class="space-y-2"
+            class="space-y-4"
           >
             <div
               v-if="preview.diff.updated_addon_ids.length === 0"
@@ -148,25 +150,22 @@
             >
               No addons to update
             </div>
-            <div
-              v-for="projectId in preview.diff.updated_addon_ids"
-              :key="projectId"
-              class="flex items-center justify-between p-3 bg-warning/10 border border-warning/20 rounded"
-            >
-              <div class="flex items-center space-x-2">
-                <span class="w-4 h-4 bg-warning rounded-full flex items-center justify-center">
-                  <span class="text-xs text-white">↑</span>
-                </span>
-                <span>{{ getAddonNameByProjectId(projectId) }}</span>
-              </div>
-              <span class="badge badge-warning">UPDATED</span>
-            </div>
+            <template v-else>
+              <AddonCategorySection
+                v-for="category in visibleCategories.updated"
+                :key="category.key"
+                :title="category.title"
+                :icon="category.icon"
+                :items="categorizedUpdatedAddons[category.key]"
+                type="updated"
+              />
+            </template>
           </div>
 
-          <!-- Removed Addons -->
+          <!-- Removed Addons by Category -->
           <div
             v-if="activeTab === 'removed'"
-            class="space-y-2"
+            class="space-y-4"
           >
             <div
               v-if="preview.diff.removed_addons.length === 0"
@@ -174,19 +173,19 @@
             >
               No addons to remove
             </div>
-            <div
-              v-for="addonName in preview.diff.removed_addons"
-              :key="addonName"
-              class="flex items-center justify-between p-3 bg-error/10 border border-error/20 rounded"
-            >
-              <div class="flex items-center space-x-2">
-                <span class="w-4 h-4 bg-error rounded-full flex items-center justify-center">
-                  <span class="text-xs text-white">−</span>
-                </span>
-                <span>{{ addonName }}</span>
-              </div>              <span class="badge badge-error">REMOVE</span>
-            </div>
-          </div>          <!-- Config Files -->
+            <template v-else>
+              <AddonCategorySection
+                v-for="category in visibleCategories.removed"
+                :key="category.key"
+                :title="category.title"
+                :icon="category.icon"
+                :items="categorizedRemovedAddons[category.key]"
+                type="removed"
+              />
+            </template>
+          </div>
+
+          <!-- Config Files -->
           <div
             v-if="activeTab === 'config'"
             class="space-y-4"
@@ -338,22 +337,166 @@ const hasDestructiveChanges = computed(() =>
 	props.preview.diff.removed_addons.length > 0 || props.preview.diff.updated_addon_ids.length > 0
 )
 
-// Helper to get addon name by project ID from either manifest
-const getAddonNameByProjectId = (projectId: number): string =>
+// Category definitions with icons and titles
+const categoryDefinitions = [
+	{ key: 'mods' as const, title: 'Mods', icon: '🎮' },
+	{ key: 'resourcepacks' as const, title: 'Resource Packs', icon: '🎨' },
+	{ key: 'shaderpacks' as const, title: 'Shader Packs', icon: '✨' },
+	{ key: 'datapacks' as const, title: 'Data Packs', icon: '📦' }
+]
+
+// Helper to get addon info by project ID (includes category)
+const getAddonInfoByProjectId = (projectId: number): { name: string, category: string } =>
 {
-	const allAddons = [
-		...props.preview.oldManifest?.mods ?? [],
-		...props.preview.oldManifest?.resourcepacks ?? [],
-		...props.preview.oldManifest?.shaderpacks ?? [],
-		...props.preview.oldManifest?.datapacks ?? [],
-		...props.preview.newManifest.mods,
-		...props.preview.newManifest.resourcepacks,
-		...props.preview.newManifest.shaderpacks,
-		...props.preview.newManifest.datapacks
+	const categories = [
+		{ key: 'mods', addons: props.preview.newManifest.mods },
+		{ key: 'resourcepacks', addons: props.preview.newManifest.resourcepacks },
+		{ key: 'shaderpacks', addons: props.preview.newManifest.shaderpacks },
+		{ key: 'datapacks', addons: props.preview.newManifest.datapacks }
 	]
-	const addon = allAddons.find((a) => a.addon_project_id === projectId)
-	return addon?.addon_name ?? `Unknown (ID: ${projectId})`
+
+	for (const cat of categories)
+	{
+		const addon = cat.addons.find((a) => a.addon_project_id === projectId)
+		if (addon !== undefined)
+		{
+			return { name: addon.addon_name, category: cat.key }
+		}
+	}
+
+	// Check old manifest if not found in new
+	const oldCategories = [
+		{ key: 'mods', addons: props.preview.oldManifest?.mods ?? [] },
+		{ key: 'resourcepacks', addons: props.preview.oldManifest?.resourcepacks ?? [] },
+		{ key: 'shaderpacks', addons: props.preview.oldManifest?.shaderpacks ?? [] },
+		{ key: 'datapacks', addons: props.preview.oldManifest?.datapacks ?? [] }
+	]
+
+	for (const cat of oldCategories)
+	{
+		const addon = cat.addons.find((a) => a.addon_project_id === projectId)
+		if (addon !== undefined)
+		{
+			return { name: addon.addon_name, category: cat.key }
+		}
+	}
+
+	return { name: `Unknown (ID: ${projectId})`, category: 'mods' }
 }
+
+// Categorize new addons by name
+const categorizedNewAddons = computed(() =>
+{
+	const result = {
+		mods: [] as string[],
+		resourcepacks: [] as string[],
+		shaderpacks: [] as string[],
+		datapacks: [] as string[]
+	}
+
+	for (const addonName of props.preview.diff.new_addons)
+	{
+		// Find which category this addon belongs to
+		const categories = [
+			{ key: 'mods' as const, addons: props.preview.newManifest.mods },
+			{ key: 'resourcepacks' as const, addons: props.preview.newManifest.resourcepacks },
+			{ key: 'shaderpacks' as const, addons: props.preview.newManifest.shaderpacks },
+			{ key: 'datapacks' as const, addons: props.preview.newManifest.datapacks }
+		]
+
+		for (const cat of categories)
+		{
+			if (cat.addons.some((a) => a.addon_name === addonName))
+			{
+				result[cat.key].push(addonName)
+				break
+			}
+		}
+	}
+
+	return result
+})
+
+// Categorize updated addons by project ID
+const categorizedUpdatedAddons = computed(() =>
+{
+	const result = {
+		mods: [] as string[],
+		resourcepacks: [] as string[],
+		shaderpacks: [] as string[],
+		datapacks: [] as string[]
+	}
+
+	for (const projectId of props.preview.diff.updated_addon_ids)
+	{
+		const info = getAddonInfoByProjectId(projectId)
+		result[info.category as keyof typeof result].push(info.name)
+	}
+
+	return result
+})
+
+// Categorize removed addons by name
+const categorizedRemovedAddons = computed(() =>
+{
+	const result = {
+		mods: [] as string[],
+		resourcepacks: [] as string[],
+		shaderpacks: [] as string[],
+		datapacks: [] as string[]
+	}
+
+	for (const addonName of props.preview.diff.removed_addons)
+	{
+		// Check old manifest first (since it was removed, it should be there)
+		const oldCategories = [
+			{ key: 'mods' as const, addons: props.preview.oldManifest?.mods ?? [] },
+			{ key: 'resourcepacks' as const, addons: props.preview.oldManifest?.resourcepacks ?? [] },
+			{ key: 'shaderpacks' as const, addons: props.preview.oldManifest?.shaderpacks ?? [] },
+			{ key: 'datapacks' as const, addons: props.preview.oldManifest?.datapacks ?? [] }
+		]
+
+		let found = false
+		for (const cat of oldCategories)
+		{
+			if (cat.addons.some((a) => a.addon_name === addonName))
+			{
+				result[cat.key].push(addonName)
+				found = true
+				break
+			}
+		}
+
+		// Fallback to new manifest if not found in old
+		if (!found)
+		{
+			const newCategories = [
+				{ key: 'mods' as const, addons: props.preview.newManifest.mods },
+				{ key: 'resourcepacks' as const, addons: props.preview.newManifest.resourcepacks },
+				{ key: 'shaderpacks' as const, addons: props.preview.newManifest.shaderpacks },
+				{ key: 'datapacks' as const, addons: props.preview.newManifest.datapacks }
+			]
+
+			for (const cat of newCategories)
+			{
+				if (cat.addons.some((a) => a.addon_name === addonName))
+				{
+					result[cat.key].push(addonName)
+					break
+				}
+			}
+		}
+	}
+
+	return result
+})
+
+// Compute which categories have items for each tab
+const visibleCategories = computed(() => ({
+	new: categoryDefinitions.filter((cat) => categorizedNewAddons.value[cat.key].length > 0),
+	updated: categoryDefinitions.filter((cat) => categorizedUpdatedAddons.value[cat.key].length > 0),
+	removed: categoryDefinitions.filter((cat) => categorizedRemovedAddons.value[cat.key].length > 0)
+}))
 
 // Set initial tab to the one with content
 watch(

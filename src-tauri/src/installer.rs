@@ -113,13 +113,6 @@ pub async fn install_update(
     let options = options.unwrap_or_default();
     let client = Client::new();
 
-    // Calculate total files for progress
-    let total_files = manifest.mods.len()
-        + manifest.resourcepacks.len()
-        + manifest.shaderpacks.len()
-        + manifest.datapacks.len()
-        + config_files.len();
-
     // Helper to emit progress
     fn emit_progress(window: &Window, progress: usize, total: usize, msg: &str) {
         let _ = Emitter::emit(window, "install-progress", Some(serde_json::json!({
@@ -127,18 +120,6 @@ pub async fn install_update(
             "message": msg
         })));
     }
-
-    // Step 1: Cleanup old files if requested and old manifest provided
-    if options.cleanup_old {
-        if let Some(ref old_manifest) = options.old_manifest {
-            let diff = calculate_update_diff(old_manifest, &manifest)?;
-            remove_old_files(&modpack_path, old_manifest, &diff).await?;
-        }
-    }
-
-    // Step 2: Install all addons and config files
-    let mut installed_paths: Vec<std::path::PathBuf> = Vec::new();
-    let mut current = 0usize;
 
     // Helper to download and save a file
     async fn download_and_save(
@@ -170,52 +151,220 @@ pub async fn install_update(
         Ok(())
     }
 
-    // Install mods
+    // Calculate diff once for both cleanup and selective downloads
+    let diff = if let Some(ref old_manifest) = options.old_manifest {
+        Some(calculate_update_diff(old_manifest, &manifest)?)
+    } else {
+        None
+    };
+
+    // Step 1: Cleanup old files if requested and diff was calculated
+    if options.cleanup_old {
+        if let (Some(ref old_manifest), Some(ref diff)) = (options.old_manifest.as_ref(), &diff) {
+            remove_old_files(&modpack_path, old_manifest, diff).await?;
+        }
+    }
+
+    // Step 2: Install only changed/new addons and all config files
+    let mut installed_paths: Vec<std::path::PathBuf> = Vec::new();
+    let mut current = 0usize;
+
+    /// Determines if an addon needs to be downloaded during an update.
+    /// Returns true if the addon is:
+    /// - New (not in old manifest)
+    /// - Updated (same project_id, different version)
+    /// - File doesn't exist on disk (safety fallback)
+    fn should_download_addon(
+        addon: &crate::composables::manifest::Addon,
+        old_addons: &[crate::composables::manifest::Addon],
+        diff: &UpdateDiff,
+        dest_path: &Path,
+    ) -> bool {
+        // Check if this is a new addon
+        let is_new = !old_addons.iter().any(|old| old.addon_project_id == addon.addon_project_id);
+        if is_new {
+            return true;
+        }
+
+        // Check if this addon was updated (version changed)
+        let is_updated = diff.updated_addon_ids.contains(&addon.addon_project_id);
+        if is_updated {
+            return true;
+        }
+
+        // Safety fallback: download if file doesn't exist
+        !dest_path.exists()
+    }
+
+    // Count files that actually need downloading for accurate progress
+    let files_to_download = {
+        let mut count = 0usize;
+        
+        // Count mods
+        for addon in &manifest.mods {
+            if addon.disabled == Some(true) {
+                continue;
+            }
+            let dest = Path::new(&modpack_path).join("mods").join(&addon.file_name_on_disk);
+            if let Some(ref d) = diff {
+                if let Some(ref old_manifest) = options.old_manifest {
+                    if should_download_addon(addon, &old_manifest.mods, d, &dest) {
+                        count += 1;
+                    }
+                }
+            } else {
+                // No diff means fresh install - download everything
+                count += 1;
+            }
+        }
+        
+        // Count resourcepacks
+        for addon in &manifest.resourcepacks {
+            if addon.disabled == Some(true) {
+                continue;
+            }
+            let dest = Path::new(&modpack_path).join("resourcepacks").join(&addon.file_name_on_disk);
+            if let Some(ref d) = diff {
+                if let Some(ref old_manifest) = options.old_manifest {
+                    if should_download_addon(addon, &old_manifest.resourcepacks, d, &dest) {
+                        count += 1;
+                    }
+                }
+            } else {
+                count += 1;
+            }
+        }
+        
+        // Count shaderpacks
+        for addon in &manifest.shaderpacks {
+            if addon.disabled == Some(true) {
+                continue;
+            }
+            let dest = Path::new(&modpack_path).join("shaderpacks").join(&addon.file_name_on_disk);
+            if let Some(ref d) = diff {
+                if let Some(ref old_manifest) = options.old_manifest {
+                    if should_download_addon(addon, &old_manifest.shaderpacks, d, &dest) {
+                        count += 1;
+                    }
+                }
+            } else {
+                count += 1;
+            }
+        }
+        
+        // Count datapacks
+        for addon in &manifest.datapacks {
+            if addon.disabled == Some(true) {
+                continue;
+            }
+            let dest = Path::new(&modpack_path).join("datapacks").join(&addon.file_name_on_disk);
+            if let Some(ref d) = diff {
+                if let Some(ref old_manifest) = options.old_manifest {
+                    if should_download_addon(addon, &old_manifest.datapacks, d, &dest) {
+                        count += 1;
+                    }
+                }
+            } else {
+                count += 1;
+            }
+        }
+        
+        // Config files are always installed
+        count + config_files.len()
+    };
+
+    // Install mods (selective download)
     for addon in &manifest.mods {
         if addon.disabled == Some(true) {
             continue;
         }
         let dest = Path::new(&modpack_path).join("mods").join(&addon.file_name_on_disk);
-        download_and_save(&client, &addon.cdn_download_url, &dest).await?;
+        
+        // Check if we need to download this addon
+        let needs_download = if let (Some(ref d), Some(ref old_manifest)) = (&diff, options.old_manifest.as_ref()) {
+            should_download_addon(addon, &old_manifest.mods, d, &dest)
+        } else {
+            // No old manifest means fresh install - download everything
+            true
+        };
+        
+        if needs_download {
+            download_and_save(&client, &addon.cdn_download_url, &dest).await?;
+            emit_progress(&window, current + 1, files_to_download, &format!("Installed mod: {}", addon.addon_name));
+        } else {
+            log::info!("Skipping unchanged mod: {}", addon.addon_name);
+        }
         installed_paths.push(dest);
         current += 1;
-        emit_progress(&window, current, total_files, &format!("Installed mod: {}", addon.addon_name));
     }
 
-    // Install resourcepacks
+    // Install resourcepacks (selective download)
     for addon in &manifest.resourcepacks {
         if addon.disabled == Some(true) {
             continue;
         }
         let dest = Path::new(&modpack_path).join("resourcepacks").join(&addon.file_name_on_disk);
-        download_and_save(&client, &addon.cdn_download_url, &dest).await?;
+        
+        let needs_download = if let (Some(ref d), Some(ref old_manifest)) = (&diff, options.old_manifest.as_ref()) {
+            should_download_addon(addon, &old_manifest.resourcepacks, d, &dest)
+        } else {
+            true
+        };
+        
+        if needs_download {
+            download_and_save(&client, &addon.cdn_download_url, &dest).await?;
+            emit_progress(&window, current + 1, files_to_download, &format!("Installed resourcepack: {}", addon.addon_name));
+        } else {
+            log::info!("Skipping unchanged resourcepack: {}", addon.addon_name);
+        }
         installed_paths.push(dest);
         current += 1;
-        emit_progress(&window, current, total_files, &format!("Installed resourcepack: {}", addon.addon_name));
     }
 
-    // Install shaderpacks
+    // Install shaderpacks (selective download)
     for addon in &manifest.shaderpacks {
         if addon.disabled == Some(true) {
             continue;
         }
         let dest = Path::new(&modpack_path).join("shaderpacks").join(&addon.file_name_on_disk);
-        download_and_save(&client, &addon.cdn_download_url, &dest).await?;
+        
+        let needs_download = if let (Some(ref d), Some(ref old_manifest)) = (&diff, options.old_manifest.as_ref()) {
+            should_download_addon(addon, &old_manifest.shaderpacks, d, &dest)
+        } else {
+            true
+        };
+        
+        if needs_download {
+            download_and_save(&client, &addon.cdn_download_url, &dest).await?;
+            emit_progress(&window, current + 1, files_to_download, &format!("Installed shaderpack: {}", addon.addon_name));
+        } else {
+            log::info!("Skipping unchanged shaderpack: {}", addon.addon_name);
+        }
         installed_paths.push(dest);
         current += 1;
-        emit_progress(&window, current, total_files, &format!("Installed shaderpack: {}", addon.addon_name));
     }
 
-    // Install datapacks
+    // Install datapacks (selective download)
     for addon in &manifest.datapacks {
         if addon.disabled == Some(true) {
             continue;
         }
         let dest = Path::new(&modpack_path).join("datapacks").join(&addon.file_name_on_disk);
-        download_and_save(&client, &addon.cdn_download_url, &dest).await?;
+        
+        let needs_download = if let (Some(ref d), Some(ref old_manifest)) = (&diff, options.old_manifest.as_ref()) {
+            should_download_addon(addon, &old_manifest.datapacks, d, &dest)
+        } else {
+            true
+        };
+        
+        if needs_download {
+            download_and_save(&client, &addon.cdn_download_url, &dest).await?;
+            emit_progress(&window, current + 1, files_to_download, &format!("Installed datapack: {}", addon.addon_name));
+        } else {
+            log::info!("Skipping unchanged datapack: {}", addon.addon_name);
+        }
         installed_paths.push(dest);
         current += 1;
-        emit_progress(&window, current, total_files, &format!("Installed datapack: {}", addon.addon_name));
     }
 
     // Install config files (with path traversal protection)
@@ -246,10 +395,10 @@ pub async fn install_update(
         
         installed_paths.push(dest.clone());
         current += 1;
-        emit_progress(&window, current, total_files, &format!("Installed config: {}", dest.display()));
+        emit_progress(&window, current, files_to_download, &format!("Installed config: {}", dest.display()));
     }
 
-    emit_progress(&window, total_files, total_files, "Installation complete!");
+    emit_progress(&window, files_to_download, files_to_download, "Installation complete!");
     Ok(())
 }
 

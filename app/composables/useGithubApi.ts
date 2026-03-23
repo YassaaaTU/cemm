@@ -1,5 +1,6 @@
 // eslint-disable-next-line simple-import-sort/imports
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 import { useCache } from './useCache'
 
@@ -37,36 +38,55 @@ export const useGithubApi = () =>
 	}): Promise<void> =>
 	{
 		const startTime = performance.now()
+		let unlisten: UnlistenFn | undefined
 
-		if (typeof opts.onProgress === 'function') opts.onProgress(10, 'Preparing upload...')
+		try
+		{
+			// Listen for progress events from the Rust backend
+			unlisten = await listen<{ progress: number, message: string }>('upload_progress', (event) =>
+			{
+				if (typeof opts.onProgress === 'function')
+				{
+					opts.onProgress(event.payload.progress, event.payload.message)
+				}
+			})
 
-		await invoke('upload_update', {
-			repo: opts.repo,
-			token: opts.token,
-			uuid: opts.uuid,
-			manifest: opts.manifest,
-			configFiles: opts.configFiles
-		})
+			await invoke('upload_update', {
+				repo: opts.repo,
+				token: opts.token,
+				uuid: opts.uuid,
+				manifest: opts.manifest,
+				configFiles: opts.configFiles
+			})
 
-		// Cache the uploaded manifest for potential re-use
-		const cacheKey = `${opts.repo}-${opts.uuid}`
-		cache.set(cacheKey, {
-			manifest: opts.manifest,
-			configFiles: opts.configFiles,
-			uploadedAt: Date.now()
-		})
+			// Cache the uploaded manifest for potential re-use
+			const cacheKey = `${opts.repo}-${opts.uuid}`
+			cache.set(cacheKey, {
+				manifest: opts.manifest,
+				configFiles: opts.configFiles,
+				uploadedAt: Date.now()
+			})
 
-		const duration = performance.now() - startTime
-		logger.info('Upload completed', {
-			repo: opts.repo,
-			uuid: opts.uuid,
-			duration: `${duration.toFixed(2)}ms`,
-			manifestSize: JSON.stringify(opts.manifest).length,
-			configFileCount: opts.configFiles.length
-		})
+			const duration = performance.now() - startTime
+			logger.info('Upload completed', {
+				repo: opts.repo,
+				uuid: opts.uuid,
+				duration: `${duration.toFixed(2)}ms`,
+				manifestSize: JSON.stringify(opts.manifest).length,
+				configFileCount: opts.configFiles.length
+			})
+		}
+		finally
+		{
+			// Clean up the event listener
+			if (unlisten !== undefined)
+			{
+				unlisten()
+			}
+		}
+	}
 
-		if (typeof opts.onProgress === 'function') opts.onProgress(100, 'Upload complete')
-	}	/**
+	/**
 	 * Downloads an update from GitHub. Accepts an options object for progress callback.
 	 */
 	const downloadUpdate = async (opts: {
@@ -121,6 +141,7 @@ export const useGithubApi = () =>
 		if (typeof opts.onProgress === 'function') opts.onProgress(100, 'Download complete')
 		return downloadResult
 	}
+
 	/**
 	 * Downloads only the manifest from GitHub (phase 1 of two-phase update).
 	 */
@@ -138,6 +159,7 @@ export const useGithubApi = () =>
 		if (typeof opts.onProgress === 'function') opts.onProgress(100, 'Manifest downloaded')
 		return manifest
 	}
+
 	/**
 	 * Downloads config files from GitHub (phase 2 of two-phase update).
 	 */
