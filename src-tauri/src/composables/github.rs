@@ -42,12 +42,62 @@ fn emit_progress(app: &AppHandle, progress: u8, message: &str) {
     });
 }
 
+fn sanitize_modpack_key(name: &str) -> String {
+    let lowered = name.trim().to_lowercase();
+    let mut out = String::new();
+    let mut last_dash = false;
+
+    for c in lowered.chars() {
+        let mapped = if c.is_ascii_alphanumeric() {
+            Some(c)
+        } else if c == ' ' || c == '_' || c == '-' {
+            Some('-')
+        } else {
+            None
+        };
+
+        if let Some(ch) = mapped {
+            if ch == '-' {
+                if !last_dash {
+                    out.push(ch);
+                    last_dash = true;
+                }
+            } else {
+                out.push(ch);
+                last_dash = false;
+            }
+        }
+    }
+
+    out.trim_matches('-').to_string()
+}
+
+fn primary_update_base_path(modpack_key: Option<&str>, uuid: &str) -> String {
+    if let Some(key) = modpack_key {
+        let sanitized = sanitize_modpack_key(key);
+        if !sanitized.is_empty() {
+            return format!("{}/{}", sanitized, uuid);
+        }
+    }
+    uuid.to_string()
+}
+
+fn update_base_path_candidates(modpack_key: Option<&str>, uuid: &str) -> Vec<String> {
+    let primary = primary_update_base_path(modpack_key, uuid);
+    if primary == uuid {
+        vec![uuid.to_string()]
+    } else {
+        vec![primary, uuid.to_string()]
+    }
+}
+
 #[command]
 pub async fn upload_update(
     app: AppHandle,
     repo: String,
     token: String,
     uuid: String,
+    modpack_key: Option<String>,
     manifest: Manifest,
     config_files: Vec<ConfigFileWithContent>,
 ) -> Result<(), String> {
@@ -165,13 +215,15 @@ pub async fn upload_update(
         config_blob_shas.push(config_blob_sha);
     }
 
+    let update_base_path = primary_update_base_path(modpack_key.as_deref(), &uuid);
+
     // Step 4: Create a new tree with all files
     emit_progress(&app, 75, "Creating file tree...");
     // Note: This will automatically overwrite any existing files at the same paths
     // because Git tree creation replaces the entire directory structure
     let mut tree_items = vec![
         json!({
-            "path": format!("{}/cemm-manifest.json", uuid),
+            "path": format!("{}/cemm-manifest.json", update_base_path),
             "mode": "100644",
             "type": "blob",
             "sha": manifest_blob_sha
@@ -181,7 +233,7 @@ pub async fn upload_update(
     // Add config files to tree (will overwrite existing config files if same UUID)
     for (i, file) in config_files.iter().enumerate() {
         tree_items.push(json!({
-            "path": format!("{}/{}", uuid, file.relative_path),
+            "path": format!("{}/{}", update_base_path, file.relative_path),
             "mode": "100644",
             "type": "blob",
             "sha": config_blob_shas[i]
@@ -263,6 +315,7 @@ pub async fn upload_update(
 pub async fn download_manifest(
     repo: String,
     uuid: String,
+    modpack_key: Option<String>,
 ) -> Result<Manifest, String> {
     use reqwest::Client;
     use serde_json::Value;
@@ -273,97 +326,99 @@ pub async fn download_manifest(
     let mut parts = repo.splitn(2, '/');
     let owner = parts.next().ok_or("Invalid repo format")?;
     let repo_name = parts.next().ok_or("Invalid repo format")?;
-    let api_base = format!("https://api.github.com/repos/{owner}/{repo_name}/contents/{uuid}");
+    let base_paths = update_base_path_candidates(modpack_key.as_deref(), &uuid);
     let client = Client::new();
     let user_agent = "cemm-app-tauri";
+    let mut last_error = String::new();
 
-    eprintln!("API URL: {}", api_base);
+    for base_path in base_paths {
+        let api_base = format!("https://api.github.com/repos/{owner}/{repo_name}/contents/{base_path}");
+        eprintln!("Trying manifest path: {}", api_base);
 
-    // List files in the uuid folder first
-    let list_url = &api_base;
-    let list_res = client
-        .get(list_url)
-        .header("User-Agent", user_agent)
-        .send()
-        .await
-        .map_err(|e| {
-            eprintln!("Request error: {}", e);
-            e.to_string()
-        })?;
-    
-    eprintln!("GitHub API response status: {}", list_res.status());
-    
-    let status = list_res.status();
-    if !status.is_success() {
-        let error_text = list_res.text().await.unwrap_or_default();
-        eprintln!("GitHub API error response: {}", error_text);
-        return Err(format!(
-            "Failed to list update files (status {}): {}",
-            status,
-            error_text
-        ));
-    }
-    let files: Vec<Value> = list_res.json().await.map_err(|e| {
-        eprintln!("JSON parsing error: {}", e);
-        e.to_string()
-    })?;
-    
-    eprintln!("Found {} files in directory", files.len());
-    for file in &files {
-        if let Some(name) = file["name"].as_str() {
-            eprintln!("File: {}", name);
+        let list_res = client
+            .get(&api_base)
+            .header("User-Agent", user_agent)
+            .send()
+            .await
+            .map_err(|e| {
+                eprintln!("Request error: {}", e);
+                e.to_string()
+            })?;
+
+        if !list_res.status().is_success() {
+            last_error = format!(
+                "Failed to list update files (status {}): {}",
+                list_res.status(),
+                list_res.text().await.unwrap_or_default()
+            );
+            continue;
         }
-    }
 
-    // Find cemm-manifest.json
-    let manifest_file = files
-        .iter()
-        .find(|f| f["name"] == "cemm-manifest.json")
-        .ok_or_else(|| {
-            eprintln!("cemm-manifest.json not found in directory listing");
-            "cemm-manifest.json not found".to_string()
-        })?;
-    let manifest_url = manifest_file["download_url"]
-        .as_str()
-        .ok_or_else(|| {
-            eprintln!("No download_url found for cemm-manifest.json");
-            "No download_url for cemm-manifest.json".to_string()
-        })?;
-    
-    eprintln!("Downloading manifest from: {}", manifest_url);
-    
-    // Download cemm-manifest.json directly
-    let manifest_res = client
-        .get(manifest_url)
-        .header("User-Agent", user_agent)
-        .send()
-        .await
-        .map_err(|e| {
-            eprintln!("Manifest download error: {}", e);
+        let files: Vec<Value> = list_res.json().await.map_err(|e| {
+            eprintln!("JSON parsing error: {}", e);
             e.to_string()
         })?;
-    
-    let manifest_json = manifest_res.text().await.map_err(|e| {
-        eprintln!("Failed to read manifest response text: {}", e);
-        e.to_string()
-    })?;
-    
-    eprintln!("Downloaded manifest JSON (first 200 chars): {}", 
-              &manifest_json.chars().take(200).collect::<String>());
-    
-    let manifest: Manifest = serde_json::from_str(&manifest_json).map_err(|e| {
-        eprintln!("Failed to parse manifest JSON: {}", e);
-        e.to_string()
-    })?;
-    
-    eprintln!("Successfully parsed manifest");
-    Ok(manifest)
+
+        let manifest_file = match files.iter().find(|f| f["name"] == "cemm-manifest.json") {
+            Some(file) => file,
+            None => {
+                last_error = "cemm-manifest.json not found".to_string();
+                continue;
+            }
+        };
+
+        let manifest_url = match manifest_file["download_url"].as_str() {
+            Some(url) => url,
+            None => {
+                last_error = "No download_url for cemm-manifest.json".to_string();
+                continue;
+            }
+        };
+
+        let manifest_res = client
+            .get(manifest_url)
+            .header("User-Agent", user_agent)
+            .send()
+            .await
+            .map_err(|e| {
+                eprintln!("Manifest download error: {}", e);
+                e.to_string()
+            })?;
+
+        if !manifest_res.status().is_success() {
+            last_error = format!(
+                "Failed to download cemm-manifest.json (status {}): {}",
+                manifest_res.status(),
+                manifest_res.text().await.unwrap_or_default()
+            );
+            continue;
+        }
+
+        let manifest_json = manifest_res.text().await.map_err(|e| {
+            eprintln!("Failed to read manifest response text: {}", e);
+            e.to_string()
+        })?;
+
+        let manifest: Manifest = serde_json::from_str(&manifest_json).map_err(|e| {
+            eprintln!("Failed to parse manifest JSON: {}", e);
+            e.to_string()
+        })?;
+
+        return Ok(manifest);
+    }
+
+    Err(if last_error.is_empty() {
+        "Failed to find manifest in update path".to_string()
+    } else {
+        last_error
+    })
 }
 
 #[command]
 pub async fn download_config_files(
     repo: String,
     uuid: String,
+    modpack_key: Option<String>,
     manifest: Manifest,
 ) -> Result<Vec<ConfigFileWithContent>, String> {
     use reqwest::Client;
@@ -373,43 +428,77 @@ pub async fn download_config_files(
     let repo_name = parts.next().ok_or("Invalid repo format")?;
     let client = Client::new();
     let user_agent = "cemm-app-tauri";
+    let base_paths = update_base_path_candidates(modpack_key.as_deref(), &uuid);
 
     eprintln!("Downloading {} config files from manifest", manifest.config_files.len());
 
     // Download config files based on manifest list
     let mut config_files = Vec::new();
     for config_file in manifest.config_files {
-        let file_url = format!("https://api.github.com/repos/{owner}/{repo_name}/contents/{uuid}/{}", config_file.relative_path);
-        eprintln!("Downloading config file from: {}", file_url);
-        
-        let file_res = client
-            .get(&file_url)
-            .header("User-Agent", user_agent)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-            
-        if !file_res.status().is_success() {
-            return Err(format!(
-                "Failed to download config file {}: {}",
-                config_file.relative_path,
-                file_res.text().await.unwrap_or_default()
-            ));
+        let mut downloaded_content: Option<String> = None;
+        let mut last_error = String::new();
+
+        for base_path in &base_paths {
+            let file_url = format!(
+                "https://api.github.com/repos/{owner}/{repo_name}/contents/{}/{}",
+                base_path, config_file.relative_path
+            );
+            eprintln!("Downloading config file from: {}", file_url);
+
+            let file_res = client
+                .get(&file_url)
+                .header("User-Agent", user_agent)
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+
+            if !file_res.status().is_success() {
+                last_error = format!(
+                    "Failed to list config file {} (status {}): {}",
+                    config_file.relative_path,
+                    file_res.status(),
+                    file_res.text().await.unwrap_or_default()
+                );
+                continue;
+            }
+
+            let file_data: serde_json::Value = file_res.json().await.map_err(|e| e.to_string())?;
+            let download_url = match file_data["download_url"].as_str() {
+                Some(url) => url,
+                None => {
+                    last_error = "No download_url for config file".to_string();
+                    continue;
+                }
+            };
+
+            let content_res = client
+                .get(download_url)
+                .header("User-Agent", user_agent)
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+
+            if !content_res.status().is_success() {
+                last_error = format!(
+                    "Failed to download config file {} (status {}): {}",
+                    config_file.relative_path,
+                    content_res.status(),
+                    content_res.text().await.unwrap_or_default()
+                );
+                continue;
+            }
+
+            downloaded_content = Some(content_res.text().await.map_err(|e| e.to_string())?);
+            break;
         }
-        
-        let file_data: serde_json::Value = file_res.json().await.map_err(|e| e.to_string())?;
-        let download_url = file_data["download_url"]
-            .as_str()
-            .ok_or("No download_url for config file")?;
-        
-        // Download the actual file content
-        let content_res = client
-            .get(download_url)
-            .header("User-Agent", user_agent)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-        let content = content_res.text().await.map_err(|e| e.to_string())?;
+
+        let content = downloaded_content.ok_or_else(|| {
+            if last_error.is_empty() {
+                format!("Failed to download config file {}", config_file.relative_path)
+            } else {
+                last_error
+            }
+        })?;
         
         config_files.push(ConfigFileWithContent {
             filename: config_file.filename,
@@ -427,9 +516,10 @@ pub async fn download_config_files(
 pub async fn download_update(
     repo: String,
     uuid: String,
+    modpack_key: Option<String>,
 ) -> Result<DownloadResult, String> {
-    let manifest = download_manifest(repo.clone(), uuid.clone()).await?;
-    let config_files = download_config_files(repo, uuid, manifest.clone()).await?;
+    let manifest = download_manifest(repo.clone(), uuid.clone(), modpack_key.clone()).await?;
+    let config_files = download_config_files(repo, uuid, modpack_key, manifest.clone()).await?;
     
     Ok(DownloadResult {
         manifest,

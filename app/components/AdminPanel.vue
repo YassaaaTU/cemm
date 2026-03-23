@@ -15,6 +15,22 @@
       aria-labelledby="admin-actions-section"
       class="mb-6"
     >
+      <div class="mb-3 max-w-md">
+        <label
+          for="modpack-name-input"
+          class="label"
+        >
+          <span class="label-text">Custom Modpack Name (optional)</span>
+        </label>
+        <input
+          id="modpack-name-input"
+          v-model="customModpackName"
+          type="text"
+          class="input input-bordered w-full"
+          placeholder="Leave empty to auto-detect from instance/path"
+        />
+      </div>
+
       <div class="flex flex-wrap gap-2">
         <button
           class="btn btn-primary"
@@ -194,6 +210,7 @@ const progress = ref(0)
 const statusMessage = ref('')
 const statusType = ref<'success' | 'error' | 'info' | 'warning'>('info')
 const selectedConfigFiles = ref<ConfigFileWithContent[]>([])
+const customModpackName = ref('')
 
 // Computed properties
 const manifest = computed(() => manifestStore.manifest)
@@ -291,6 +308,7 @@ async function handleUploadToGithub()
 		await uploadToGithub(
 			manifest.value,
 			selectedConfigFiles.value,
+			customModpackName.value,
 			(p: number, msg?: string) =>
 			{
 				progress.value = p

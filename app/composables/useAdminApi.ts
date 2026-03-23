@@ -1,5 +1,6 @@
 import type { ConfigFileWithContent, Manifest } from '~/types'
 import { getErrorMessage, withNetworkRetry } from '~/utils/errorHandler'
+import { resolveModpackKey } from '~/utils/modpackKey'
 
 /**
  * Composable for admin-specific API operations.
@@ -239,6 +240,7 @@ export function useAdminApi()
 	async function uploadToGithub(
 		manifest: Manifest | null,
 		configFiles: ConfigFileWithContent[],
+		customModpackName: string,
 		onProgress: (progress: number, message?: string) => void,
 		setStatus: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void
 	): Promise<boolean>
@@ -251,6 +253,7 @@ export function useAdminApi()
 		try
 		{
 			const repo = appStore.githubRepo
+			const modpackPath = appStore.modpackPath
 			const token = await getSecure('cemm_github_token')
 			if (repo.trim().length === 0 || token == null || token.trim().length === 0)
 			{
@@ -259,6 +262,22 @@ export function useAdminApi()
 			}
 
 			const uuid = Date.now().toString()
+			let minecraftInstanceContent: string | null = null
+			if (modpackPath.trim().length > 0)
+			{
+				minecraftInstanceContent = await readFile(`${modpackPath}/minecraftinstance.json`)
+			}
+
+			const modpackKey = resolveModpackKey({
+				customName: customModpackName,
+				instanceContent: minecraftInstanceContent,
+				modpackPath
+			})
+			if (modpackKey == null)
+			{
+				setStatus('Unable to determine modpack name. Set modpack path or enter a custom name.', 'error')
+				return false
+			}
 
 			// Create manifest (either from existing or config-only)
 			let manifestWithConfig: Manifest
@@ -300,6 +319,7 @@ export function useAdminApi()
 					repo,
 					token,
 					uuid,
+					modpackKey,
 					manifest: manifestWithConfig,
 					configFiles,
 					onProgress: (p, msg) =>

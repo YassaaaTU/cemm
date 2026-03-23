@@ -1,5 +1,6 @@
 import type { ConfigFileWithContent, Manifest } from '~/types'
 import { getErrorMessage, withNetworkRetry } from '~/utils/errorHandler'
+import { resolveModpackKey } from '~/utils/modpackKey'
 
 /**
  * Composable for user-specific API operations.
@@ -31,12 +32,20 @@ export function useUserApi()
 
 		try
 		{
+			const modpackKey = await resolveDownloadModpackKey()
+			if (modpackKey == null)
+			{
+				setStatus('Could not determine modpack name. Select a valid modpack path first.', 'error')
+				return { success: false }
+			}
+
 			onProgress(10, 'Downloading manifest...')
 
 			const downloadedManifest = await withNetworkRetry(
 				async () => await downloadManifest({
 					repo,
 					uuid: uuid.trim(),
+					modpackKey,
 					onProgress: (p, msg) =>
 					{
 						onProgress(Math.min(p / 2, 50), msg)
@@ -81,9 +90,17 @@ export function useUserApi()
 		try
 		{
 			const repo = appStore.githubRepo
+			const modpackKey = await resolveDownloadModpackKey()
+			if (modpackKey == null)
+			{
+				setStatus('Could not determine modpack name. Select a valid modpack path first.', 'error')
+				return { success: false, configFiles: [] }
+			}
+
 			const configFiles = await apiDownloadConfigFiles({
 				repo,
 				uuid: uuid.trim(),
+				modpackKey,
 				manifest,
 				onProgress: (p, msg) =>
 				{
@@ -130,6 +147,23 @@ export function useUserApi()
 			logger.error('Failed to download config files', { error: err, uuid, repo: appStore.githubRepo })
 			return { success: false, configFiles: [] }
 		}
+	}
+
+	async function resolveDownloadModpackKey(): Promise<string | null>
+	{
+		const modpackPath = appStore.modpackPath
+		if (modpackPath.trim().length === 0)
+		{
+			return null
+		}
+
+		const minecraftInstancePath = `${modpackPath}/minecraftinstance.json`
+		const instanceContent = await readFile(minecraftInstancePath)
+
+		return resolveModpackKey({
+			instanceContent,
+			modpackPath
+		})
 	}
 
 	/**

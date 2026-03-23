@@ -69,8 +69,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: cemm-v1.5.1
-          releaseName: 'cemm 1.5.1'
+          tagName: cemm-v1.5.2
+          releaseName: 'cemm 1.5.2'
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: false

@@ -32,6 +32,7 @@ export const useGithubApi = () =>
 		repo: string
 		token: string
 		uuid: string
+		modpackKey?: string
 		manifest: Manifest
 		configFiles: ConfigFileWithContent[]
 		onProgress?: (progress: number, message?: string) => void
@@ -55,12 +56,13 @@ export const useGithubApi = () =>
 				repo: opts.repo,
 				token: opts.token,
 				uuid: opts.uuid,
+				modpackKey: opts.modpackKey,
 				manifest: opts.manifest,
 				configFiles: opts.configFiles
 			})
 
 			// Cache the uploaded manifest for potential re-use
-			const cacheKey = `${opts.repo}-${opts.uuid}`
+			const cacheKey = `${opts.repo}-${opts.modpackKey ?? 'legacy'}-${opts.uuid}`
 			cache.set(cacheKey, {
 				manifest: opts.manifest,
 				configFiles: opts.configFiles,
@@ -70,6 +72,7 @@ export const useGithubApi = () =>
 			const duration = performance.now() - startTime
 			logger.info('Upload completed', {
 				repo: opts.repo,
+				modpackKey: opts.modpackKey,
 				uuid: opts.uuid,
 				duration: `${duration.toFixed(2)}ms`,
 				manifestSize: JSON.stringify(opts.manifest).length,
@@ -92,10 +95,11 @@ export const useGithubApi = () =>
 	const downloadUpdate = async (opts: {
 		repo: string
 		uuid: string
+		modpackKey?: string
 		onProgress?: (progress: number, message?: string) => void
 	}): Promise<{ manifest: Manifest, configFiles: ConfigFileWithContent[] }> =>
 	{
-		const cacheKey = `${opts.repo}-${opts.uuid}`
+		const cacheKey = `${opts.repo}-${opts.modpackKey ?? 'legacy'}-${opts.uuid}`
 		const startTime = performance.now()
 
 		// Check cache first
@@ -114,7 +118,8 @@ export const useGithubApi = () =>
 
 		const result = await invoke('download_update', {
 			repo: opts.repo,
-			uuid: opts.uuid
+			uuid: opts.uuid,
+			modpackKey: opts.modpackKey
 		}) as { manifest: Manifest, config_files: ConfigFileWithContent[] }
 
 		const downloadResult = {
@@ -132,6 +137,7 @@ export const useGithubApi = () =>
 		const duration = performance.now() - startTime
 		logger.info('Download completed', {
 			repo: opts.repo,
+			modpackKey: opts.modpackKey,
 			uuid: opts.uuid,
 			duration: `${duration.toFixed(2)}ms`,
 			manifestSize: JSON.stringify(result.manifest).length,
@@ -148,13 +154,15 @@ export const useGithubApi = () =>
 	const downloadManifest = async (opts: {
 		repo: string
 		uuid: string
+		modpackKey?: string
 		onProgress?: (progress: number, message?: string) => void
 	}): Promise<Manifest> =>
 	{
 		if (typeof opts.onProgress === 'function') opts.onProgress(10, 'Downloading manifest...')
 		const manifest = await invoke<Manifest>('download_manifest', {
 			repo: opts.repo,
-			uuid: opts.uuid
+			uuid: opts.uuid,
+			modpackKey: opts.modpackKey
 		})
 		if (typeof opts.onProgress === 'function') opts.onProgress(100, 'Manifest downloaded')
 		return manifest
@@ -166,6 +174,7 @@ export const useGithubApi = () =>
 	const downloadConfigFiles = async (opts: {
 		repo: string
 		uuid: string
+		modpackKey?: string
 		manifest: Manifest
 		onProgress?: (progress: number, message?: string) => void
 	}): Promise<ConfigFileWithContent[]> =>
@@ -174,6 +183,7 @@ export const useGithubApi = () =>
 		const configFiles = await invoke<ConfigFileWithContent[]>('download_config_files', {
 			repo: opts.repo,
 			uuid: opts.uuid,
+			modpackKey: opts.modpackKey,
 			manifest: opts.manifest
 		})
 		if (typeof opts.onProgress === 'function') opts.onProgress(100, 'Config files downloaded')

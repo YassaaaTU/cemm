@@ -271,28 +271,28 @@ export const useTauri = () =>
 		return diff
 	}
 
-	const downloadManifest = async (repo: string, uuid: string): Promise<Manifest | null> =>
+	const downloadManifest = async (repo: string, uuid: string, modpackKey?: string): Promise<Manifest | null> =>
 	{
 		try
 		{
-			return await invoke<Manifest>('download_manifest', { repo, uuid })
+			return await invoke<Manifest>('download_manifest', { repo, uuid, modpackKey })
 		}
 		catch (error)
 		{
-			console.error('[useTauri] downloadManifest failed:', { repo, uuid, error })
+			console.error('[useTauri] downloadManifest failed:', { repo, uuid, modpackKey, error })
 			return null
 		}
 	}
 
-	const downloadConfigFiles = async (repo: string, uuid: string): Promise<ConfigFileWithContent[]> =>
+	const downloadConfigFiles = async (repo: string, uuid: string, modpackKey?: string): Promise<ConfigFileWithContent[]> =>
 	{
 		try
 		{
-			return await invoke<ConfigFileWithContent[]>('download_config_files', { repo, uuid })
+			return await invoke<ConfigFileWithContent[]>('download_config_files', { repo, uuid, modpackKey })
 		}
 		catch (error)
 		{
-			console.error('[useTauri] downloadConfigFiles failed:', { repo, uuid, error })
+			console.error('[useTauri] downloadConfigFiles failed:', { repo, uuid, modpackKey, error })
 			return []
 		}
 	}
