@@ -22,7 +22,8 @@ interface CachedGitHubData
 
 export const useGithubApi = () =>
 {
-	const cache = useCache<CachedGitHubData>('github', 600000) // 10 minutes
+	// Bump namespace when download path logic changes so in-memory cache cannot mask fixes after app update.
+	const cache = useCache<CachedGitHubData>('github-v2', 600000) // 10 minutes
 	const { $logger: logger } = useNuxtApp()
 
 	/**

@@ -65,7 +65,7 @@
         for="uuid-input"
         class="w-full label label-text"
       >
-        Enter the UUID of the update you want to download from GitHub:
+        Enter the update ID you want to download from GitHub:
       </label>
       <div class="join w-full">
         <button
@@ -98,12 +98,12 @@
           v-model="uuid"
           type="text"
           class="input input-bordered w-full join-item"
-          placeholder="Paste update UUID here"
+          placeholder="Update ID (recommended: modpack-key/uuid)"
           aria-describedby="uuid-help"
           :aria-invalid="uuid.trim().length > 0 && uuid.trim().length < 8"
         />
       </div>
-      <span class="text-sm text-gray-500">This is usually sent to you by the modpack developer.</span>
+      <span class="text-sm text-gray-500">Use the full update ID from the developer (modpack-key/uuid). Plain UUID is still supported for older links or when the local modpack key matches.</span>
     </section>
 
     <!-- Action Buttons Section -->

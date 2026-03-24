@@ -92,6 +92,20 @@
       :type="statusType"
       @close="clearStatus"
     />
+    <div
+      v-if="latestUpdateReference.length > 0"
+      class="mt-3 alert alert-info flex items-center justify-between gap-2"
+    >
+      <span class="text-sm break-all">
+        Share this update ID with users: <strong>{{ latestUpdateReference }}</strong>
+      </span>
+      <button
+        class="btn btn-sm btn-outline"
+        @click="copyUpdateReference"
+      >
+        Copy
+      </button>
+    </div>
 
     <div
       v-if="manifest"
@@ -211,6 +225,7 @@ const statusMessage = ref('')
 const statusType = ref<'success' | 'error' | 'info' | 'warning'>('info')
 const selectedConfigFiles = ref<ConfigFileWithContent[]>([])
 const customModpackName = ref('')
+const latestUpdateReference = ref('')
 
 // Computed properties
 const manifest = computed(() => manifestStore.manifest)
@@ -300,12 +315,13 @@ async function handleUploadToGithub()
 	}
 
 	clearStatus()
+	latestUpdateReference.value = ''
 	progress.value = 0
 	uploading.value = true
 
 	try
 	{
-		await uploadToGithub(
+		const result: { success: boolean, updateReference?: string } = await uploadToGithub(
 			manifest.value,
 			selectedConfigFiles.value,
 			customModpackName.value,
@@ -316,11 +332,33 @@ async function handleUploadToGithub()
 			},
 			setStatus
 		)
+		if (result.success && typeof result.updateReference === 'string')
+		{
+			latestUpdateReference.value = result.updateReference
+		}
 	}
 	finally
 	{
 		uploading.value = false
 		progress.value = 100
+	}
+}
+
+async function copyUpdateReference()
+{
+	if (latestUpdateReference.value.length === 0)
+	{
+		return
+	}
+
+	try
+	{
+		await navigator.clipboard.writeText(latestUpdateReference.value)
+		setStatus('Update ID copied to clipboard.', 'success')
+	}
+	catch
+	{
+		setStatus('Failed to copy update ID. Please copy it manually.', 'warning')
 	}
 }
 
@@ -333,6 +371,7 @@ const resetComponentState = () =>
 	progress.value = 0
 	statusMessage.value = ''
 	statusType.value = 'info'
+	latestUpdateReference.value = ''
 	logger.info('AdminPanel state reset after navigation')
 }
 

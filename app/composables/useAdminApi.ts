@@ -243,11 +243,11 @@ export function useAdminApi()
 		customModpackName: string,
 		onProgress: (progress: number, message?: string) => void,
 		setStatus: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void
-	): Promise<boolean>
+	): Promise<{ success: boolean, updateReference?: string }>
 	{
 		if (manifest == null && configFiles.length === 0)
 		{
-			return false
+			return { success: false }
 		}
 
 		try
@@ -258,7 +258,7 @@ export function useAdminApi()
 			if (repo.trim().length === 0 || token == null || token.trim().length === 0)
 			{
 				setStatus('Please configure your GitHub repository and token in settings.', 'error')
-				return false
+				return { success: false }
 			}
 
 			const uuid = Date.now().toString()
@@ -276,7 +276,7 @@ export function useAdminApi()
 			if (modpackKey == null)
 			{
 				setStatus('Unable to determine modpack name. Set modpack path or enter a custom name.', 'error')
-				return false
+				return { success: false }
 			}
 
 			// Create manifest (either from existing or config-only)
@@ -313,6 +313,8 @@ export function useAdminApi()
 				}
 			}
 
+			const updateReference = `${modpackKey}/${uuid}`
+
 			await withNetworkRetry(async () =>
 			{
 				await uploadUpdate({
@@ -330,16 +332,18 @@ export function useAdminApi()
 			})
 
 			setStatus(
-				manifest !== null ? 'Upload successful!' : 'Config files uploaded successfully!',
+				manifest !== null
+					? `Upload successful! Share this update ID: ${updateReference}`
+					: `Config files uploaded successfully! Share this update ID: ${updateReference}`,
 				'success'
 			)
-			return true
+			return { success: true, updateReference }
 		}
 		catch (error)
 		{
 			setStatus(getErrorMessage(error, 'GitHub upload'), 'error')
 			logger.error('Upload failed', { error })
-			return false
+			return { success: false }
 		}
 	}
 

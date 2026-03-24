@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "cemm",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "identifier": "com.yasirjumaah.cemm",
   "build": {
     "frontendDist": "../.output/public",

@@ -18,7 +18,7 @@ export function useUserApi()
    * Download manifest from GitHub
    */
 	async function downloadFromGithub(
-		uuid: string,
+		updateInput: string,
 		onProgress: (progress: number, message?: string) => void,
 		setStatus: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void
 	): Promise<{ success: boolean, manifest?: Manifest }>
@@ -32,20 +32,15 @@ export function useUserApi()
 
 		try
 		{
-			const modpackKey = await resolveDownloadModpackKey()
-			if (modpackKey == null)
-			{
-				setStatus('Could not determine modpack name. Select a valid modpack path first.', 'error')
-				return { success: false }
-			}
+			const resolvedQuery = await resolveUpdateQuery(updateInput)
 
 			onProgress(10, 'Downloading manifest...')
 
 			const downloadedManifest = await withNetworkRetry(
 				async () => await downloadManifest({
 					repo,
-					uuid: uuid.trim(),
-					modpackKey,
+					uuid: resolvedQuery.updateId,
+					modpackKey: resolvedQuery.modpackKey,
 					onProgress: (p, msg) =>
 					{
 						onProgress(Math.min(p / 2, 50), msg)
@@ -81,7 +76,7 @@ export function useUserApi()
    * Download config files from GitHub
    */
 	async function downloadConfigFiles(
-		uuid: string,
+		updateInput: string,
 		manifest: Manifest,
 		onProgress: (progress: number, message?: string) => void,
 		setStatus: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void
@@ -90,17 +85,12 @@ export function useUserApi()
 		try
 		{
 			const repo = appStore.githubRepo
-			const modpackKey = await resolveDownloadModpackKey()
-			if (modpackKey == null)
-			{
-				setStatus('Could not determine modpack name. Select a valid modpack path first.', 'error')
-				return { success: false, configFiles: [] }
-			}
+			const resolvedQuery = await resolveUpdateQuery(updateInput)
 
 			const configFiles = await apiDownloadConfigFiles({
 				repo,
-				uuid: uuid.trim(),
-				modpackKey,
+				uuid: resolvedQuery.updateId,
+				modpackKey: resolvedQuery.modpackKey,
 				manifest,
 				onProgress: (p, msg) =>
 				{
@@ -144,8 +134,24 @@ export function useUserApi()
 		{
 			const errorMessage = err instanceof Error ? err.message : 'Failed to download config files'
 			setStatus(errorMessage, 'error')
-			logger.error('Failed to download config files', { error: err, uuid, repo: appStore.githubRepo })
+			logger.error('Failed to download config files', { error: err, updateInput, repo: appStore.githubRepo })
 			return { success: false, configFiles: [] }
+		}
+	}
+
+	async function resolveUpdateQuery(updateInput: string): Promise<{ updateId: string, modpackKey?: string }>
+	{
+		const trimmed = updateInput.trim().replace(/\\/g, '/')
+		if (trimmed.includes('/'))
+		{
+			// Full repo-relative update reference: modpackKey/uuid
+			return { updateId: trimmed }
+		}
+
+		const modpackKey = await resolveDownloadModpackKey()
+		return {
+			updateId: trimmed,
+			modpackKey: modpackKey ?? undefined
 		}
 	}
 

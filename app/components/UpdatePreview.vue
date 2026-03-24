@@ -1,6 +1,6 @@
 <template>
   <div class="modal modal-open">
-    <div class="modal-box w-11/12 max-w-5xl h-2/3">
+    <div class="modal-box w-11/12 max-w-5xl max-h-[calc(100vh-10rem)]">
       <div class="flex justify-between items-center mb-4">
         <div>
           <h2 class="text-2xl font-bold">

@@ -82,13 +82,60 @@ fn primary_update_base_path(modpack_key: Option<&str>, uuid: &str) -> String {
     uuid.to_string()
 }
 
-fn update_base_path_candidates(modpack_key: Option<&str>, uuid: &str) -> Vec<String> {
-    let primary = primary_update_base_path(modpack_key, uuid);
-    if primary == uuid {
-        vec![uuid.to_string()]
-    } else {
-        vec![primary, uuid.to_string()]
+/// Rejects path traversal and absolute-style paths for GitHub `contents/{path}`.
+fn is_safe_repo_relative_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.contains("..")
+        && !path.starts_with('/')
+        && !path.starts_with('\\')
+        && !(path.len() >= 2 && path.as_bytes().get(1) == Some(&b':'))
+}
+
+fn push_unique_candidate(candidates: &mut Vec<String>, s: String) {
+    if !s.is_empty() && !candidates.iter().any(|e| e == &s) {
+        candidates.push(s);
     }
+}
+
+/// Paths to try for `GET .../contents/{path}` (folder listing for an update).
+///
+/// When the user pastes `modpack-folder/update-id`, we try that path first so a
+/// mismatched modpack key from the local instance still resolves. When they paste
+/// only the update id, we try `modpack_key/id` then `id` (legacy layout).
+fn update_base_path_candidates(modpack_key: Option<&str>, uuid: &str) -> Vec<String> {
+    let uuid = uuid.trim();
+    let mut candidates: Vec<String> = Vec::new();
+
+    let compound_safe = uuid.contains('/') && is_safe_repo_relative_path(uuid);
+    if compound_safe {
+        push_unique_candidate(&mut candidates, uuid.to_string());
+    }
+
+    let primary = primary_update_base_path(modpack_key, uuid);
+    push_unique_candidate(&mut candidates, primary);
+
+    if compound_safe {
+        if let Some(base) = uuid.rsplit('/').next().filter(|s| !s.is_empty()) {
+            let p = primary_update_base_path(modpack_key, base);
+            push_unique_candidate(&mut candidates, p);
+            push_unique_candidate(&mut candidates, base.to_string());
+        }
+    } else if !uuid.contains('/') {
+        push_unique_candidate(&mut candidates, uuid.to_string());
+    }
+
+    candidates
+}
+
+fn normalize_update_uuid_arg(uuid: String) -> Result<String, String> {
+    let normalized = uuid.trim().replace('\\', "/");
+    if normalized.contains("..") {
+        return Err("Invalid update path: path traversal is not allowed".to_string());
+    }
+    if normalized.is_empty() {
+        return Err("Update UUID or path is empty".to_string());
+    }
+    Ok(normalized)
 }
 
 #[command]
@@ -107,6 +154,8 @@ pub async fn upload_update(
     use serde_json::json;
 
     emit_progress(&app, 5, "Preparing upload...");
+
+    let uuid = normalize_update_uuid_arg(uuid)?;
 
     // Parse repo as "owner/repo"
     let mut parts = repo.splitn(2, '/');
@@ -319,6 +368,8 @@ pub async fn download_manifest(
 ) -> Result<Manifest, String> {
     use reqwest::Client;
     use serde_json::Value;
+
+    let uuid = normalize_update_uuid_arg(uuid)?;
     
     // Debug logging
     eprintln!("download_manifest called with repo: '{}', uuid: '{}'", repo, uuid);
@@ -407,10 +458,12 @@ pub async fn download_manifest(
         return Ok(manifest);
     }
 
+    let hint = "\n\nIf GitHub returned 404: confirm the folder exists under the repo (often `modpack-folder/update-id`). You can paste that full path from the repo root in the update field, or pick a modpack folder whose name matches the folder used when the update was published.";
+
     Err(if last_error.is_empty() {
-        "Failed to find manifest in update path".to_string()
+        format!("Failed to find manifest in update path.{hint}")
     } else {
-        last_error
+        format!("{last_error}{hint}")
     })
 }
 
@@ -422,6 +475,8 @@ pub async fn download_config_files(
     manifest: Manifest,
 ) -> Result<Vec<ConfigFileWithContent>, String> {
     use reqwest::Client;
+
+    let uuid = normalize_update_uuid_arg(uuid)?;
     
     let mut parts = repo.splitn(2, '/');
     let owner = parts.next().ok_or("Invalid repo format")?;
