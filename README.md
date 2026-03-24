@@ -1,6 +1,5 @@
 # CEMM - ChillEcke Modpack Manager
 
-## Overview
 CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes it easier for you and your friends to play pre-existing CurseForge modpacks with custom modifications. Built with Nuxt 3 frontend and Tauri/Rust backend, it provides two main modes:
 
 - **Admin Mode**: Modify a downloaded CurseForge modpack (add, remove, or update addons and config files) → Generate UUID and upload changes to GitHub
