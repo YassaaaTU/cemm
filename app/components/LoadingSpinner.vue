@@ -125,7 +125,7 @@ const messageClass = computed(() =>
 .loading-container
 {
 	display: flex;
-	flex-direction: column;
+	flex-direction: row;
 	align-items: center;
 	gap: 0.5rem;
 }

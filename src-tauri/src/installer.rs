@@ -115,8 +115,13 @@ pub async fn install_update(
 
     // Helper to emit progress
     fn emit_progress(window: &Window, progress: usize, total: usize, msg: &str) {
+        let safe_progress = if total > 0 {
+            progress.min(total)
+        } else {
+            progress
+        };
         let _ = Emitter::emit(window, "install-progress", Some(serde_json::json!({
-            "progress": if total > 0 { (progress as f64) / (total as f64) * 100.0 } else { 100.0 },
+            "progress": if total > 0 { (safe_progress as f64) / (total as f64) * 100.0 } else { 100.0 },
             "message": msg
         })));
     }
@@ -166,7 +171,6 @@ pub async fn install_update(
     }
 
     // Step 2: Install only changed/new addons and all config files
-    let mut installed_paths: Vec<std::path::PathBuf> = Vec::new();
     let mut current = 0usize;
 
     /// Determines if an addon needs to be downloaded during an update.
@@ -290,12 +294,11 @@ pub async fn install_update(
         
         if needs_download {
             download_and_save(&client, &addon.cdn_download_url, &dest).await?;
-            emit_progress(&window, current + 1, files_to_download, &format!("Installed mod: {}", addon.addon_name));
+            current += 1;
+            emit_progress(&window, current, files_to_download, &format!("Installed mod: {}", addon.addon_name));
         } else {
             log::info!("Skipping unchanged mod: {}", addon.addon_name);
         }
-        installed_paths.push(dest);
-        current += 1;
     }
 
     // Install resourcepacks (selective download)
@@ -313,12 +316,11 @@ pub async fn install_update(
         
         if needs_download {
             download_and_save(&client, &addon.cdn_download_url, &dest).await?;
-            emit_progress(&window, current + 1, files_to_download, &format!("Installed resourcepack: {}", addon.addon_name));
+            current += 1;
+            emit_progress(&window, current, files_to_download, &format!("Installed resourcepack: {}", addon.addon_name));
         } else {
             log::info!("Skipping unchanged resourcepack: {}", addon.addon_name);
         }
-        installed_paths.push(dest);
-        current += 1;
     }
 
     // Install shaderpacks (selective download)
@@ -336,12 +338,11 @@ pub async fn install_update(
         
         if needs_download {
             download_and_save(&client, &addon.cdn_download_url, &dest).await?;
-            emit_progress(&window, current + 1, files_to_download, &format!("Installed shaderpack: {}", addon.addon_name));
+            current += 1;
+            emit_progress(&window, current, files_to_download, &format!("Installed shaderpack: {}", addon.addon_name));
         } else {
             log::info!("Skipping unchanged shaderpack: {}", addon.addon_name);
         }
-        installed_paths.push(dest);
-        current += 1;
     }
 
     // Install datapacks (selective download)
@@ -359,12 +360,11 @@ pub async fn install_update(
         
         if needs_download {
             download_and_save(&client, &addon.cdn_download_url, &dest).await?;
-            emit_progress(&window, current + 1, files_to_download, &format!("Installed datapack: {}", addon.addon_name));
+            current += 1;
+            emit_progress(&window, current, files_to_download, &format!("Installed datapack: {}", addon.addon_name));
         } else {
             log::info!("Skipping unchanged datapack: {}", addon.addon_name);
         }
-        installed_paths.push(dest);
-        current += 1;
     }
 
     // Install config files (with path traversal protection)
@@ -393,7 +393,6 @@ pub async fn install_update(
                 .map_err(|e| format!("Failed to write config file {}: {}", dest.display(), e))?;
         }
         
-        installed_paths.push(dest.clone());
         current += 1;
         emit_progress(&window, current, files_to_download, &format!("Installed config: {}", dest.display()));
     }

@@ -1,37 +1,31 @@
 <template>
-  <div class="progress-container">
-    <!-- Enhanced progress bar with animations -->
-    <div class="progress-wrapper">
-      <progress
-        class="progress w-full"
-        :class="progressClass"
-        :value="progress"
-        max="100"
-      />
+  <div class="w-full">
+    <progress
+      class="progress w-full transition-all duration-300"
+      :class="[colorClass, sizeClass]"
+      :value="indeterminate ? undefined : normalizedProgress"
+      max="100"
+      :aria-valuenow="indeterminate ? undefined : Math.round(normalizedProgress)"
+      :aria-label="indeterminate ? 'Progress in progress' : `${Math.round(normalizedProgress)}% complete`"
+    />
 
-      <!-- Progress text overlay -->
-      <div
-        v-if="showPercentage"
-        class="progress-text"
+    <div
+      v-if="label.length > 0 || (showPercentage && !indeterminate)"
+      class="mt-2 flex items-center gap-2"
+      :class="label.length > 0 && showPercentage && !indeterminate ? 'justify-between' : 'justify-end'"
+    >
+      <span
+        v-if="label.length > 0"
+        class="text-sm opacity-80"
       >
-        {{ Math.round(progress) }}%
-      </div>
-    </div>
-
-    <!-- Optional label/message -->
-    <div
-      v-if="label"
-      class="progress-label"
-    >
-      {{ label }}
-    </div>
-
-    <!-- Animated pulse effect for indeterminate progress -->
-    <div
-      v-if="indeterminate"
-      class="progress-pulse"
-    >
-      <div class="pulse-bar" />
+        {{ label }}
+      </span>
+      <span
+        v-if="showPercentage && !indeterminate"
+        class="text-sm font-semibold tabular-nums"
+      >
+        {{ Math.round(normalizedProgress) }}%
+      </span>
     </div>
   </div>
 </template>
@@ -55,163 +49,45 @@ const props = withDefaults(defineProps<Props>(), {
 	size: 'md'
 })
 
-const progressClass = computed(() =>
+const colorClass = computed(() => `progress-${props.color}`)
+
+const sizeClass = computed(() =>
 {
-	const classes = []
-
-	// Color classes
-	if (props.color !== 'primary')
+	if (props.size === 'xs')
 	{
-		classes.push(`progress-${props.color}`)
+		return 'h-1'
 	}
 
-	// Size classes
-	if (props.size !== 'md')
+	if (props.size === 'sm')
 	{
-		classes.push(`progress-${props.size}`)
+		return 'h-2'
 	}
 
-	return classes.join(' ')
+	if (props.size === 'lg')
+	{
+		return 'h-4'
+	}
+
+	return 'h-3'
+})
+
+const normalizedProgress = computed(() =>
+{
+	if (!Number.isFinite(props.progress))
+	{
+		return 0
+	}
+
+	if (props.progress < 0)
+	{
+		return 0
+	}
+
+	if (props.progress > 100)
+	{
+		return 100
+	}
+
+	return props.progress
 })
 </script>
-
-<style scoped>
-.progress-container
-{
-	position: relative;
-	width: 100%;
-}
-
-.progress-wrapper
-{
-	position: relative;
-	width: 100%;
-}
-
-.progress-text
-{
-	position: absolute;
-	top: 50%;
-	left: 50%;
-	transform: translate(-50%, -50%);
-	font-size: 0.75rem;
-	font-weight: 600;
-	color: var(--fallback-bc, oklch(var(--bc)/1));
-	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-	pointer-events: none;
-}
-
-.progress-label
-{
-	margin-top: 0.5rem;
-	font-size: 0.875rem;
-	text-align: center;
-	opacity: 0.8;
-}
-
-.progress-pulse
-{
-	position: absolute;
-	top: 0;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	overflow: hidden;
-	border-radius: inherit;
-}
-
-.pulse-bar
-{
-	position: absolute;
-	top: 0;
-	left: -100%;
-	width: 100%;
-	height: 100%;
-	background: linear-gradient(
-		90deg,
-		transparent,
-		rgba(255, 255, 255, 0.4),
-		transparent
-	);
-	animation: pulse-slide 2s infinite;
-}
-
-@keyframes pulse-slide
-{
-	0%
-	{
-		left: -100%;
-	}
-	100%
-	{
-		left: 100%;
-	}
-}
-
-/* Enhanced progress bar styles */
-.progress
-{
-	transition: all 0.3s ease;
-}
-
-.progress::-webkit-progress-bar
-{
-	background-color: rgba(255, 255, 255, 0.1);
-	border-radius: 0.5rem;
-}
-
-.progress::-webkit-progress-value
-{
-	background: linear-gradient(90deg, var(--fallback-p, oklch(var(--p)/1)), var(--fallback-s, oklch(var(--s)/1)));
-	border-radius: 0.5rem;
-	transition: width 0.3s ease;
-}
-
-.progress::-moz-progress-bar
-{
-	background: linear-gradient(90deg, var(--fallback-p, oklch(var(--p)/1)), var(--fallback-s, oklch(var(--s)/1)));
-	border-radius: 0.5rem;
-	transition: width 0.3s ease;
-}
-
-/* Size variants */
-.progress-xs
-{
-	height: 0.25rem;
-}
-
-.progress-sm
-{
-	height: 0.5rem;
-}
-
-.progress-lg
-{
-	height: 1rem;
-}
-
-/* Color variants */
-.progress-success::-webkit-progress-value,
-.progress-success::-moz-progress-bar
-{
-	background: linear-gradient(90deg, var(--fallback-su, oklch(var(--su)/1)), #10b981);
-}
-
-.progress-warning::-webkit-progress-value,
-.progress-warning::-moz-progress-bar
-{
-	background: linear-gradient(90deg, var(--fallback-wa, oklch(var(--wa)/1)), #f59e0b);
-}
-
-.progress-error::-webkit-progress-value,
-.progress-error::-moz-progress-bar
-{
-	background: linear-gradient(90deg, var(--fallback-er, oklch(var(--er)/1)), #ef4444);
-}
-
-.progress-info::-webkit-progress-value,
-.progress-info::-moz-progress-bar
-{
-	background: linear-gradient(90deg, var(--fallback-in, oklch(var(--in)/1)), #3b82f6);
-}
-</style>

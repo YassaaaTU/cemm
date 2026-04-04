@@ -362,11 +362,21 @@ export function useAdminApi()
 function calculateRelativePath(filePath: string, fileName: string, modpackPath: string): string
 {
 	// If file is within modpack directory, use actual relative path
-	if (modpackPath && filePath.startsWith(modpackPath))
+	if (modpackPath)
 	{
-		const normalizedModpackPath = modpackPath.replace(/\\/g, '/')
+		const normalizedModpackPath = modpackPath.replace(/\\/g, '/').replace(/\/+$/, '')
 		const normalizedFilePath = filePath.replace(/\\/g, '/')
-		return normalizedFilePath.substring(normalizedModpackPath.length + 1)
+		const compareModpackPath = normalizedModpackPath.toLowerCase()
+		const compareFilePath = normalizedFilePath.toLowerCase()
+
+		if (compareFilePath === compareModpackPath || compareFilePath.startsWith(`${compareModpackPath}/`))
+		{
+			const relativePath = normalizedFilePath.slice(normalizedModpackPath.length).replace(/^\/+/, '')
+			if (relativePath.length > 0)
+			{
+				return relativePath
+			}
+		}
 	}
 
 	// File is outside modpack directory - try to infer relative path
