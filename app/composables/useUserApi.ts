@@ -67,7 +67,7 @@ export function useUserApi()
 		catch (err)
 		{
 			setStatus(getErrorMessage(err, 'download'), 'error')
-			logger.error('Download failed', { error: err })
+			logger.error({ error: err }, 'Download failed')
 			return { success: false }
 		}
 	}
@@ -134,7 +134,7 @@ export function useUserApi()
 		{
 			const errorMessage = err instanceof Error ? err.message : 'Failed to download config files'
 			setStatus(errorMessage, 'error')
-			logger.error('Failed to download config files', { error: err, updateInput, repo: appStore.githubRepo })
+			logger.error({ error: err, updateInput, repo: appStore.githubRepo }, 'Failed to download config files')
 			return { success: false, configFiles: [] }
 		}
 	}
@@ -237,7 +237,7 @@ export function useUserApi()
 		catch (err)
 		{
 			setStatus(err instanceof Error ? err.message : 'Installation failed', 'error')
-			logger.error('Installation failed', { error: err })
+			logger.error({ error: err }, 'Installation failed')
 			return false
 		}
 	}
@@ -296,7 +296,7 @@ export function useUserApi()
 		catch (err)
 		{
 			const errorMsg = err instanceof Error ? err.message : 'Unknown error generating previous manifest'
-			logger.error('Failed to generate cemm-manifest_old.json', { error: errorMsg })
+			logger.error({ error: errorMsg }, 'Failed to generate cemm-manifest_old.json')
 			manifestStore.loadInstalledManifest(null)
 			return { success: false, error: errorMsg }
 		}
@@ -322,7 +322,7 @@ export function useUserApi()
 		}
 		catch (err)
 		{
-			logger.error('Failed to write new cemm-manifest.json', { error: err })
+			logger.error({ error: err }, 'Failed to write new cemm-manifest.json')
 			throw err
 		}
 	}

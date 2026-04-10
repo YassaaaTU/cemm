@@ -71,14 +71,14 @@ export const useGithubApi = () =>
 			})
 
 			const duration = performance.now() - startTime
-			logger.info('Upload completed', {
+			logger.info({
 				repo: opts.repo,
 				modpackKey: opts.modpackKey,
 				uuid: opts.uuid,
 				duration: `${duration.toFixed(2)}ms`,
 				manifestSize: JSON.stringify(opts.manifest).length,
 				configFileCount: opts.configFiles.length
-			})
+			}, 'Upload completed')
 		}
 		finally
 		{
@@ -107,7 +107,7 @@ export const useGithubApi = () =>
 		const cached = cache.get(cacheKey)
 		if (cached !== null)
 		{
-			logger.info('Using cached download', { repo: opts.repo, uuid: opts.uuid })
+			logger.info({ repo: opts.repo, uuid: opts.uuid }, 'Using cached download')
 			if (typeof opts.onProgress === 'function') opts.onProgress(100, 'Using cached data')
 			return {
 				manifest: cached.manifest,
@@ -136,14 +136,14 @@ export const useGithubApi = () =>
 		})
 
 		const duration = performance.now() - startTime
-		logger.info('Download completed', {
+		logger.info({
 			repo: opts.repo,
 			modpackKey: opts.modpackKey,
 			uuid: opts.uuid,
 			duration: `${duration.toFixed(2)}ms`,
 			manifestSize: JSON.stringify(result.manifest).length,
 			configFileCount: result.config_files.length
-		})
+		}, 'Download completed')
 
 		if (typeof opts.onProgress === 'function') opts.onProgress(100, 'Download complete')
 		return downloadResult

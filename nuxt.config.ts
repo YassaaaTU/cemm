@@ -1,10 +1,26 @@
 import tailwindcss from '@tailwindcss/vite'
 import { defineNuxtConfig } from 'nuxt/config'
 
+// Silence stale caniuse-lite warning in environments where registry mirrors lag.
+process.env.BROWSERSLIST_IGNORE_OLD_DATA ??= 'true'
+
 export default defineNuxtConfig({
 	modules: [
-		'nuxt-svgo',
-		'@nuxt/eslint',
+		[
+			'nuxt-svgo',
+			{
+				autoImportPath: '@/assets/'
+			}
+		],
+		[
+			'@nuxt/eslint',
+			{
+				checker: false,
+				config: {
+					stylistic: true
+				}
+			}
+		],
 		'@vueuse/nuxt',
 		'@nuxt/image',
 		'@nuxt/icon',
@@ -14,6 +30,13 @@ export default defineNuxtConfig({
 
 	// Enable static generation for Tauri
 	ssr: false,
+
+	components: [
+		{
+			path: '~/components',
+			pathPrefix: false
+		}
+	],
 
 	imports: {
 		presets: [
@@ -69,6 +92,12 @@ export default defineNuxtConfig({
 		// ...other private config...
 	},
 
+	// Reduce noisy source map warnings in production builds.
+	sourcemap: {
+		client: false,
+		server: false
+	},
+
 	future: {
 		compatibilityVersion: 4
 	},
@@ -82,15 +111,47 @@ export default defineNuxtConfig({
 
 	compatibilityDate: '2025-03-01',
 	nitro: {
-		preset: 'static'
+		preset: 'static',
+		rollupConfig: {
+			onwarn(warning, warn)
+			{
+				const warningMessage = typeof warning.message === 'string' ? warning.message : ''
+				if (
+					warningMessage.includes('@nuxt/nitro-server/dist/runtime/utils/cache-driver.js')
+					&& warningMessage.includes('virtual:#nitro-internal-virtual/storage')
+				)
+				{
+					return
+				}
+
+				warn(warning)
+			}
+		}
 	},
 	vite: {
 		plugins: [
 			tailwindcss()
 		],
 		build: {
+			sourcemap: false,
 			// Code splitting for better performance
 			rollupOptions: {
+				onwarn(warning, warn)
+				{
+					const warningMessage = typeof warning.message === 'string' ? warning.message : ''
+					if (
+						warningMessage.includes('Sourcemap is likely to be incorrect')
+						&& (
+							warningMessage.includes('nuxt:module-preload-polyfill')
+							|| warningMessage.includes('@tailwindcss/vite:generate:build')
+						)
+					)
+					{
+						return
+					}
+
+					warn(warning)
+				},
 				output: {
 					manualChunks: {
 						vendor: ['vue', 'pinia'],
@@ -114,16 +175,5 @@ export default defineNuxtConfig({
 		optimizeDeps: {
 			include: ['pinia', '@tauri-apps/api', 'pino']
 		}
-	},
-
-	eslint: {
-		checker: true,
-		config: {
-			stylistic: true
-		}
-	},
-
-	svgo: {
-		autoImportPath: '@/assets/'
 	}
 })

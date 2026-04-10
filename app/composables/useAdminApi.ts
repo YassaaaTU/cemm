@@ -74,7 +74,7 @@ export function useAdminApi()
 		catch (error)
 		{
 			setStatus(getErrorMessage(error, 'loading instance'), 'error')
-			logger.error('Failed to load instance', { error })
+			logger.error({ error }, 'Failed to load instance')
 			return { success: false }
 		}
 	}
@@ -342,7 +342,7 @@ export function useAdminApi()
 		catch (error)
 		{
 			setStatus(getErrorMessage(error, 'GitHub upload'), 'error')
-			logger.error('Upload failed', { error })
+			logger.error({ error }, 'Upload failed')
 			return { success: false }
 		}
 	}

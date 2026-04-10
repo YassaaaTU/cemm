@@ -12,8 +12,8 @@
 </template>
 
 <script setup lang="ts">
-import AdminPanel from '~/components/AdminPanel.vue'
-import UserPanel from '~/components/UserPanel.vue'
+import AdminPanel from '~/components/features/admin/AdminPanel.vue'
+import UserPanel from '~/components/features/user/UserPanel.vue'
 import { useAppStore } from '~/stores/app'
 
 const appStore = useAppStore()

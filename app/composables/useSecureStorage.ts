@@ -34,13 +34,13 @@ export const useSecureStorage = () =>
 	{
 		try
 		{
-			logger.debug('Secure storage operation', { operation: 'set', keyHash: hashKey(key), valueLength: value.length })
+			logger.debug({ operation: 'set', keyHash: hashKey(key), valueLength: value.length }, 'Secure storage operation')
 			await setPassword('com.yasirjumaah.cemm', key, value)
-			logger.debug('Secure storage operation completed', { operation: 'set', keyHash: hashKey(key) })
+			logger.debug({ operation: 'set', keyHash: hashKey(key) }, 'Secure storage operation completed')
 		}
 		catch (error)
 		{
-			logger.error('Secure storage operation failed', { operation: 'set', keyHash: hashKey(key), error })
+			logger.error({ operation: 'set', keyHash: hashKey(key), error }, 'Secure storage operation failed')
 			throw error
 		}
 	}
@@ -52,14 +52,14 @@ export const useSecureStorage = () =>
 	{
 		try
 		{
-			logger.debug('Secure storage operation', { operation: 'get', keyHash: hashKey(key) })
+			logger.debug({ operation: 'get', keyHash: hashKey(key) }, 'Secure storage operation')
 			const value = await getPassword('com.yasirjumaah.cemm', key)
-			logger.debug('Secure storage operation completed', { operation: 'get', keyHash: hashKey(key), hasValue: value !== null })
+			logger.debug({ operation: 'get', keyHash: hashKey(key), hasValue: value !== null }, 'Secure storage operation completed')
 			return value
 		}
 		catch (error)
 		{
-			logger.error('Secure storage operation failed', { operation: 'get', keyHash: hashKey(key), error })
+			logger.error({ operation: 'get', keyHash: hashKey(key), error }, 'Secure storage operation failed')
 			return null
 		}
 	}
@@ -71,13 +71,13 @@ export const useSecureStorage = () =>
 	{
 		try
 		{
-			logger.debug('Secure storage operation', { operation: 'remove', keyHash: hashKey(key) })
+			logger.debug({ operation: 'remove', keyHash: hashKey(key) }, 'Secure storage operation')
 			await deletePassword('com.yasirjumaah.cemm', key)
-			logger.debug('Secure storage operation completed', { operation: 'remove', keyHash: hashKey(key) })
+			logger.debug({ operation: 'remove', keyHash: hashKey(key) }, 'Secure storage operation completed')
 		}
 		catch (error)
 		{
-			logger.error('Secure storage operation failed', { operation: 'remove', keyHash: hashKey(key), error })
+			logger.error({ operation: 'remove', keyHash: hashKey(key), error }, 'Secure storage operation failed')
 			throw error
 		}
 	}
