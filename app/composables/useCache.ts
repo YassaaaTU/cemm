@@ -2,7 +2,6 @@
  * Simple TTL-only cache composable for CEMM
  * Uses Vue's useState for reactivity
  */
-
 export const useCache = <T>(key: string, ttlMs = 300000) =>
 {
 	const cache = useState<Map<string, { data: T, expires: number }>>(`cache-${key}`, () => new Map())
@@ -28,28 +27,4 @@ export const useCache = <T>(key: string, ttlMs = 300000) =>
 			cache.value.clear()
 		}
 	}
-}
-
-/**
- * Specialized cache for GitHub API responses
- */
-export const useGitHubCache = () =>
-{
-	return useCache<Record<string, unknown>>('github', 600000) // 10 minutes
-}
-
-/**
- * Specialized cache for manifest data
- */
-export const useManifestCache = () =>
-{
-	return useCache<Record<string, unknown>>('manifest', 1800000) // 30 minutes
-}
-
-/**
- * Specialized cache for config files
- */
-export const useConfigCache = () =>
-{
-	return useCache<string>('config', 900000) // 15 minutes
 }

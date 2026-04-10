@@ -55,7 +55,7 @@
           @click="handleUploadToGithub"
         >
           <span v-if="!uploading">
-            {{ getUploadButtonText() }}
+            {{ uploadButtonText }}
             <span
               v-if="selectedConfigFiles.length > 0"
               class="badge badge-secondary badge-sm ml-1"
@@ -260,31 +260,16 @@ function clearAllExclusions()
 	manifestStore.clearExclusions()
 }
 
-// UI helper functions for upload button
-const getUploadButtonText = () =>
-{
-	if (manifest.value !== null && selectedConfigFiles.value.length > 0)
-	{
-		return 'Upload to GitHub'
-	}
-	else if (manifest.value !== null)
-	{
-		return 'Upload to GitHub'
-	}
-	else if (selectedConfigFiles.value.length > 0)
-	{
-		return 'Upload Config Only'
-	}
-	return 'Upload to GitHub'
-}
+// Upload button text - shows 'Upload Config Only' when only config files are selected
+const uploadButtonText = computed(() =>
+	manifest.value === null && selectedConfigFiles.value.length > 0
+		? 'Upload Config Only'
+		: 'Upload to GitHub'
+)
 
 const getUploadButtonDescription = () =>
 {
-	if (uploading.value)
-	{
-		return 'upload-disabled-help'
-	}
-	if (manifest.value == null && selectedConfigFiles.value.length === 0)
+	if (uploading.value || (manifest.value == null && selectedConfigFiles.value.length === 0))
 	{
 		return 'upload-disabled-help'
 	}

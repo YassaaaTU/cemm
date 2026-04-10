@@ -65,7 +65,7 @@ export const useTauri = () =>
 		catch (error)
 		{
 			console.error('[useTauri] isBinaryFile failed:', { path, error })
-			return false // Default to false if check fails
+			return false
 		}
 	}
 
@@ -155,6 +155,7 @@ export const useTauri = () =>
 			console.error('[useTauri] openUrl failed:', { url, error })
 		}
 	}
+
 	const installUpdate = async (
 		modpackPath: string,
 		manifest: Manifest,
@@ -187,6 +188,7 @@ export const useTauri = () =>
 	{
 		return await invoke<boolean>('keyring_set_and_verify', { key, value })
 	}
+
 	const loadExistingManifest = async (modpackPath: string): Promise<Manifest | null> =>
 	{
 		try
@@ -202,73 +204,6 @@ export const useTauri = () =>
 			console.info('[useTauri] loadExistingManifest: No existing manifest found (fresh install)', { modpackPath })
 			return null
 		}
-	}
-
-	const calculateUpdateDiff = async (oldManifest: Manifest | null, newManifest: Manifest): Promise<UpdateDiff> =>
-	{
-		// If no old manifest, everything is new
-		if (oldManifest === null)
-		{
-			return {
-				removed_addons: [],
-				updated_addon_ids: [],
-				new_addons: [
-					...newManifest.mods.map((addon) => addon.addon_name),
-					...newManifest.resourcepacks.map((addon) => addon.addon_name),
-					...newManifest.shaderpacks.map((addon) => addon.addon_name),
-					...newManifest.datapacks.map((addon) => addon.addon_name)
-				]
-			}
-		}
-
-		const diff: UpdateDiff = {
-			removed_addons: [],
-			updated_addon_ids: [],
-			new_addons: []
-		}
-
-		// Helper function to process addon categories
-		const processCategory = (oldAddons: Addon[], newAddons: Addon[]) =>
-		{
-			// Find removed addons (in old but not in new)
-			for (const oldAddon of oldAddons)
-			{
-				const stillExists = newAddons.some((newAddon) => newAddon.addon_project_id === oldAddon.addon_project_id)
-				if (!stillExists)
-				{
-					diff.removed_addons.push(oldAddon.addon_name)
-				}
-			}
-
-			// Find updated addons (same project ID, different version)
-			// Store project_id for reliable matching during removal
-			for (const oldAddon of oldAddons)
-			{
-				const newAddon = newAddons.find((addon) => addon.addon_project_id === oldAddon.addon_project_id)
-				if (newAddon !== undefined && oldAddon.version !== newAddon.version)
-				{
-					diff.updated_addon_ids.push(oldAddon.addon_project_id)
-				}
-			}
-
-			// Find new addons (in new but not in old)
-			for (const newAddon of newAddons)
-			{
-				const isNew = !oldAddons.some((oldAddon) => oldAddon.addon_project_id === newAddon.addon_project_id)
-				if (isNew)
-				{
-					diff.new_addons.push(newAddon.addon_name)
-				}
-			}
-		}
-
-		// Process each category
-		processCategory(oldManifest.mods, newManifest.mods)
-		processCategory(oldManifest.resourcepacks, newManifest.resourcepacks)
-		processCategory(oldManifest.shaderpacks, newManifest.shaderpacks)
-		processCategory(oldManifest.datapacks, newManifest.datapacks)
-
-		return diff
 	}
 
 	const downloadManifest = async (repo: string, uuid: string, modpackKey?: string): Promise<Manifest | null> =>
@@ -368,11 +303,81 @@ export const useTauri = () =>
 		keyringTestDirect,
 		keyringSetAndVerify,
 		loadExistingManifest,
-		calculateUpdateDiff,
 		downloadManifest,
 		downloadConfigFiles,
 		selectConfigDirectory,
 		readDirectoryRecursive,
 		validatePath
 	}
+}
+
+/**
+ * Calculate the difference between two manifests.
+ * Exported as a standalone function for use in components without composable overhead.
+ */
+export function calculateUpdateDiff(oldManifest: Manifest | null, newManifest: Manifest): UpdateDiff
+{
+	// If no old manifest, everything is new
+	if (oldManifest === null)
+	{
+		return {
+			removed_addons: [],
+			updated_addon_ids: [],
+			new_addons: [
+				...newManifest.mods.map((addon) => addon.addon_name),
+				...newManifest.resourcepacks.map((addon) => addon.addon_name),
+				...newManifest.shaderpacks.map((addon) => addon.addon_name),
+				...newManifest.datapacks.map((addon) => addon.addon_name)
+			]
+		}
+	}
+
+	const diff: UpdateDiff = {
+		removed_addons: [],
+		updated_addon_ids: [],
+		new_addons: []
+	}
+
+	// Helper function to process addon categories
+	const processCategory = (oldAddons: Addon[], newAddons: Addon[]) =>
+	{
+		// Find removed addons (in old but not in new)
+		for (const oldAddon of oldAddons)
+		{
+			const stillExists = newAddons.some((newAddon) => newAddon.addon_project_id === oldAddon.addon_project_id)
+			if (!stillExists)
+			{
+				diff.removed_addons.push(oldAddon.addon_name)
+			}
+		}
+
+		// Find updated addons (same project ID, different version)
+		// Store project_id for reliable matching during removal
+		for (const oldAddon of oldAddons)
+		{
+			const newAddon = newAddons.find((addon) => addon.addon_project_id === oldAddon.addon_project_id)
+			if (newAddon !== undefined && oldAddon.version !== newAddon.version)
+			{
+				diff.updated_addon_ids.push(oldAddon.addon_project_id)
+			}
+		}
+
+		// Find new addons (in new but not in old)
+		for (const newAddon of newAddons)
+		{
+			const isNew = !oldAddons.some((oldAddon) => oldAddon.addon_project_id === newAddon.addon_project_id)
+			if (isNew)
+			{
+				diff.new_addons.push(newAddon.addon_name)
+			}
+		}
+	}
+
+	// Process each category
+	processCategory(oldManifest.mods, newManifest.mods)
+	processCategory(oldManifest.resourcepacks, newManifest.resourcepacks)
+	processCategory(oldManifest.shaderpacks, newManifest.shaderpacks)
+	processCategory(oldManifest.datapacks, newManifest.datapacks)
+
+	return diff
 }

@@ -1,7 +1,7 @@
 // composables/useUpdater.ts
 import { invoke } from '@tauri-apps/api/core'
 import { storeToRefs } from 'pinia'
-import { nextTick, readonly } from 'vue'
+import { readonly } from 'vue'
 
 import { useAppStore } from '~/stores/app'
 import { type AppUpdateInfo, useUpdaterStore } from '~/stores/updater'
@@ -9,7 +9,7 @@ import { type AppUpdateInfo, useUpdaterStore } from '~/stores/updater'
 export const useUpdater = () =>
 {
 	const updaterStore = useUpdaterStore()
-	// const { $logger } = useNuxtApp()
+	const { $logger: logger } = useNuxtApp()
 	const appStore = useAppStore()
 
 	// Extract refs from store using storeToRefs
@@ -28,38 +28,26 @@ export const useUpdater = () =>
 		{
 			throw new Error('App repository not configured')
 		}
-		console.info('🔍 MANUAL update check starting', { appRepo })
+		logger.debug({ appRepo }, 'Manual update check starting')
 		isChecking.value = true
 		try
 		{
 			const result = await invoke<AppUpdateInfo>('check_for_updates', { repo: appRepo })
 			updateInfo.value = result
-			console.info('✅ MANUAL update check completed', {
-				available: result.available, current: result.current_version,
-				latest: result.latest_version,
-				repo: appRepo,
-				downloadUrl: result.download_url,
-				assetName: result.asset_name
-			})
+			logger.info({
+				available: result.available,
+				current: result.current_version,
+				latest: result.latest_version
+			}, 'Update check completed')
 			if (result.available)
 			{
-				console.info('🎯 MANUAL check: Setting dialog visible = true')
 				isUpdateDialogVisible.value = true
-				console.info('🎯 MANUAL check: Dialog visible value after setting:', isUpdateDialogVisible.value)
-				nextTick(() =>
-				{
-					console.info('🎯 MANUAL check: Dialog visible value in nextTick:', isUpdateDialogVisible.value)
-				})
-			}
-			else
-			{
-				console.info('ℹ️ MANUAL check: No update available, dialog stays hidden')
 			}
 			return result
 		}
 		catch (error)
 		{
-			console.error('Update check failed', error)
+			logger.error({ error }, 'Update check failed')
 			throw error
 		}
 		finally
@@ -80,29 +68,22 @@ export const useUpdater = () =>
 			isDownloading.value = true
 			downloadProgress.value = 0
 
-			console.info('Starting update download', {
-				url: info.download_url,
-				asset: info.asset_name
-			})
+			logger.debug({ url: info.download_url }, 'Starting update download')
 			const filePath = await invoke('download_updater_file', {
 				downloadUrl: info.download_url,
 				assetName: info.asset_name
 			}) as string
-			// Set progress to 100% only after actual download completes
 			downloadProgress.value = 100
 			isDownloading.value = false
 			isInstalling.value = true
-			console.info('Starting update installation', {
-				filePath,
-				size: (info.size != null) ? formatBytes(info.size) : 'unknown'
-			})
+			logger.info({ filePath }, 'Starting update installation')
 			await invoke('install_updater_file', { filePath })
-			console.info('Update installed successfully')
+			logger.info('Update installed successfully')
 			isUpdateDialogVisible.value = false
 		}
 		catch (error)
 		{
-			console.error('Update installation failed', error)
+			logger.error({ error }, 'Update installation failed')
 			isUpdateDialogVisible.value = false
 			throw error
 		}
@@ -118,33 +99,21 @@ export const useUpdater = () =>
 		const appRepo = appStore.appRepo
 		if (!appRepo)
 		{
-			console.warn('App repository not configured, skipping startup update check')
+			logger.debug('App repository not configured, skipping startup update check')
 			return
 		}
 		try
 		{
-			console.info('🚀 STARTUP update check starting', { repo: appRepo })
 			const result = await invoke<AppUpdateInfo>('check_for_updates', { repo: appRepo })
 			updateInfo.value = result
-			console.info('✅ STARTUP update check completed', {
-				available: result.available,
-				current: result.current_version,
-				latest: result.latest_version,
-				repo: appRepo
-			})
 			if (result.available)
 			{
-				console.info('🎯 STARTUP check: Setting dialog visible = true')
 				isUpdateDialogVisible.value = true
-			}
-			else
-			{
-				console.info('ℹ️ STARTUP check: No update available, dialog stays hidden')
 			}
 		}
 		catch (error)
 		{
-			console.warn('Startup update check failed (non-critical)', error)
+			logger.warn({ error }, 'Startup update check failed (non-critical)')
 		}
 	}
 

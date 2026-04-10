@@ -196,6 +196,7 @@
 <script setup lang="ts">
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
+import { calculateUpdateDiff } from '~/composables/useTauri'
 import type { ConfigFileWithContent } from '~/types'
 
 interface InstallProgressEvent
@@ -250,75 +251,19 @@ const previewData = computed(() =>
 	const oldManifest = manifestStore.previousManifest
 	const newManifest = manifest.value
 
-	const diff = {
-		removed_addons: [] as string[],
-		updated_addon_ids: [] as number[],
-		new_addons: [] as string[]
-	}
-
-	if (oldManifest !== null)
+	// For config-only updates, return empty diff
+	if (newManifest.updateType === 'config')
 	{
-		const processCategory = (
-			oldAddons: Array<{ addon_project_id: number, addon_name: string, version: string, disabled?: boolean }>,
-			newAddons: Array<{ addon_project_id: number, addon_name: string, version: string, disabled?: boolean }>
-		) =>
-		{
-			for (const oldAddon of oldAddons)
-			{
-				if (oldAddon.disabled === true) continue
-				const newAddon = newAddons.find((a) => a.addon_project_id === oldAddon.addon_project_id)
-				if (newAddon === undefined || newAddon.disabled === true)
-				{
-					diff.removed_addons.push(oldAddon.addon_name)
-				}
-			}
-
-			for (const oldAddon of oldAddons)
-			{
-				const newAddon = newAddons.find((a) => a.addon_project_id === oldAddon.addon_project_id)
-				if (newAddon !== undefined && newAddon.disabled !== true && oldAddon.version !== newAddon.version)
-				{
-					diff.updated_addon_ids.push(oldAddon.addon_project_id)
-				}
-			}
-
-			for (const newAddon of newAddons)
-			{
-				if (newAddon.disabled === true) continue
-				const found = oldAddons.find((a) => a.addon_project_id === newAddon.addon_project_id)
-				if (found === undefined)
-				{
-					diff.new_addons.push(newAddon.addon_name)
-				}
-			}
-		}
-
-		if (newManifest.updateType === 'config')
-		{
-			diff.removed_addons = []
-			diff.updated_addon_ids = []
-			diff.new_addons = []
-		}
-		else
-		{
-			processCategory(oldManifest.mods, newManifest.mods)
-			processCategory(oldManifest.resourcepacks, newManifest.resourcepacks)
-			processCategory(oldManifest.shaderpacks, newManifest.shaderpacks)
-			processCategory(oldManifest.datapacks, newManifest.datapacks)
+		return {
+			oldManifest,
+			newManifest,
+			diff: { removed_addons: [], updated_addon_ids: [], new_addons: [] },
+			hasChanges: false,
+			configFiles: downloadedConfigFiles.value
 		}
 	}
-	else
-	{
-		if (newManifest.updateType !== 'config')
-		{
-			diff.new_addons = [
-				...newManifest.mods.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
-				...newManifest.resourcepacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
-				...newManifest.shaderpacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
-				...newManifest.datapacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name)
-			]
-		}
-	}
+
+	const diff = calculateUpdateDiff(oldManifest, newManifest)
 
 	const hasChanges = oldManifest !== null && (
 		diff.removed_addons.length > 0
