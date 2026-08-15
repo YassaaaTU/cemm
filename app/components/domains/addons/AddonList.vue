@@ -1,122 +1,166 @@
 <template>
-  <div>
-    <!-- Header with search and stats -->
-    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 border-b border-base-300 pb-4">
-      <h2 class="font-semibold text-lg">
-        {{ title }}
-        <span class="badge badge-neutral badge-sm ml-2">
-          {{ displayedAddons.length }}{{ searchTerm.length > 0 ? ` of ${totalAddons}` : '' }}
-        </span>
-      </h2>
+  <div class="addon-grid">
+    <div class="addon-grid__header">
+      <div class="addon-grid__header-left">
+        <h2 class="addon-grid__title">
+          {{ title }}
+          <span class="addon-grid__count">{{ displayedAddons.length }}{{ searchTerm.length > 0 ? ` of ${totalAddons}` : '' }}</span>
+        </h2>
+      </div>
 
-      <!-- Search box for large lists -->
-      <div
-        v-if="addons.length >= searchThreshold"
-        class="w-full sm:w-auto"
-      >
-        <input
-          v-model="searchTerm"
-          type="text"
-          placeholder="Search addons..."
-          class="input input-bordered input-sm w-full sm:w-64"
-          :aria-label="`Search ${category} addons`"
-        />
+      <div class="addon-grid__header-right">
+        <div
+          v-if="addons.length >= 10"
+          class="addon-grid__search"
+        >
+          <Icon
+            name="mdi:magnify"
+            size="1rem"
+            class="addon-grid__search-icon"
+          />
+          <input
+            v-model="searchTerm"
+            type="text"
+            :placeholder="`Search ${category}...`"
+            class="addon-grid__search-input"
+            :aria-label="`Search ${category} addons`"
+          />
+        </div>
+
+        <div class="addon-grid__view-toggle">
+          <button
+            class="addon-grid__view-btn"
+            :class="{ 'addon-grid__view-btn--active': currentLayout === 'grid' }"
+            aria-label="Grid view"
+            :aria-pressed="currentLayout === 'grid'"
+            @click="currentLayout = 'grid'"
+          >
+            <Icon
+              name="mdi:view-grid"
+              size="1.1rem"
+            />
+          </button>
+          <button
+            class="addon-grid__view-btn"
+            :class="{ 'addon-grid__view-btn--active': currentLayout === 'list' }"
+            aria-label="List view"
+            :aria-pressed="currentLayout === 'list'"
+            @click="currentLayout = 'list'"
+          >
+            <Icon
+              name="mdi:view-list"
+              size="1.1rem"
+            />
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Loading state -->
+    <Transition name="bulk-bar">
+      <div
+        v-if="selectedAddonsInternal.length > 0"
+        class="addon-grid__bulk"
+      >
+        <span class="addon-grid__bulk-count">{{ selectedAddonsInternal.length }} selected</span>
+        <button
+          v-if="showExclusion"
+          class="btn btn-error btn-sm"
+          @click="excludeSelected"
+        >
+          <Icon
+            name="mdi:minus-circle-outline"
+            size="1.1rem"
+          />
+          Exclude Selected
+        </button>
+        <button
+          class="btn btn-ghost btn-sm"
+          @click="clearSelection"
+        >
+          Clear Selection
+        </button>
+      </div>
+    </Transition>
+
     <div
       v-if="isLoading"
-      class="flex items-center justify-center p-8"
+      class="addon-grid__empty"
     >
       <LoadingSpinner
-        :loading="isLoading"
+        :loading="true"
         size="sm"
       />
-      <span class="ml-2 text-sm opacity-70">Loading addons...</span>
+      <span class="addon-grid__empty-text">Loading addons...</span>
     </div>
 
-    <!-- Empty state -->
     <div
       v-else-if="displayedAddons.length === 0"
-      class="text-center p-8 bg-base-200 rounded-lg"
+      class="addon-grid__empty"
     >
-      <div class="text-base-content opacity-60">
-        <Icon
-          name="mdi:emoticon-sad-outline"
-          size="2rem"
-          class="mb-2"
-        />
-        <p class="text-sm">
-          {{ searchTerm.length > 0 ? 'No addons match your search' : `No ${category} found` }}
-        </p>
-        <p
-          v-if="searchTerm.length > 0"
-          class="text-xs mt-1 opacity-50"
-        >
-          Try a different search term
-        </p>
-      </div>
+      <Icon
+        name="mdi:package-variant-closed"
+        size="2.5rem"
+        class="addon-grid__empty-icon"
+      />
+      <p class="addon-grid__empty-title">
+        {{ searchTerm.length > 0 ? 'No addons match your search' : `No ${category} found` }}
+      </p>
+      <p
+        v-if="searchTerm.length > 0"
+        class="addon-grid__empty-hint"
+      >
+        Try a different search term
+      </p>
     </div>
 
-    <!-- Virtual scrolling container for large lists -->
     <v-list
-      v-if="useVirtualScrolling"
-      v-slot="{ item: addon, index }"
+      v-else-if="useVirtualScrolling"
+      v-slot="{ item: addon }"
       :data="displayedAddons"
       :style="{ height: `${containerHeight}px` }"
     >
-      <addon-item
+      <AddonItem
         :key="`${addon.addon_project_id}-${addon.version}`"
         :addon="addon"
-        :index="index"
-        :selected="selectedAddons.includes(addon.addon_name)"
+        :selected="selectedAddonsInternal.includes(addon.addon_name)"
         :show-selection="showSelection"
         :status="getAddonStatus(addon)"
-        :excluded="excludedAddons.has(addon.addon_name)"
+        :excluded="excludedAddons.includes(addon.addon_name)"
         :show-exclusion="showExclusion"
+        :layout="currentLayout"
         @toggle-selection="handleToggleSelection"
         @open-link="openCurseforge(addon)"
         @toggle-exclusion="handleToggleExclusion"
       />
     </v-list>
 
-    <!-- Regular rendering for smaller lists -->
     <div
       v-else
-      class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+      class="addon-grid__items"
+      :class="`addon-grid__items--${currentLayout}`"
     >
-      <addon-item
-        v-for="(addon, index) in displayedAddons"
+      <AddonItem
+        v-for="addon in displayedAddons"
         :key="`${addon.addon_project_id}-${addon.version}`"
         :addon="addon"
-        :index="index"
-        :selected="selectedAddons.includes(addon.addon_name)"
+        :selected="selectedAddonsInternal.includes(addon.addon_name)"
         :show-selection="showSelection"
         :status="getAddonStatus(addon)"
-        :excluded="excludedAddons.has(addon.addon_name)"
+        :excluded="excludedAddons.includes(addon.addon_name)"
         :show-exclusion="showExclusion"
+        :layout="currentLayout"
         @toggle-selection="handleToggleSelection"
         @open-link="openCurseforge(addon)"
         @toggle-exclusion="handleToggleExclusion"
       />
     </div>
-    <!-- Performance stats (dev only) -->
+
     <div
       v-if="showStats && isDev"
-      class="mt-4 collapse bg-base-100 border-base-300 border"
+      class="addon-grid__stats"
     >
-      <input
-        type="checkbox"
-        class="peer"
-      />
-      <div class="collapse-title bg-primary text-primary-content peer-checked:bg-secondary peer-checked:text-secondary-content">
-        Performance Stats
-      </div>
-      <div class="collapse-content bg-primary text-primary-content peer-checked:bg-secondary peer-checked:text-secondary-content">
-        <div>Total: {{ totalAddons }} | Visible: {{ visibleCount }} | Render ratio: {{ renderRatio }}%</div>
-        <div>Search time: {{ searchDuration }}ms | Memory: ~{{ memoryEstimate }}KB</div>
-      </div>
+      <div>Total: {{ totalAddons }} | Visible: {{ visibleCount }} | Render ratio: {{ renderRatio }}%</div>
+      <div>Search time: {{ searchDuration }}ms | Memory: ~{{ memoryEstimate }}KB</div>
     </div>
   </div>
 </template>
@@ -137,13 +181,13 @@ interface Props
 	selectedAddons?: string[]
 	showSelection?: boolean
 	isLoading?: boolean
-	searchThreshold?: number
 	virtualScrollThreshold?: number
 	containerHeight?: number
 	showStats?: boolean
 	updateInfo?: ManifestUpdateInfo | null
-	excludedAddons?: Set<string>
+	excludedAddons?: string[]
 	showExclusion?: boolean
+	layout?: 'grid' | 'list'
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -152,18 +196,30 @@ const props = withDefaults(defineProps<Props>(), {
 	selectedAddons: () => [],
 	showSelection: false,
 	isLoading: false,
-	searchThreshold: 20,
 	virtualScrollThreshold: 100,
 	containerHeight: 400,
 	showStats: false,
 	updateInfo: null,
-	excludedAddons: () => new Set(),
-	showExclusion: false
+	excludedAddons: () => [],
+	showExclusion: false,
+	layout: 'grid'
 })
 
-// Search functionality (replacing deleted useSearchOptimized)
+const emit = defineEmits<{
+	toggleSelection: [addonName: string]
+	toggleExclusion: [addonName: string]
+	bulkActions: [action: 'exclude', addonNames: string[]]
+}>()
+
+const currentLayout = ref<'grid' | 'list'>(props.layout)
+const selectedAddonsInternal = ref<string[]>([...props.selectedAddons])
 const searchTerm = ref('')
 const isSearching = computed(() => searchTerm.value.length > 0)
+
+watch(() => props.selectedAddons, (val) =>
+{
+	selectedAddonsInternal.value = [...val]
+}, { deep: true })
 
 const filteredItems = computed(() =>
 {
@@ -176,26 +232,65 @@ const filteredItems = computed(() =>
 	)
 })
 
-// Virtual scrolling for large lists
 const useVirtualScrolling = computed(() => filteredItems.value.length > props.virtualScrollThreshold)
 
-// Event handlers
-const emit = defineEmits<{
-	toggleSelection: [addonName: string]
-	toggleExclusion: [addonName: string]
-}>()
+const displayedAddons = computed(() =>
+	filteredItems.value.filter((a) => a.disabled !== true)
+)
+const totalAddons = computed(() => props.addons.length)
+const visibleCount = computed(() => displayedAddons.value.length)
+const renderRatio = computed(() => Math.round((visibleCount.value / Math.max(totalAddons.value, 1)) * 100))
 
-const handleToggleSelection = (addonName: string) =>
+const searchDuration = ref(0)
+const memoryEstimate = computed(() => Math.round(visibleCount.value * 0.5))
+const isDev = computed(() => import.meta.dev)
+
+watch(isSearching, (searching) =>
 {
+	if (searching)
+	{
+		const start = performance.now()
+		const unwatch = watch(isSearching, (stillSearching) =>
+		{
+			if (!stillSearching)
+			{
+				searchDuration.value = Math.round(performance.now() - start)
+				unwatch()
+			}
+		})
+	}
+})
+
+function handleToggleSelection(addonName: string)
+{
+	const idx = selectedAddonsInternal.value.indexOf(addonName)
+	if (idx >= 0)
+	{
+		selectedAddonsInternal.value.splice(idx, 1)
+	}
+	else
+	{
+		selectedAddonsInternal.value.push(addonName)
+	}
 	emit('toggleSelection', addonName)
 }
 
-const handleToggleExclusion = (addonName: string) =>
+function handleToggleExclusion(addonName: string)
 {
 	emit('toggleExclusion', addonName)
 }
 
-// Open CurseForge/addon URL logic (from ManifestPreview)
+function excludeSelected()
+{
+	emit('bulkActions', 'exclude', [...selectedAddonsInternal.value])
+	clearSelection()
+}
+
+function clearSelection()
+{
+	selectedAddonsInternal.value = []
+}
+
 async function openCurseforge(addon: Addon)
 {
 	logger.info('Opening CurseForge page for addon', {
@@ -227,38 +322,7 @@ async function openCurseforge(addon: Addon)
 	}
 }
 
-// Computed properties
-const displayedAddons = computed(() =>
-	filteredItems.value.filter((a) => a.disabled !== true)
-)
-const totalAddons = computed(() => props.addons.length)
-const visibleCount = computed(() => displayedAddons.value.length)
-const renderRatio = computed(() => Math.round((visibleCount.value / Math.max(totalAddons.value, 1)) * 100))
-
-// Performance metrics
-const searchDuration = ref(0)
-const memoryEstimate = computed(() => Math.round(visibleCount.value * 0.5)) // ~0.5KB per addon estimate
-const isDev = computed(() => import.meta.dev)
-
-// Watch search performance
-watch(isSearching, (searching) =>
-{
-	if (searching)
-	{
-		const start = performance.now()
-		const unwatch = watch(isSearching, (stillSearching) =>
-		{
-			if (!stillSearching)
-			{
-				searchDuration.value = Math.round(performance.now() - start)
-				unwatch()
-			}
-		})
-	}
-})
-
-// Addon status logic for highlighting (added/removed)
-function getAddonStatus(addon: Addon): '' | 'added' | 'removed'
+function getAddonStatus(addon: Addon): '' | 'added' | 'removed' | 'updated'
 {
 	if (props.updateInfo == null) return ''
 	const added = props.updateInfo.addedAddons.find(
@@ -267,10 +331,21 @@ function getAddonStatus(addon: Addon): '' | 'added' | 'removed'
 	const removed = props.updateInfo.removedAddons.includes(addon.addon_name)
 	if (added != null) return 'added'
 	if (removed) return 'removed'
+
+	if (props.updateInfo.updated_addon_ids != null)
+	{
+		const updated = props.updateInfo.updated_addon_ids.includes(addon.addon_project_id)
+		if (updated === true) return 'updated'
+	}
+
 	return ''
 }
 
-// Expose stats for debugging
+function getSelectedItems(): string[]
+{
+	return [...selectedAddonsInternal.value]
+}
+
 const getPerformanceStats = () => ({
 	searchDuration: searchDuration.value,
 	memoryEstimate: memoryEstimate.value,
@@ -280,6 +355,189 @@ const getPerformanceStats = () => ({
 defineExpose({
 	getPerformanceStats,
 	searchTerm,
-	filteredItems
+	filteredItems,
+	getSelectedItems
 })
 </script>
+
+<style scoped>
+.addon-grid {
+  width: 100%;
+}
+
+.addon-grid__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border-divider);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.addon-grid__header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.addon-grid__title {
+  font-size: var(--text-heading-sm-size);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.addon-grid__count {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-overlay);
+  color: var(--color-text-secondary);
+  font-size: var(--text-body-xs-size);
+  font-weight: 600;
+  margin-left: var(--space-2);
+}
+
+.addon-grid__header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.addon-grid__search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.addon-grid__search-icon {
+  position: absolute;
+  left: var(--space-2);
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+
+.addon-grid__search-input {
+  height: 32px;
+  padding: 0 var(--space-3) 0 var(--space-7);
+  background: var(--color-surface-overlay);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--text-body-sm-size);
+  width: 200px;
+  transition: all var(--duration-fast);
+}
+.addon-grid__search-input:focus {
+  outline: none;
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 0 3px var(--color-accent-primary-muted);
+}
+.addon-grid__search-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.addon-grid__view-toggle {
+  display: flex;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.addon-grid__view-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all var(--duration-instant);
+}
+.addon-grid__view-btn--active {
+  background: var(--color-accent-primary-muted);
+  color: var(--color-accent-primary);
+}
+.addon-grid__view-btn:hover:not(.addon-grid__view-btn--active) {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+.addon-grid__view-btn:focus-visible {
+  box-shadow: var(--focus-ring-offset);
+  outline: none;
+}
+
+.addon-grid__bulk {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-accent-primary-muted);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-3);
+}
+.addon-grid__bulk-count {
+  font-size: var(--text-body-sm-size);
+  font-weight: 600;
+  color: var(--color-accent-primary);
+}
+
+.addon-grid__items--grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+.addon-grid__items--list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.addon-grid__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  text-align: center;
+}
+.addon-grid__empty-icon {
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-2);
+}
+.addon-grid__empty-title {
+  font-size: var(--text-body-md-size);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+.addon-grid__empty-hint {
+  font-size: var(--text-body-sm-size);
+  color: var(--color-text-tertiary);
+  margin: var(--space-1) 0 0;
+}
+.addon-grid__empty-text {
+  font-size: var(--text-body-sm-size);
+  color: var(--color-text-secondary);
+  margin-left: var(--space-2);
+}
+
+.addon-grid__stats {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-body-xs-size);
+  color: var(--color-text-tertiary);
+}
+
+.bulk-bar-enter-active { transition: all var(--duration-normal) var(--ease-out); }
+.bulk-bar-leave-active { transition: all var(--duration-fast) var(--ease-in); }
+.bulk-bar-enter-from, .bulk-bar-leave-to { opacity: 0; transform: translateY(-8px); height: 0; padding: 0; margin: 0; overflow: hidden; }
+</style>

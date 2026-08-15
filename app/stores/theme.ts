@@ -16,13 +16,13 @@ export const useThemeStore = defineStore(
 			current.value = current.value === 'nord' ? 'dracula' : 'nord'
 		}
 
-		const isdark = computed(() => current.value === 'dracula')
+		const isDark = computed(() => current.value === 'dracula')
 
 		return {
 			current,
 			setTheme,
 			toggleTheme,
-			isdark
+			isDark
 		}
 	},
 	{

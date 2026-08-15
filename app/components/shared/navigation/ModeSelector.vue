@@ -1,37 +1,30 @@
 <template>
-  <div class="join self-center">
+  <div class="join">
     <button
-      class="btn join-item"
-      :class="{ 'btn-primary': mode === 'admin' }"
-      @click="setMode('admin')"
+      v-for="opt in modeOptions"
+      :key="opt.value"
+      class="btn join-item btn-sm"
+      :class="{ 'btn-primary': appStore.mode === opt.value }"
+      :aria-pressed="appStore.mode === opt.value"
+      @click="appStore.mode = opt.value"
     >
       <Icon
-        name="mdi:shield-account"
-        size="1.2rem"
-        class="mr-0 sm:mr-2"
+        v-if="opt.icon"
+        :name="opt.icon"
+        size="1.1rem"
       />
-      Admin
-    </button>
-    <button
-      class="btn join-item"
-      :class="{ 'btn-primary': mode === 'user' }"
-      @click="setMode('user')"
-    >
-      <Icon
-        name="mdi:account"
-        size="1.2rem"
-        class="mr-0 sm:mr-2"
-      />
-      User
+      {{ opt.label }}
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useAppStore } from '~/stores/app'
+
 const appStore = useAppStore()
-const mode = computed(() => appStore.mode)
-const setMode = (val: 'admin' | 'user') =>
-{
-	appStore.mode = val
-}
+
+const modeOptions = [
+	{ value: 'admin', label: 'Admin', icon: 'mdi:shield-crown' },
+	{ value: 'user', label: 'User', icon: 'mdi:account' }
+]
 </script>

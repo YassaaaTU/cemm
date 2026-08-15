@@ -1,82 +1,36 @@
 <template>
   <div
+    class="admin-panel"
     role="main"
     aria-labelledby="admin-mode-title"
   >
-    <h2
+    <h1
       id="admin-mode-title"
-      class="text-2xl font-bold mb-4"
+      class="sr-only"
     >
       Admin Mode
-    </h2>
+    </h1>
 
-    <!-- Action Buttons Section -->
-    <section
-      aria-labelledby="admin-actions-section"
-      class="mb-6"
+    <!-- Zone 1: Command Bar -->
+    <CommandBar
+      :custom-modpack-name="customModpackName"
+      :manifest-loaded="manifest != null"
+      :uploading="uploading"
+      :config-files-count="selectedConfigFiles.length"
+      :excluded-count="excludedCount"
+      @update:custom-modpack-name="customModpackName = $event"
+      @load-instance="handleLoadInstance"
+      @save-manifest="handleSaveManifest"
+      @upload-to-github="handleUploadToGithub"
+      @clear-exclusions="clearAllExclusions"
+    />
+
+    <!-- Progress Bar -->
+    <div
+      v-if="uploading || progress > 0"
+      class="admin-panel__progress"
     >
-      <div class="mb-3 max-w-md">
-        <label
-          for="modpack-name-input"
-          class="label"
-        >
-          <span class="label-text">Custom Modpack Name (optional)</span>
-        </label>
-        <input
-          id="modpack-name-input"
-          v-model="customModpackName"
-          type="text"
-          class="input input-bordered w-full"
-          placeholder="Leave empty to auto-detect from instance/path"
-        />
-      </div>
-
-      <div class="flex flex-wrap gap-2">
-        <button
-          class="btn btn-primary"
-          aria-describedby="load-instance-help"
-          @click="handleLoadInstance"
-        >
-          Load Instance
-        </button>
-
-        <button
-          class="btn btn-secondary"
-          :disabled="manifest == null"
-          :aria-describedby="manifest == null ? 'save-disabled-help' : 'save-manifest-help'"
-          @click="handleSaveManifest"
-        >
-          Save Manifest
-        </button>
-        <button
-          class="btn btn-accent"
-          :disabled="(manifest == null && selectedConfigFiles.length === 0) || uploading"
-          :aria-describedby="getUploadButtonDescription()"
-          @click="handleUploadToGithub"
-        >
-          <span v-if="!uploading">
-            {{ uploadButtonText }}
-            <span
-              v-if="selectedConfigFiles.length > 0"
-              class="badge badge-secondary badge-sm ml-1"
-              :aria-label="`${selectedConfigFiles.length} config files selected`"
-            >
-              +{{ selectedConfigFiles.length }} config
-            </span>
-          </span>
-          <loading-spinner
-            v-else
-            :loading="true"
-            size="sm"
-            message="Uploading..."
-            aria-label="Uploading manifest and config files to GitHub"
-          />
-        </button>
-      </div>
-    </section>
-
-    <div class="mt-6 flex flex-col gap-2">
-      <progress-bar
+      <ProgressBar
         :progress="progress"
         :label="uploading ? 'Uploading to GitHub...' : ''"
         :color="uploading ? 'primary' : 'success'"
@@ -84,128 +38,158 @@
       />
     </div>
 
-    <!-- Status messages -->
-    <app-alert
-      v-if="statusMessage"
-      class="mt-4"
-      :message="statusMessage"
-      :type="statusType"
-      @close="clearStatus"
-    />
+    <!-- Status Alert -->
     <div
-      v-if="latestUpdateReference.length > 0"
-      class="mt-3 alert alert-info flex items-center justify-between gap-2"
+      v-if="statusMessage"
+      class="alert"
+      :class="`alert-${statusType}`"
+      role="alert"
     >
-      <span class="text-sm break-all">
-        Share this update ID with users: <strong>{{ latestUpdateReference }}</strong>
-      </span>
+      <Icon
+        :name="alertIcon"
+        size="1.4rem"
+        class="shrink-0"
+      />
+      <span>{{ statusMessage }}</span>
       <button
-        class="btn btn-sm btn-outline"
-        @click="copyUpdateReference"
+        class="btn btn-sm btn-ghost"
+        aria-label="Dismiss status message"
+        @click="clearStatus"
       >
-        Copy
+        <Icon
+          name="mdi:close"
+          size="1.2rem"
+        />
       </button>
     </div>
 
+    <!-- Update Reference (after upload) -->
     <div
-      v-if="manifest"
-      class="mt-4"
+      v-if="latestUpdateReference.length > 0"
+      class="card bg-base-200 shadow-md border border-base-300 admin-panel__ref-card"
     >
-      <!-- Exclusion summary -->
-      <div
-        v-if="excludedCount > 0"
-        class="mb-4 p-3 bg-warning/10 border border-warning/30 rounded-lg"
-      >
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
+      <div class="card-body">
+        <div class="admin-panel__ref">
+          <div class="admin-panel__ref-info">
             <Icon
-              name="mdi:information-outline"
-              class="text-warning"
+              name="mdi:check-circle"
+              size="1.2rem"
+              class="admin-panel__ref-icon"
             />
-            <span class="text-sm">
-              <strong>{{ excludedCount }}</strong> addon(s) excluded from upload
-            </span>
+            <div>
+              <p class="admin-panel__ref-label">
+                Update published successfully
+              </p>
+              <p class="admin-panel__ref-value">
+                Share this update ID with users:
+              </p>
+              <code class="admin-panel__ref-code">{{ latestUpdateReference }}</code>
+            </div>
           </div>
           <button
-            class="btn btn-ghost btn-xs text-warning"
-            @click="clearAllExclusions"
+            class="btn btn-outline btn-sm"
+            @click="copyUpdateReference"
           >
-            Clear All
+            <Icon
+              name="mdi:content-copy"
+              size="1.1rem"
+            />
+            Copy ID
           </button>
         </div>
       </div>
+    </div>
 
-      <addon-list
+    <!-- Zone 2: Manifest Display -->
+    <div
+      v-if="manifest"
+      class="admin-panel__manifest"
+    >
+      <AddonList
         :addons="manifest.mods"
         :update-info="manifestStore.updateInfo"
         :excluded-addons="manifestStore.excludedAddons"
         :show-exclusion="true"
+        :show-selection="true"
         title="Mods"
         category="mods"
-        class="mb-4"
+        class="admin-panel__addon-section"
         @toggle-exclusion="handleToggleExclusion"
+        @bulk-actions="handleBulkAction"
       />
-      <addon-list
+      <AddonList
         v-if="manifest.resourcepacks.length > 0"
         :addons="manifest.resourcepacks"
         :update-info="manifestStore.updateInfo"
         :excluded-addons="manifestStore.excludedAddons"
         :show-exclusion="true"
+        :show-selection="true"
         title="Resource Packs"
         category="resourcepacks"
-        class="mb-4"
+        class="admin-panel__addon-section"
         @toggle-exclusion="handleToggleExclusion"
+        @bulk-actions="handleBulkAction"
       />
-      <addon-list
+      <AddonList
         v-if="manifest.shaderpacks.length > 0"
         :addons="manifest.shaderpacks"
         :update-info="manifestStore.updateInfo"
         :excluded-addons="manifestStore.excludedAddons"
         :show-exclusion="true"
+        :show-selection="true"
         title="Shader Packs"
         category="shaderpacks"
-        class="mb-4"
+        class="admin-panel__addon-section"
         @toggle-exclusion="handleToggleExclusion"
+        @bulk-actions="handleBulkAction"
       />
-      <addon-list
+      <AddonList
         v-if="manifest.datapacks.length > 0"
         :addons="manifest.datapacks"
         :update-info="manifestStore.updateInfo"
         :excluded-addons="manifestStore.excludedAddons"
         :show-exclusion="true"
+        :show-selection="true"
         title="Data Packs"
         category="datapacks"
+        class="admin-panel__addon-section"
         @toggle-exclusion="handleToggleExclusion"
+        @bulk-actions="handleBulkAction"
       />
     </div>
 
+    <!-- Empty State -->
     <div
       v-else
-      class="space-y-4"
+      class="admin-panel__empty"
     >
-      <!-- Skeleton loading state -->
-      <div class="flex items-center justify-center p-8 text-center">
-        <div class="space-y-3">
-          <div class="text-gray-400 text-sm">
-            No manifest loaded
-          </div>
-          <div class="text-xs opacity-60">
-            Load a minecraftinstance.json file to see addon details
-          </div>
-          <!-- Skeleton placeholder -->
-          <div class="space-y-2 mt-4">
-            <div class="skeleton h-4 w-32 mx-auto" />
-            <div class="skeleton h-3 w-24 mx-auto" />
-            <div class="skeleton h-3 w-28 mx-auto" />
-          </div>
-        </div>
-      </div>
+      <Icon
+        name="mdi:folder-search"
+        size="3rem"
+        class="admin-panel__empty-icon"
+      />
+      <h3 class="admin-panel__empty-title">
+        No Instance Loaded
+      </h3>
+      <p class="admin-panel__empty-desc">
+        Load a Minecraft instance to preview your mods, resource packs, and shader packs.
+      </p>
+      <button
+        class="btn btn-primary"
+        @click="handleLoadInstance"
+      >
+        <Icon
+          name="mdi:folder-open"
+          size="1.1rem"
+        />
+        Browse for Instance
+      </button>
     </div>
 
-    <!-- Config Files Section -->
-    <config-files-section
+    <!-- Zone 3: Config Files -->
+    <ConfigFilesSection
       v-model="selectedConfigFiles"
-      class="mt-6"
+      class="admin-panel__config"
       @status="handleStatus"
     />
   </div>
@@ -218,7 +202,6 @@ const { loadInstance, saveManifest, uploadToGithub } = useAdminApi()
 const manifestStore = useManifestStore()
 const { $logger: logger } = useNuxtApp()
 
-// Component state
 const uploading = ref(false)
 const progress = ref(0)
 const statusMessage = ref('')
@@ -227,11 +210,20 @@ const selectedConfigFiles = ref<ConfigFileWithContent[]>([])
 const customModpackName = ref('')
 const latestUpdateReference = ref('')
 
-// Computed properties
 const manifest = computed(() => manifestStore.manifest)
-const excludedCount = computed(() => manifestStore.excludedAddons.size)
+const excludedCount = computed(() => manifestStore.excludedAddons.length)
 
-// Status management
+const alertIcon = computed(() =>
+{
+	const icons: Record<string, string> = {
+		success: 'mdi:check-circle',
+		error: 'mdi:alert-circle',
+		warning: 'mdi:alert',
+		info: 'mdi:information'
+	}
+	return icons[statusType.value] ?? icons.info
+})
+
 const clearStatus = () =>
 {
 	statusMessage.value = ''
@@ -249,10 +241,20 @@ const handleStatus = (message: string, type: 'success' | 'error' | 'info' | 'war
 	setStatus(message, type)
 }
 
-// Exclusion handling
 function handleToggleExclusion(addonName: string)
 {
 	manifestStore.toggleExclusion(addonName)
+}
+
+function handleBulkAction(_action: 'exclude', addonNames: string[])
+{
+	for (const addonName of addonNames)
+	{
+		if (!manifestStore.isExcluded(addonName))
+		{
+			manifestStore.toggleExclusion(addonName)
+		}
+	}
 }
 
 function clearAllExclusions()
@@ -260,23 +262,6 @@ function clearAllExclusions()
 	manifestStore.clearExclusions()
 }
 
-// Upload button text - shows 'Upload Config Only' when only config files are selected
-const uploadButtonText = computed(() =>
-	manifest.value === null && selectedConfigFiles.value.length > 0
-		? 'Upload Config Only'
-		: 'Upload to GitHub'
-)
-
-const getUploadButtonDescription = () =>
-{
-	if (uploading.value || (manifest.value == null && selectedConfigFiles.value.length === 0))
-	{
-		return 'upload-disabled-help'
-	}
-	return 'upload-help'
-}
-
-// Action handlers using the composable
 async function handleLoadInstance()
 {
 	clearStatus()
@@ -343,11 +328,10 @@ async function copyUpdateReference()
 	}
 	catch
 	{
-		setStatus('Failed to copy update ID. Please copy it manually.', 'warning')
+		setStatus('Failed to copy update id. Please copy it manually.', 'warning')
 	}
 }
 
-// Navigation state management
 const route = useRoute()
 
 const resetComponentState = () =>
@@ -379,3 +363,108 @@ onUnmounted(() =>
 	logger.info('AdminPanel unmounted')
 })
 </script>
+
+<style scoped>
+.admin-panel {
+  max-width: var(--container-lg);
+  width: 100%;
+  margin: 0 auto;
+}
+
+.admin-panel__progress {
+  margin-bottom: var(--space-4);
+}
+
+.admin-panel__ref-card {
+  margin-bottom: var(--space-6);
+}
+
+.admin-panel__ref {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.admin-panel__ref-info {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.admin-panel__ref-icon {
+  color: var(--color-status-success);
+}
+
+.admin-panel__ref-label {
+  font-weight: 600;
+  font-size: var(--text-body-md-size);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.admin-panel__ref-value {
+  font-size: var(--text-body-sm-size);
+  color: var(--color-text-secondary);
+  margin: var(--space-1) 0 0;
+}
+
+.admin-panel__ref-code {
+  display: inline-block;
+  margin-top: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-overlay);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm-size);
+  color: var(--color-accent-primary);
+  word-break: break-all;
+}
+
+.admin-panel__manifest {
+  margin-bottom: var(--space-6);
+}
+
+.admin-panel__addon-section {
+  margin-bottom: var(--space-6);
+}
+
+.admin-panel__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-16) var(--space-8);
+  text-align: center;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-6);
+}
+
+.admin-panel__empty-icon {
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-4);
+}
+
+.admin-panel__empty-title {
+  font-family: var(--font-heading);
+  font-size: var(--text-heading-md-size);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-2);
+}
+
+.admin-panel__empty-desc {
+  font-size: var(--text-body-md-size);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-6);
+  max-width: 400px;
+}
+
+.admin-panel__config {
+  margin-top: var(--space-6);
+}
+</style>

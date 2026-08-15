@@ -91,7 +91,6 @@
             class="input input-bordered w-full pr-10"
             :class="{
               'input-error': pathValidation && !pathValidation.valid,
-              'input-success': pathValidation && pathValidation.valid,
             }"
             :placeholder="inputPlaceholder"
             @input="validateManualPath"
@@ -102,7 +101,7 @@
               v-if="validating"
               name="mdi:loading"
               size="1.2rem"
-              class="animate-spin text-gray-400"
+              class="animate-spin opacity-50"
             />
             <Icon
               v-else-if="pathValidation && pathValidation.valid"

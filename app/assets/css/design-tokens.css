@@ -1,0 +1,271 @@
+/* ============================================================================
+   CEMM Design Tokens
+   Phase 1 — Single source of truth for the entire design system.
+
+   Theme switching: set data-theme attribute on <html>.
+     Default (no attribute / data-theme="dracula") → dark theme
+     data-theme="nord"                         → light theme
+   ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   1. Color Palette — Dark theme (default)
+   --------------------------------------------------------------------------- */
+:root {
+  /* Surface */
+  --color-surface-base:     #0F1117;
+  --color-surface-raised:   #1A1D26;
+  --color-surface-overlay:  #242833;
+  --color-surface-hover:    #2D3140;
+
+  /* Border */
+  --color-border-subtle:    #2A2D38;
+  --color-border-strong:     #3D4255;
+  --color-border-divider:    rgba(255, 255, 255, 0.06);
+
+  /* Text */
+  --color-text-primary:     #E4E6EB;
+  --color-text-secondary:   #9A9CB0;
+  --color-text-tertiary:    #7D8597;
+  --color-text-inverse:     #0F1117;
+
+  /* Accent */
+  --color-accent-primary:       #E84BBB;
+  --color-accent-primary-hover: #F26DCB;
+  --color-accent-primary-muted: rgba(232, 75, 187, 0.15);
+  --color-accent-secondary:      #8B72FF;
+  --color-accent-secondary-muted: rgba(124, 92, 252, 0.15);
+  --color-accent-tertiary:       #00D4AA;
+  --color-accent-tertiary-muted: rgba(0, 212, 170, 0.15);
+
+  /* Status */
+  --color-status-success:       #22C55E;
+  --color-status-success-muted: rgba(34, 197, 94, 0.15);
+  --color-status-warning:       #F59E0B;
+  --color-status-warning-muted: rgba(245, 158, 11, 0.15);
+  --color-status-error:         #EF4444;
+  --color-status-error-muted:   rgba(239, 68, 68, 0.15);
+  --color-status-info:          #3B82F6;
+  --color-status-info-muted:    rgba(59, 130, 246, 0.15);
+}
+
+/* ---------------------------------------------------------------------------
+   1b. Color Palette — Light theme (Nord)
+   --------------------------------------------------------------------------- */
+[data-theme="nord"] {
+  /* Surface */
+  --color-surface-base:     #FAFAFC;
+  --color-surface-raised:   #FFFFFF;
+  --color-surface-overlay:  #F1F3F5;
+  --color-surface-hover:    #E9ECEF;
+
+  /* Border */
+  --color-border-subtle:    #DEE2E6;
+  --color-border-strong:    #ADB5BD;
+  --color-border-divider:   rgba(0, 0, 0, 0.06);
+
+  /* Text */
+  --color-text-primary:     #1A1D26;
+  --color-text-secondary:   #5C6370;
+  --color-text-tertiary:    #68717A;
+  --color-text-inverse:     #FAFAFC;
+
+  /* Accent */
+  --color-accent-primary:       #C22575;
+  --color-accent-primary-hover: #A61E63;
+  --color-accent-primary-muted: rgba(214, 51, 132, 0.1);
+  --color-accent-secondary:      #6741D9;
+  --color-accent-secondary-muted: rgba(103, 65, 217, 0.1);
+  --color-accent-tertiary:       #087F5B;
+  --color-accent-tertiary-muted: rgba(12, 166, 120, 0.1);
+
+  /* Status */
+  --color-status-success:       #237A35;
+  --color-status-success-muted: rgba(43, 138, 62, 0.1);
+  --color-status-warning:       #A84C00;
+  --color-status-warning-muted: rgba(230, 119, 0, 0.1);
+  --color-status-error:         #C92A2A;
+  --color-status-error-muted:   rgba(201, 42, 42, 0.1);
+  --color-status-info:          #1971C2;
+  --color-status-info-muted:    rgba(25, 113, 194, 0.1);
+}
+
+/* ---------------------------------------------------------------------------
+   2. Typography Scale
+   --------------------------------------------------------------------------- */
+:root {
+  /* Font families */
+  --font-heading: "Space Grotesk", "Inter", sans-serif;
+  --font-sans:     "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono:     "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
+
+  /* Heading XL — 2rem / 2.5rem / 700 / -0.03em */
+  --text-heading-xl-size:          2rem;
+  --text-heading-xl-line-height:   2.5rem;
+  --text-heading-xl-weight:        700;
+  --text-heading-xl-letter-spacing: -0.03em;
+
+  /* Heading LG — 1.5rem / 2rem / 600 / -0.02em */
+  --text-heading-lg-size:          1.5rem;
+  --text-heading-lg-line-height:   2rem;
+  --text-heading-lg-weight:        600;
+  --text-heading-lg-letter-spacing: -0.02em;
+
+  /* Heading MD — 1.25rem / 1.75rem / 600 / -0.01em */
+  --text-heading-md-size:          1.25rem;
+  --text-heading-md-line-height:   1.75rem;
+  --text-heading-md-weight:        600;
+  --text-heading-md-letter-spacing: -0.01em;
+
+  /* Heading SM — 1.125rem / 1.5rem / 600 / 0 */
+  --text-heading-sm-size:          1.125rem;
+  --text-heading-sm-line-height:   1.5rem;
+  --text-heading-sm-weight:        600;
+  --text-heading-sm-letter-spacing: 0;
+
+  /* Body LG — 1rem / 1.625rem / 400 / 0 */
+  --text-body-lg-size:          1rem;
+  --text-body-lg-line-height:   1.625rem;
+  --text-body-lg-weight:        400;
+  --text-body-lg-letter-spacing: 0;
+
+  /* Body MD — 0.875rem / 1.5rem / 400 / 0 */
+  --text-body-md-size:          0.875rem;
+  --text-body-md-line-height:   1.5rem;
+  --text-body-md-weight:        400;
+  --text-body-md-letter-spacing: 0;
+
+  /* Body SM — 0.8125rem / 1.375rem / 400 / 0 */
+  --text-body-sm-size:          0.8125rem;
+  --text-body-sm-line-height:   1.375rem;
+  --text-body-sm-weight:        400;
+  --text-body-sm-letter-spacing: 0;
+
+  /* Body XS — 0.75rem / 1.25rem / 500 / 0.01em */
+  --text-body-xs-size:          0.75rem;
+  --text-body-xs-line-height:   1.25rem;
+  --text-body-xs-weight:        500;
+  --text-body-xs-letter-spacing: 0.01em;
+
+  /* Mono — 0.8125rem / 1.5rem / 450 / 0 */
+  --text-mono-size:          0.8125rem;
+  --text-mono-line-height:   1.5rem;
+  --text-mono-weight:        450;
+  --text-mono-letter-spacing: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   3. Spacing Tokens (4px grid)
+   --------------------------------------------------------------------------- */
+:root {
+  --space-0:  0;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+}
+
+/* ---------------------------------------------------------------------------
+   4. Container Max-Widths
+   --------------------------------------------------------------------------- */
+:root {
+  --container-sm: 640px;
+  --container-md: 768px;
+  --container-lg: 1024px;
+  --container-xl: 1280px;
+}
+
+/* ---------------------------------------------------------------------------
+   5. Elevation System (box-shadows)
+   --------------------------------------------------------------------------- */
+:root {
+  --elev-0: none;
+  --elev-1: 0 1px 2px  rgba(0, 0, 0, 0.3);
+  --elev-2: 0 4px 12px rgba(0, 0, 0, 0.25);
+  --elev-3: 0 8px 24px rgba(0, 0, 0, 0.2);
+  --elev-4: 0 16px 48px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="nord"] {
+  --elev-0: none;
+  --elev-1: 0 1px 2px  rgba(0, 0, 0, 0.12);
+  --elev-2: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --elev-3: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --elev-4: 0 16px 48px rgba(0, 0, 0, 0.06);
+}
+
+/* ---------------------------------------------------------------------------
+   6. Motion Tokens
+   --------------------------------------------------------------------------- */
+:root {
+  --duration-instant: 100ms;
+  --duration-fast:    150ms;
+  --duration-normal:  200ms;
+  --duration-smooth:  300ms;
+  --duration-gentle:  400ms;
+  --duration-slow:    500ms;
+
+  --ease-standard:   cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out:        cubic-bezier(0, 0, 0.2, 1);
+  --ease-in:        cubic-bezier(0.4, 0, 1, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ---------------------------------------------------------------------------
+   7. Icon Sizing
+   --------------------------------------------------------------------------- */
+:root {
+  --icon-xs: 16px;
+  --icon-sm: 20px;
+  --icon-md: 24px;
+  --icon-lg: 32px;
+  --icon-xl: 48px;
+}
+
+/* ---------------------------------------------------------------------------
+   8. Border Radius
+   --------------------------------------------------------------------------- */
+:root {
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-full: 9999px;
+}
+
+/* ---------------------------------------------------------------------------
+   9. Focus Ring
+   --------------------------------------------------------------------------- */
+:root {
+  --focus-ring:        0 0 0 2px var(--color-accent-primary);
+  --focus-ring-offset: 0 0 0 2px var(--color-surface-base), 0 0 0 4px var(--color-accent-primary);
+}
+
+/* ---------------------------------------------------------------------------
+   10. Reduced Motion — media query override
+   --------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-fast:    0ms;
+    --duration-normal:  0ms;
+    --duration-smooth:  50ms;
+    --duration-gentle:  50ms;
+    --duration-slow:    50ms;
+  }
+}
+
+/* 10b. Reduced Motion — class-based override (user-level control) */
+.motion-reduced {
+  --duration-instant: 0ms;
+  --duration-fast:    0ms;
+  --duration-normal:  0ms;
+  --duration-smooth:  50ms;
+  --duration-gentle:  50ms;
+  --duration-slow:    50ms;
+}

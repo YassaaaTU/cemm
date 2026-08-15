@@ -27,7 +27,7 @@
       <div class="progress-bar">
         <div
           class="progress-fill"
-          :style="{ width: `${Math.min(100, Math.max(0, progress))}%` }"
+          :style="{ transform: `scaleX(${Math.min(100, Math.max(0, progress)) / 100})` }"
         />
       </div>
       <div class="progress-text">
@@ -166,17 +166,19 @@ const messageClass = computed(() =>
 {
 	width: 100%;
 	height: 0.5rem;
-	background: rgba(255, 255, 255, 0.2);
+	background: var(--color-surface-overlay, rgba(255, 255, 255, 0.2));
 	border-radius: 0.25rem;
 	overflow: hidden;
 }
 
 .progress-fill
 {
+	width: 100%;
 	height: 100%;
-	background: linear-gradient(90deg, #06b6d4, #3b82f6);
+	background: linear-gradient(90deg, var(--color-accent-primary), var(--color-accent-secondary, var(--color-accent-primary)));
 	border-radius: 0.25rem;
-	transition: width 0.3s ease;
+	transform-origin: left;
+	transition: transform var(--duration-smooth) var(--ease-standard);
 }
 
 .progress-text
@@ -186,17 +188,8 @@ const messageClass = computed(() =>
 	opacity: 0.8;
 }
 
-/* Dark mode support */
-@media (prefers-color-scheme: dark)
+.loading-overlay
 {
-	.loading-overlay
-	{
-		background: rgba(0, 0, 0, 0.3);
-	}
-
-	.progress-bar
-	{
-		background: rgba(255, 255, 255, 0.1);
-	}
+	background: color-mix(in srgb, var(--color-surface-overlay, #000) 30%, transparent);
 }
 </style>

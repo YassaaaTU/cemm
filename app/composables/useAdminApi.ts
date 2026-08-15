@@ -287,10 +287,10 @@ export function useAdminApi()
 				const excludedSet = manifestStore.excludedAddons
 				manifestWithConfig = {
 					updateType: 'full',
-					mods: manifest.mods.filter((m) => !excludedSet.has(m.addon_name)),
-					resourcepacks: manifest.resourcepacks.filter((r) => !excludedSet.has(r.addon_name)),
-					shaderpacks: manifest.shaderpacks.filter((s) => !excludedSet.has(s.addon_name)),
-					datapacks: manifest.datapacks.filter((d) => !excludedSet.has(d.addon_name)),
+					mods: manifest.mods.filter((m) => !excludedSet.includes(m.addon_name)),
+					resourcepacks: manifest.resourcepacks.filter((r) => !excludedSet.includes(r.addon_name)),
+					shaderpacks: manifest.shaderpacks.filter((s) => !excludedSet.includes(s.addon_name)),
+					datapacks: manifest.datapacks.filter((d) => !excludedSet.includes(d.addon_name)),
 					config_files: configFiles.map((cf) => ({
 						filename: cf.filename,
 						relative_path: cf.relative_path

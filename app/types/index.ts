@@ -79,12 +79,3 @@ export interface UpdateDiff
 	updated_addon_ids: number[] // project IDs of addons that were updated (matched by project_id for reliability)
 	new_addons: string[] // completely new addon names
 }
-
-export interface UpdatePreview
-{
-	oldManifest: Manifest | null
-	newManifest: Manifest
-	diff: UpdateDiff
-	hasChanges: boolean
-	configFiles?: ConfigFileWithContent[]
-}

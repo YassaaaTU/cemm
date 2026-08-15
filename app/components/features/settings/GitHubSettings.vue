@@ -1,87 +1,131 @@
 <template>
-  <div>
-    <h2 class="font-semibold mb-2">
-      GitHub Settings
-    </h2>
-    <div v-if="loading">
-      Loading...
-    </div>    <div v-else>
-      <form
-        class="space-y-4"
-        @submit.prevent="saveSettings"
-      >
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend">
-            Modpack Updates Repository
-          </legend>
-          <input
-            id="github-repo"
-            v-model="githubRepo"
-            type="text"
-            class="input input-bordered w-full"
-            placeholder="user/repo (e.g., john/my-modpack-updates)"
-            autocomplete="off"
-            required
-          />
-          <p class="label">
-            Required: The GitHub repository where modpack updates will be stored (not the app repository)
-          </p>
-        </fieldset>
+  <div class="github-settings">
+    <div
+      v-if="loading"
+      class="github-settings__loading"
+    >
+      <span class="loading loading-spinner loading-sm" />
+      <span>Loading settings...</span>
+    </div>
 
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend">
-            GitHub Token (Optional)
-          </legend>
-          <input
-            id="github-token"
-            v-model="githubToken"
-            type="password"
-            class="input input-bordered w-full"
-            placeholder="Personal Access Token (optional for public repos)"
-            autocomplete="off"
-          />
-          <p class="label">
-            Optional: Required only for private repositories or enhanced rate limits
-          </p>
-        </fieldset>
+    <form
+      v-else
+      class="github-settings__form"
+      @submit.prevent="saveSettings"
+    >
+      <div class="github-settings__field">
+        <label
+          class="label"
+          for="github-repo"
+        >
+          <span class="label-text">Modpack Updates Repository</span>
+        </label>
+        <input
+          id="github-repo"
+          v-model="githubRepo"
+          type="text"
+          class="input input-bordered w-full"
+          :class="{ 'input-error': !!fieldErrors.repo }"
+          placeholder="user/repo (e.g., john/my-modpack-updates)"
+          autocomplete="off"
+        />
+        <div class="label">
+          <span
+            v-if="fieldErrors.repo"
+            class="label-text-alt text-error"
+          >{{ fieldErrors.repo }}</span>
+          <span
+            v-else
+            class="label-text-alt"
+          >Required: The GitHub repository where modpack updates will be stored (not the app repository)</span>
+        </div>
+      </div>
 
+      <div class="github-settings__field">
+        <label
+          class="label"
+          for="github-token"
+        >
+          <span class="label-text">GitHub Token (Optional)</span>
+        </label>
+        <input
+          id="github-token"
+          v-model="githubToken"
+          type="password"
+          class="input input-bordered w-full"
+          placeholder="Personal Access Token (optional for public repos)"
+          autocomplete="off"
+        />
+        <div class="label">
+          <span class="label-text-alt">Optional: Required only for private repositories or enhanced rate limits</span>
+        </div>
+      </div>
+
+      <div class="github-settings__actions">
         <button
           type="submit"
           class="btn btn-primary w-full"
           :disabled="loading || !githubRepo.trim()"
         >
-          Save Settings
+          <span
+            v-if="loading"
+            class="loading loading-spinner loading-xs"
+          />
+          <Icon
+            v-else
+            name="mdi:content-save"
+            size="1.1rem"
+          />
+          <span>{{ loading ? 'Saving...' : 'Save Settings' }}</span>
         </button>
-        <div v-if="loading">
-          Saving...
-        </div>        <div
-          v-if="error"
-          class="mt-4 text-red-600 text-sm"
+      </div>
+
+      <div
+        v-if="error"
+        class="alert alert-error github-settings__alert"
+        role="alert"
+      >
+        <Icon name="mdi:alert-circle" />
+        <span>{{ error }}</span>
+        <button
+          class="btn btn-sm btn-ghost"
+          aria-label="Dismiss error message"
+          @click="error = ''"
         >
-          {{ error }}
-        </div>
-        <div
-          v-else-if="successMessage"
-          class="mt-4 text-green-600 text-sm"
+          <Icon
+            name="mdi:close"
+            size="1.2rem"
+          />
+        </button>
+      </div>
+
+      <div
+        v-else-if="successMessage"
+        class="alert alert-success github-settings__alert"
+        role="alert"
+      >
+        <Icon name="mdi:check-circle" />
+        <span>{{ successMessage }}</span>
+        <button
+          class="btn btn-sm btn-ghost"
+          aria-label="Dismiss success message"
+          @click="successMessage = ''"
         >
-          {{ successMessage }}
-        </div>
-      </form>
-    </div>
+          <Icon
+            name="mdi:close"
+            size="1.2rem"
+          />
+        </button>
+      </div>
+    </form>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-
-import { useSecureStorage } from '~/composables/useSecureStorage'
-import { useAppStore } from '~/stores/app'
-
 const appStore = useAppStore()
 const { setSecure, getSecure } = useSecureStorage()
 const { $logger: logger } = useNuxtApp()
 
-// Use computed for githubRepo to ensure reactivity and persistence
 const githubRepo = computed({
 	get: () => appStore.githubRepo,
 	set: (val: string) =>
@@ -94,6 +138,7 @@ const tokenSaved = ref(false)
 const loading = ref(false)
 const error = ref('')
 const successMessage = ref('')
+const fieldErrors = ref<{ repo?: string }>({})
 
 onMounted(async () =>
 {
@@ -105,7 +150,6 @@ onMounted(async () =>
 		logger.info('Loading GitHub settings...')
 		logger.info('Current store githubRepo value', { repo: appStore.githubRepo })
 
-		// Load token from secure storage
 		const token = await getSecure('cemm_github_token')
 		githubToken.value = token ?? ''
 		tokenSaved.value = githubToken.value.length > 0
@@ -135,18 +179,26 @@ const saveSettings = async () =>
 	loading.value = true
 	error.value = ''
 	successMessage.value = ''
+	fieldErrors.value = {}
 	const t0 = performance.now()
 	try
 	{
 		logger.info('Saving GitHub settings...')
 		logger.info('Before save - githubRepo value', { repo: githubRepo.value })
-		// Validate inputs
+
 		if (!githubRepo.value.trim())
 		{
+			fieldErrors.value.repo = 'GitHub repository is required'
 			throw new Error('GitHub repository is required')
 		}
 
-		// Save repo to app store (persisted automatically)
+		const repoPattern = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/
+		if (!repoPattern.test(githubRepo.value.trim()))
+		{
+			fieldErrors.value.repo = 'Invalid format. Use "owner/repo" (e.g., YassaaaTU/cemm-updates)'
+			throw new Error('Invalid repository format')
+		}
+
 		appStore.githubRepo = githubRepo.value.trim()
 
 		logger.info('After save - store githubRepo value', {
@@ -154,7 +206,6 @@ const saveSettings = async () =>
 			computedRepo: githubRepo.value
 		})
 
-		// Save token to secure storage (if provided)
 		if (githubToken.value.trim())
 		{
 			await setSecure('cemm_github_token', githubToken.value.trim())
@@ -162,7 +213,6 @@ const saveSettings = async () =>
 		}
 		else
 		{
-			// Clear token if empty
 			await setSecure('cemm_github_token', '')
 			tokenSaved.value = false
 		}
@@ -170,7 +220,6 @@ const saveSettings = async () =>
 
 		logger.info('GitHub settings saved successfully')
 
-		// Clear success message after 3 seconds
 		setTimeout(() =>
 		{
 			successMessage.value = ''
@@ -190,5 +239,35 @@ const saveSettings = async () =>
 		logger.info('GitHub settings save time (ms)', { duration: t1 - t0 })
 	}
 }
-// Next step: optimize useSecureStorage if timing logs show slow performance
 </script>
+
+<style scoped>
+.github-settings__loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--text-body-md-size);
+  padding: var(--space-4) 0;
+}
+
+.github-settings__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.github-settings__field {
+  display: flex;
+  flex-direction: column;
+}
+
+.github-settings__actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.github-settings__alert {
+  margin-top: var(--space-2);
+}
+</style>
