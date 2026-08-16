@@ -16,7 +16,17 @@ export default defineNuxtConfig({
 			}
 		],
 		'@vueuse/nuxt',
-		'@nuxt/icon',
+		[
+			'@nuxt/icon',
+			{
+				// Tauri builds must keep icons available offline instead of falling
+				// back to the public Iconify API at runtime.
+				provider: 'none',
+				clientBundle: {
+					scan: true
+				}
+			}
+		],
 		'@pinia/nuxt',
 		'pinia-plugin-persistedstate'
 	],
@@ -122,7 +132,7 @@ export default defineNuxtConfig({
 			{
 				const warningMessage = typeof warning.message === 'string' ? warning.message : ''
 				if (
-					warningMessage.includes('@nuxt/nitro-server/dist/runtime/utils/cache-driver.js')
+					warningMessage.includes('@nuxt/nitro-server/dist/runtime/utils/cache-driver.')
 					&& warningMessage.includes('virtual:#nitro-internal-virtual/storage')
 				)
 				{
@@ -139,8 +149,12 @@ export default defineNuxtConfig({
 		],
 		build: {
 			sourcemap: false,
-			// Code splitting for better performance
-			rollupOptions: {
+			rolldownOptions: {
+				// Tailwind is expected to dominate this small app's fast production
+				// build, so Rolldown's relative plugin-timing warning is not actionable.
+				checks: {
+					pluginTimings: false
+				},
 				onwarn(warning, warn)
 				{
 					const warningMessage = typeof warning.message === 'string' ? warning.message : ''
@@ -158,25 +172,15 @@ export default defineNuxtConfig({
 					warn(warning)
 				},
 				output: {
-					manualChunks: {
-						vendor: ['vue', 'pinia'],
-						tauri: ['@tauri-apps/api']
-						// tailwindcss was listed here too, but it's a build-time Vite/PostCSS
-						// plugin, never present in the client module graph — the chunk it
-						// produced was always empty (F-P3-5, confirmed via build output).
+					minify: {
+						compress: {
+							dropConsole: true,
+							dropDebugger: true
+						}
 					}
 				}
 			},
-			// Optimize chunks
-			chunkSizeWarningLimit: 1600,
-			// Enable minification
-			minify: 'terser',
-			terserOptions: {
-				compress: {
-					drop_console: true,
-					drop_debugger: true
-				}
-			}
+			chunkSizeWarningLimit: 1600
 		},
 		// Optimize deps
 		optimizeDeps: {
