@@ -61,11 +61,6 @@ pub fn run() {
                 )?;
             }
 
-            // Secure storage setup
-            app.handle()
-                .plugin(tauri_plugin_keyring::init())
-                .expect("failed to setup keyring plugin");
-
             // Process plugin for restart functionality
             #[cfg(desktop)]
             app.handle()
