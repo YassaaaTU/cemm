@@ -3,29 +3,17 @@ import type { RouterOptions } from '@nuxt/schema'
 export default {
 	scrollBehavior(to, _from, savedPosition)
 	{
-		return new Promise((resolve, _reject) =>
+		// The 100ms setTimeout this used to wrap every resolution in didn't
+		// correspond to anything — the page transition runs on --duration-smooth
+		// (300ms), so this was just added latency on every navigation (F-P3-11).
+		if (savedPosition != null)
 		{
-			setTimeout(() =>
-			{
-				if (savedPosition != null)
-				{
-					resolve(savedPosition)
-				}
-				else
-				{
-					if (to.hash)
-					{
-						resolve({
-							el: to.hash,
-							top: 0
-						})
-					}
-					else
-					{
-						resolve({ top: 0 })
-					}
-				}
-			}, 100)
-		})
+			return savedPosition
+		}
+		if (to.hash)
+		{
+			return { el: to.hash, top: 0 }
+		}
+		return { top: 0 }
 	}
 } satisfies RouterOptions

@@ -11,7 +11,6 @@ export default {
 		'package.json',
 		'src-tauri/Cargo.toml',
 		'src-tauri/tauri.conf.json',
-		'.github/workflows/release.yml',
 		'.env'
 	],
 	cargo: {
@@ -31,13 +30,11 @@ export default {
 	changelog: true,
 	replacers: [
 		{
-			file: '.github/workflows/release.yml',
-			regex: /(tagName:\s*cemm-v)[0-9.]+/g,
-			replacer: (content: string, version: string) =>
-				content.replace(/(tagName:\s*cemm-v)[0-9.]+/g, `$1${version}`)
-					.replace(/(releaseName:\s*'CEMM v)[0-9.]+/g, `$1${version}'`)
-		},
-		{
+			// release.yml reads tagName/releaseName from the GitHub release event
+			// itself (github.event.release.tag_name / .name) rather than a literal
+			// version string, so it has nothing for bumpp to replace here — the
+			// previous replacer targeted a `cemm-v`/`CEMM v` pattern the workflow
+			// no longer contains and silently matched nothing on every run (F-P3-4).
 			file: '.env',
 			regex: /(VERSION=)[0-9.]+/g,
 			replacer: (content: string, version: string) =>
