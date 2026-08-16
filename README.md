@@ -1,17 +1,17 @@
 # CEMM - ChillEcke Modpack Manager
 
-CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes it easier for you and your friends to play pre-existing CurseForge modpacks with custom modifications. Built with Nuxt 3 frontend and Tauri/Rust backend, it provides two main modes:
+CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes it easier for you and your friends to play pre-existing CurseForge modpacks with custom modifications. Built with Nuxt 4 frontend and Tauri/Rust backend, it provides two main modes:
 
-- **Admin Mode**: Modify a downloaded CurseForge modpack (add, remove, or update addons and config files) → Generate UUID and upload changes to GitHub
-- **User Mode**: Paste the UUID code from admin → Select correct modpack directory → Install the modifications automatically
+- **Admin Mode**: Modify a downloaded CurseForge modpack (add, remove, or update addons and config files) → Generate an update code and upload changes to GitHub
+- **User Mode**: Paste the update code from admin → Select correct modpack directory → Install the modifications automatically
 
 ## Features
-- **Modpack Modification**: Add, remove, or update mods/resourcepacks/shaderpacks from CurseForge modpacks
+- **Modpack Modification**: Add, remove, or update mods/resourcepacks/shaderpacks/datapacks from CurseForge modpacks
 - **Addon Exclusion**: Exclude specific mods or resourcepacks from the uploaded instance without removing them locally
 - **Config File Distribution**: Share custom configuration files with your friends
-- **Easy Sharing**: Generate UUID codes for simple modpack distribution
+- **Easy Sharing**: Generate update codes for simple modpack distribution
 - **GitHub Integration**: Secure distribution via GitHub repositories
-- **Automatic Installation**: Users can install modifications with a single UUID code
+- **Automatic Installation**: Users can install modifications with a single update code
 - **Cross-Platform**: Works on Windows *AND SHOULD* work on macOS and Linux, never tested on these platforms
 
 ## Usage
@@ -26,25 +26,24 @@ CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes
    - Excluded addons are marked with strikethrough styling
    - They remain in your local modpack but won't be included in the distributed instance
    - Useful for keeping server-side mods private or excluding platform-specific addons
-5. Generate UUID and upload to your GitHub repository
-6. Share the UUID with users for easy installation
+5. Generate an update code and upload to your GitHub repository
+6. Share the update code with users for easy installation
 
 ### User Mode
 1. Configure your GitHub repository settings
-2. Enter the UUID code provided by the admin
+2. Enter the update code provided by the admin (`modpack-key/uuid`, or just the UUID for older updates)
 3. Preview what changes will be applied
 4. Install the update to your modpack directory
 
 ### Settings
-- GitHub repository name from which to download updates using the UUID
+- GitHub repository name from which to download updates using the update code
 - Github token for secure access to private repositories (only needed for admin mode)
 
 ## Getting Started (Contribute/Development)
 
 ### Prerequisites
-- Node.js (>= 18.x)
-- Bun Package Manager
-- Rust (>= 1.70)
+- Bun Package Manager (>= 1.3.11) — this project uses Bun instead of Node/npm; `bun install` refuses to run under npm/yarn/pnpm
+- Rust (>= 1.88.0)
 - Git
 - VS Code (recommended for development)
 
@@ -73,19 +72,19 @@ bun app:build
 ### Project Structure
 ```
 cemm/
-├── app/                    # Nuxt 3 frontend
-│   ├── components/         # Vue components
-│   ├── pages/             # Application pages
-│   ├── stores/            # Pinia state management
-│   └── composables/       # Reusable logic
-├── src-tauri/             # Tauri backend
-│   ├── src/               # Rust source code
-│   └── Cargo.toml         # Rust dependencies
-└── types/                 # TypeScript type definitions
+├── app/                # Nuxt 4 frontend
+│   ├── components/     # Vue components
+│   ├── pages/          # Application pages
+│   ├── stores/         # Pinia state management
+│   ├── composables/    # Reusable logic
+│   └── types/          # TypeScript type definitions
+├── src-tauri/          # Tauri backend
+│   ├── src/            # Rust source code
+│   └── Cargo.toml      # Rust dependencies
 ```
 
 ### Tech Stack
-- **Frontend**: Nuxt 3, Vue 3, TypeScript, Tailwind CSS v4, DaisyUI, Pinia
+- **Frontend**: Nuxt 4, Vue 3, TypeScript, Tailwind CSS v4, DaisyUI, Pinia
 - **Backend**: Tauri, Rust, Serde, Tokio
 - **Storage**: GitHub API, Tauri Keyring (secure token storage)
 - **Development**: Bun package manager, ESLint, Pino logging
