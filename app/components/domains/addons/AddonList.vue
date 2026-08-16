@@ -212,10 +212,12 @@ const filteredItems = computed(() =>
 	)
 })
 
-const useVirtualScrolling = computed(() => filteredItems.value.length > props.virtualScrollThreshold)
-
 const displayedAddons = computed(() =>
 	filteredItems.value.filter((a) => a.disabled !== true)
+)
+const useVirtualScrolling = computed(() =>
+	currentLayout.value === 'list'
+	&& displayedAddons.value.length > props.virtualScrollThreshold
 )
 const totalAddons = computed(() => props.addons.length)
 
