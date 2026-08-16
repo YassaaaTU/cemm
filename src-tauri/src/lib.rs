@@ -406,112 +406,340 @@ fn read_directory_recursive(
     dir_path: String,
     base_path: String,
 ) -> Result<Vec<ConfigFileWithContent>, String> {
-    use std::path::Path;
+    read_directory_recursive_with_limits(
+        std::path::Path::new(&dir_path),
+        std::path::Path::new(&base_path),
+        ScanLimits::production(),
+    )
+}
 
-    let mut config_files = Vec::new();
-    let dir = Path::new(&dir_path);
-    let base = Path::new(&base_path);
+#[derive(Clone, Copy, Debug)]
+struct ScanLimits {
+    max_depth: usize,
+    max_files: usize,
+    max_file_bytes: u64,
+    max_total_bytes: u64,
+}
 
-    fn collect_files(
-        dir: &Path,
-        base: &Path,
-        config_files: &mut Vec<ConfigFileWithContent>,
-    ) -> Result<(), String> {
-        let entries = std::fs::read_dir(dir)
-            .map_err(|e| format!("Failed to read directory {}: {}", dir.display(), e))?;
-
-        for entry in entries {
-            let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
-            let path = entry.path();
-
-            if path.is_file() {
-                // Check if file has a config-related extension
-                if let Some(ext) = path.extension() {
-                    let ext_str = ext.to_string_lossy().to_lowercase();
-                    if matches!(
-                        ext_str.as_str(),
-                        "cfg"
-                            | "txt"
-                            | "json"
-                            | "json5"
-                            | "toml"
-                            | "properties"
-                            | "conf"
-                            | "yaml"
-                            | "yml"
-                            | "ini"
-                            | "xml"
-                            | "js"
-                            | "ts"
-                            | "groovy"
-                            | "kts"
-                            | "mcmeta"
-                            | "snbt"
-                            | "nbt"
-                            | "dat"
-                            | "emotecraft" // Added support for .emotecraft files
-                    ) {
-                        // Try reading as text first, fallback to binary for files like .emotecraft
-                        let content = match std::fs::read_to_string(&path) {
-                            Ok(text_content) => text_content,
-                            Err(_) => {
-                                // File is likely binary, read as bytes and encode as base64
-                                match std::fs::read(&path) {
-                                    Ok(bytes) => {
-                                        use base64::engine::general_purpose::STANDARD;
-                                        use base64::Engine;
-                                        let encoded = STANDARD.encode(&bytes);
-                                        format!("data:application/octet-stream;base64,{}", encoded)
-                                    }
-                                    Err(e) => {
-                                        return Err(format!(
-                                            "Failed to read file {}: {}",
-                                            path.display(),
-                                            e
-                                        ))
-                                    }
-                                }
-                            }
-                        };
-
-                        // Calculate relative path from base directory
-                        let relative_path = path
-                            .strip_prefix(base)
-                            .map_err(|_| {
-                                format!("Failed to make path relative: {}", path.display())
-                            })?
-                            .to_string_lossy()
-                            .replace('\\', "/"); // Normalize path separators
-                        let filename = path
-                            .file_name()
-                            .ok_or_else(|| {
-                                format!("Failed to get filename from path: {}", path.display())
-                            })?
-                            .to_string_lossy()
-                            .to_string();
-
-                        // Check if this is a binary file based on content or extension
-                        let is_binary = content
-                            .starts_with("data:application/octet-stream;base64,")
-                            || ext_str == "emotecraft";
-
-                        config_files.push(ConfigFileWithContent {
-                            filename,
-                            relative_path,
-                            content,
-                            is_binary: Some(is_binary),
-                        });
-                    }
-                }
-            } else if path.is_dir() {
-                // Recursively process subdirectories
-                collect_files(&path, base, config_files)?;
-            }
+impl ScanLimits {
+    const fn production() -> Self {
+        Self {
+            max_depth: 64,
+            max_files: 10_000,
+            max_file_bytes: 128 * 1024 * 1024,
+            max_total_bytes: 1024 * 1024 * 1024,
         }
-        Ok(())
+    }
+}
+
+fn is_supported_config_extension(extension: &str) -> bool {
+    matches!(
+        extension,
+        "cfg"
+            | "txt"
+            | "json"
+            | "json5"
+            | "toml"
+            | "properties"
+            | "conf"
+            | "yaml"
+            | "yml"
+            | "ini"
+            | "xml"
+            | "js"
+            | "ts"
+            | "groovy"
+            | "kts"
+            | "mcmeta"
+            | "snbt"
+            | "nbt"
+            | "dat"
+            | "emotecraft"
+    )
+}
+
+fn read_limited<R: std::io::Read>(reader: R, limit: u64) -> Result<Vec<u8>, std::io::Error> {
+    use std::io::Read;
+
+    let mut bytes = Vec::new();
+    reader
+        .take(limit.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn split_root_path(
+    path: &std::path::Path,
+) -> Result<(std::path::PathBuf, Vec<std::ffi::OsString>), String> {
+    use std::path::Component;
+
+    if path.as_os_str().is_empty() {
+        return Err("Config import directory path must not be empty".to_string());
     }
 
-    collect_files(dir, base, &mut config_files)?;
+    let mut components = path.components();
+    let anchor = if path.is_absolute() {
+        let mut anchor = std::path::PathBuf::new();
+        loop {
+            match components.next() {
+                Some(Component::Prefix(prefix)) => anchor.push(prefix.as_os_str()),
+                Some(Component::RootDir) => {
+                    anchor.push(std::path::MAIN_SEPARATOR.to_string());
+                    break anchor;
+                }
+                _ => {
+                    return Err(format!(
+                        "Unsupported absolute config import root: {}",
+                        path.display()
+                    ));
+                }
+            }
+        }
+    } else {
+        std::path::PathBuf::from(".")
+    };
+
+    let mut names = Vec::new();
+    for component in components {
+        match component {
+            Component::Normal(name) => names.push(name.to_os_string()),
+            Component::CurDir if names.is_empty() => {}
+            _ => {
+                return Err(format!(
+                    "Unsupported config import root component in {}",
+                    path.display()
+                ));
+            }
+        }
+    }
+
+    Ok((anchor, names))
+}
+
+fn read_directory_recursive_with_limits(
+    dir: &std::path::Path,
+    base: &std::path::Path,
+    limits: ScanLimits,
+) -> Result<Vec<ConfigFileWithContent>, String> {
+    use cap_fs_ext::{OpenOptionsFollowExt, OpenOptionsMaybeDirExt};
+    use cap_primitives::fs::{
+        open, open_ambient_dir, open_dir_nofollow, read_base_dir, stat, FollowSymlinks, OpenOptions,
+    };
+
+    fn open_root_directory(path: &std::path::Path) -> Result<fs::File, String> {
+        let (anchor, components) = split_root_path(path)?;
+
+        let mut directory = open_ambient_dir(&anchor, cap_primitives::ambient_authority())
+            .map_err(|e| {
+                format!(
+                    "Failed to open filesystem anchor {}: {}",
+                    anchor.display(),
+                    e
+                )
+            })?;
+        for name in components {
+            directory =
+                open_dir_nofollow(&directory, std::path::Path::new(&name)).map_err(|e| {
+                    format!(
+                        "Failed to open root directory component without following links in {}: {}",
+                        path.display(),
+                        e
+                    )
+                })?;
+        }
+
+        Ok(directory)
+    }
+
+    let root = open_root_directory(dir)?;
+    if !root
+        .metadata()
+        .map_err(|e| {
+            format!(
+                "Failed to inspect opened directory {}: {}",
+                dir.display(),
+                e
+            )
+        })?
+        .is_dir()
+    {
+        return Err(format!("Path is not a directory: {}", dir.display()));
+    }
+    let mut config_files = Vec::new();
+    let mut total_bytes = 0_u64;
+    let mut directories = vec![(root, dir.to_path_buf(), 0_usize)];
+
+    while let Some((current_dir, current_path, depth)) = directories.pop() {
+        let entries = read_base_dir(&current_dir)
+            .map_err(|e| format!("Failed to read directory {}: {}", current_path.display(), e))?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| {
+                format!("Failed to read entry in {}: {}", current_path.display(), e)
+            })?;
+            let name = entry.file_name();
+            let path = current_path.join(&name);
+            let metadata = stat(
+                &current_dir,
+                std::path::Path::new(&name),
+                FollowSymlinks::No,
+            )
+            .map_err(|e| format!("Failed to inspect path {}: {}", path.display(), e))?;
+
+            if metadata.file_type().is_symlink() {
+                log::warn!("Skipping symlink during config import: {}", path.display());
+                continue;
+            }
+
+            if metadata.is_dir() {
+                let child_depth = depth + 1;
+                if child_depth > limits.max_depth {
+                    return Err(format!(
+                        "Config import depth limit ({}) exceeded at {} (depth {})",
+                        limits.max_depth,
+                        path.display(),
+                        child_depth
+                    ));
+                }
+                let child_dir = open_dir_nofollow(&current_dir, std::path::Path::new(&name))
+                    .map_err(|e| {
+                        format!(
+                            "Failed to open directory without following links {}: {}",
+                            path.display(),
+                            e
+                        )
+                    })?;
+                if !child_dir
+                    .metadata()
+                    .map_err(|e| {
+                        format!(
+                            "Failed to inspect opened directory {}: {}",
+                            path.display(),
+                            e
+                        )
+                    })?
+                    .is_dir()
+                {
+                    return Err(format!("Path is not a directory: {}", path.display()));
+                }
+                directories.push((child_dir, path, child_depth));
+                continue;
+            }
+
+            if !metadata.is_file() {
+                continue;
+            }
+
+            let Some(extension) = path.extension() else {
+                continue;
+            };
+            let extension = extension.to_string_lossy().to_lowercase();
+            if !is_supported_config_extension(&extension) {
+                continue;
+            }
+
+            let mut options = OpenOptions::new();
+            options
+                .read(true)
+                .follow(FollowSymlinks::No)
+                .maybe_dir(false);
+            let mut file =
+                open(&current_dir, std::path::Path::new(&name), &options).map_err(|e| {
+                    format!(
+                        "Failed to open file without following links {}: {}",
+                        path.display(),
+                        e
+                    )
+                })?;
+            let opened_metadata = file
+                .metadata()
+                .map_err(|e| format!("Failed to inspect opened file {}: {}", path.display(), e))?;
+            if !opened_metadata.is_file() {
+                return Err(format!("Path is not a regular file: {}", path.display()));
+            }
+
+            if config_files.len() >= limits.max_files {
+                return Err(format!(
+                    "Config import file limit ({}) exceeded at {}",
+                    limits.max_files,
+                    path.display()
+                ));
+            }
+
+            let file_bytes = opened_metadata.len();
+            if file_bytes > limits.max_file_bytes {
+                return Err(format!(
+                    "Config import per-file size limit ({} bytes) exceeded at {} ({} bytes)",
+                    limits.max_file_bytes,
+                    path.display(),
+                    file_bytes
+                ));
+            }
+            if file_bytes > limits.max_total_bytes.saturating_sub(total_bytes) {
+                return Err(format!(
+                    "Config import aggregate size limit ({} bytes) exceeded at {}",
+                    limits.max_total_bytes,
+                    path.display()
+                ));
+            }
+
+            let remaining_bytes = limits.max_total_bytes - total_bytes;
+            let read_limit = limits.max_file_bytes.min(remaining_bytes);
+            let bytes = read_limited(&mut file, read_limit)
+                .map_err(|e| format!("Failed to read file {}: {}", path.display(), e))?;
+            if bytes.len() as u64 > read_limit {
+                let (limit_name, limit_value, remaining_context) =
+                    if limits.max_file_bytes <= remaining_bytes {
+                        ("per-file", limits.max_file_bytes, String::new())
+                    } else {
+                        (
+                            "aggregate",
+                            limits.max_total_bytes,
+                            format!(" ({} bytes remained)", remaining_bytes),
+                        )
+                    };
+                return Err(format!(
+                    "Config import {limit_name} size limit ({limit_value} bytes) exceeded while reading {}{remaining_context}",
+                    path.display(),
+                ));
+            }
+            let raw_bytes = bytes.len() as u64;
+
+            let content = match String::from_utf8(bytes) {
+                Ok(text_content) => text_content,
+                Err(error) => {
+                    use base64::engine::general_purpose::STANDARD;
+                    use base64::Engine;
+                    format!(
+                        "data:application/octet-stream;base64,{}",
+                        STANDARD.encode(error.into_bytes())
+                    )
+                }
+            };
+
+            let relative_path = path
+                .strip_prefix(base)
+                .map_err(|_| format!("Failed to make path relative: {}", path.display()))?
+                .to_string_lossy()
+                .replace('\\', "/");
+            let filename = path
+                .file_name()
+                .ok_or_else(|| format!("Failed to get filename from path: {}", path.display()))?
+                .to_string_lossy()
+                .to_string();
+            let is_binary = content.starts_with("data:application/octet-stream;base64,")
+                || extension == "emotecraft";
+
+            total_bytes += raw_bytes;
+            config_files.push(ConfigFileWithContent {
+                filename,
+                relative_path,
+                content,
+                is_binary: Some(is_binary),
+            });
+        }
+    }
+
     Ok(config_files)
 }
 
@@ -642,6 +870,236 @@ use crate::composables::github::ConfigFileWithContent;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_limits() -> ScanLimits {
+        ScanLimits {
+            max_depth: 8,
+            max_files: 8,
+            max_file_bytes: 64,
+            max_total_bytes: 128,
+        }
+    }
+
+    fn write_test_file(dir: &std::path::Path, relative_path: &str, contents: &[u8]) {
+        let path = dir.join(relative_path);
+        fs::create_dir_all(path.parent().expect("test file must have a parent"))
+            .expect("failed to create test directory");
+        fs::write(path, contents).expect("failed to write test file");
+    }
+
+    #[test]
+    fn directory_import_preserves_nested_relative_paths() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        write_test_file(temp.path(), "config/inner/settings.toml", b"enabled = true");
+
+        let files = read_directory_recursive_with_limits(temp.path(), temp.path(), test_limits())
+            .expect("nested config file should import");
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "settings.toml");
+        assert_eq!(files[0].relative_path, "config/inner/settings.toml");
+        assert_eq!(files[0].content, "enabled = true");
+    }
+
+    #[test]
+    fn directory_import_ignores_unsupported_files_when_enforcing_limits() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        write_test_file(temp.path(), "ignored.bin", &[0; 100]);
+        write_test_file(temp.path(), "settings.toml", b"enabled = true");
+        let limits = ScanLimits {
+            max_file_bytes: 16,
+            max_total_bytes: 16,
+            ..test_limits()
+        };
+
+        let files = read_directory_recursive_with_limits(temp.path(), temp.path(), limits)
+            .expect("unsupported file must not consume import limits");
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].relative_path, "settings.toml");
+    }
+
+    #[test]
+    fn directory_import_rejects_excessive_depth_before_reading() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        write_test_file(
+            temp.path(),
+            "one/two/three/settings.toml",
+            b"enabled = true",
+        );
+        let limits = ScanLimits {
+            max_depth: 2,
+            ..test_limits()
+        };
+
+        let error = read_directory_recursive_with_limits(temp.path(), temp.path(), limits)
+            .expect_err("third nested directory must exceed the depth limit");
+
+        assert!(error.contains("depth limit (2)"));
+        assert!(error.contains("three"));
+    }
+
+    #[test]
+    fn directory_import_rejects_excessive_matching_file_count() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        write_test_file(temp.path(), "one.toml", b"one");
+        write_test_file(temp.path(), "two.toml", b"two");
+        let limits = ScanLimits {
+            max_files: 1,
+            ..test_limits()
+        };
+
+        let error = read_directory_recursive_with_limits(temp.path(), temp.path(), limits)
+            .expect_err("second supported file must exceed the count limit");
+
+        assert!(error.contains("file limit (1)"));
+    }
+
+    #[test]
+    fn directory_import_rejects_file_larger_than_limit() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        write_test_file(temp.path(), "oversized.toml", &[b'x'; 9]);
+        let limits = ScanLimits {
+            max_file_bytes: 8,
+            ..test_limits()
+        };
+
+        let error = read_directory_recursive_with_limits(temp.path(), temp.path(), limits)
+            .expect_err("oversized file must be rejected before reading");
+
+        assert!(error.contains("per-file size limit (8 bytes)"));
+        assert!(error.contains("oversized.toml"));
+    }
+
+    #[test]
+    fn directory_import_rejects_aggregate_size_before_reading_overflow_file() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        write_test_file(temp.path(), "one.toml", b"12345678");
+        write_test_file(temp.path(), "two.toml", b"abcdefgh");
+        let limits = ScanLimits {
+            max_total_bytes: 12,
+            ..test_limits()
+        };
+
+        let error = read_directory_recursive_with_limits(temp.path(), temp.path(), limits)
+            .expect_err("second file must exceed aggregate limit");
+
+        assert!(error.contains("aggregate size limit (12 bytes)"));
+    }
+
+    #[test]
+    fn limited_read_stops_at_limit_plus_one_byte() {
+        let bytes = read_limited(std::io::Cursor::new(vec![b'x'; 10]), 8)
+            .expect("bounded in-memory read should succeed");
+
+        assert_eq!(bytes.len(), 9);
+    }
+
+    #[test]
+    fn root_path_rejects_empty_input() {
+        let error = split_root_path(std::path::Path::new(""))
+            .expect_err("empty config import path must be rejected");
+
+        assert_eq!(error, "Config import directory path must not be empty");
+    }
+
+    #[test]
+    fn root_path_accepts_leading_current_directory_components() {
+        let (anchor, components) = split_root_path(std::path::Path::new("././configs"))
+            .expect("leading current-directory components should be accepted");
+
+        assert_eq!(anchor, std::path::PathBuf::from("."));
+        assert_eq!(components, vec![std::ffi::OsString::from("configs")]);
+        assert!(split_root_path(std::path::Path::new(".")).is_ok());
+        assert!(split_root_path(std::path::Path::new("configs/../other")).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_import_skips_symlink_loop() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        write_test_file(temp.path(), "config/settings.toml", b"enabled = true");
+        symlink(temp.path(), temp.path().join("config/loop"))
+            .expect("failed to create test symlink loop");
+
+        let files = read_directory_recursive_with_limits(temp.path(), temp.path(), test_limits())
+            .expect("symlink must be skipped rather than followed");
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].relative_path, "config/settings.toml");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_import_rejects_intermediate_root_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        let outside = temp.path().join("outside");
+        write_test_file(&outside, "config/settings.toml", b"enabled = true");
+        symlink(&outside, temp.path().join("linked-parent"))
+            .expect("failed to create intermediate symlink");
+        let root = temp.path().join("linked-parent/config");
+
+        let error = read_directory_recursive_with_limits(&root, &root, test_limits())
+            .expect_err("intermediate root symlink must not be followed");
+
+        assert!(error.contains("root directory component"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn directory_import_skips_symlink_when_windows_privileges_allow_it() {
+        use cap_fs_ext::{OpenOptionsFollowExt, OpenOptionsMaybeDirExt};
+        use cap_primitives::fs::{open, open_ambient_dir, FollowSymlinks, OpenOptions};
+        use std::os::windows::fs::{symlink_dir, symlink_file};
+
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        write_test_file(temp.path(), "config/settings.toml", b"enabled = true");
+        if let Err(error) = symlink_dir(temp.path(), temp.path().join("config/loop")) {
+            eprintln!("Windows symlink probe skipped because a link could not be created: {error}");
+            return;
+        }
+
+        let files = read_directory_recursive_with_limits(temp.path(), temp.path(), test_limits())
+            .expect("symlink must be skipped rather than followed");
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].relative_path, "config/settings.toml");
+
+        symlink_file(
+            temp.path().join("config/settings.toml"),
+            temp.path().join("replacement.toml"),
+        )
+        .expect("failed to create test file symlink");
+        let directory = open_ambient_dir(temp.path(), cap_primitives::ambient_authority())
+            .expect("failed to open test directory");
+        let mut options = OpenOptions::new();
+        options
+            .read(true)
+            .follow(FollowSymlinks::No)
+            .maybe_dir(false);
+
+        assert!(open(
+            &directory,
+            std::path::Path::new("replacement.toml"),
+            &options
+        )
+        .is_err());
+
+        let outside = temp.path().join("outside");
+        write_test_file(&outside, "config/settings.toml", b"enabled = true");
+        symlink_dir(&outside, temp.path().join("linked-parent"))
+            .expect("failed to create intermediate test symlink");
+        let root = temp.path().join("linked-parent/config");
+
+        let error = read_directory_recursive_with_limits(&root, &root, test_limits())
+            .expect_err("intermediate root symlink must not be followed");
+
+        assert!(error.contains("root directory component"));
+    }
 
     #[test]
     fn write_file_batch_mode_rejects_traversal_and_absolute_paths() {
