@@ -1,134 +1,122 @@
 <template>
-  <Teleport to="body">
-    <div
-      v-if="updater.isUpdateDialogVisible.value"
-      class="modal modal-open z-50"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="update-dialog-title"
-    >
-      <div class="modal-box">
-        <!-- Header -->
-        <div class="flex items-center gap-3 mb-4">
-          <div class="bg-primary/10 text-primary rounded-full p-2">
-            <Icon
-              name="mdi:update"
-              size="1.5em"
-            />
-          </div>
-          <div>
-            <h3
-              id="update-dialog-title"
-              class="text-lg font-semibold"
-            >
-              Update Available
-            </h3>
-            <p class="text-sm opacity-70">
-              CEMM Update Available
-            </p>
-          </div>
+  <BaseModal
+    :model-value="updater.isUpdateDialogVisible.value"
+    labelled-by="update-dialog-title"
+    @update:model-value="handleLater"
+  >
+    <!-- Header -->
+    <div class="flex items-center gap-3 mb-4">
+      <div class="bg-primary/10 text-primary rounded-full p-2">
+        <Icon
+          name="mdi:update"
+          size="1.5em"
+        />
+      </div>
+      <div>
+        <h3
+          id="update-dialog-title"
+          class="text-lg font-semibold"
+        >
+          Update Available
+        </h3>
+        <p class="text-sm opacity-70">
+          CEMM Update Available
+        </p>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="mb-6 space-y-3">
+      <div class="bg-base-200 rounded-lg p-4">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-sm font-medium">Current Version:</span>
+          <span class="badge badge-outline">{{ updater.updateInfo.value?.currentVersion }}</span>
         </div>
-
-        <!-- Content -->
-        <div class="mb-6 space-y-3">
-          <div class="bg-base-200 rounded-lg p-4">
-            <div class="flex justify-between items-center mb-2">
-              <span class="text-sm font-medium">Current Version:</span>
-              <span class="badge badge-outline">{{ updater.updateInfo.value?.current_version }}</span>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-sm font-medium">New Version:</span>
-              <span class="badge badge-primary">{{ updater.updateInfo.value?.latest_version }}</span>
-            </div>
-          </div>
-          <div
-            v-if="updater.updateInfo.value?.size"
-            class="text-sm opacity-70"
-          >
-            Download size: {{ updater.formatBytes(updater.updateInfo.value.size) }}
-          </div>
-          <p class="text-sm opacity-80">
-            A new version of CEMM is available. Click "Update Now" to download and install automatically.
-          </p>
-
-          <!-- Error Alert -->
-          <div
-            v-if="updateError"
-            class="alert alert-error"
-          >
-            <Icon name="mdi:alert-circle" />
-            <span>{{ updateError }}</span>
-          </div>
-
-          <!-- Progress bar (when downloading) -->
-          <div
-            v-if="updater.isDownloading.value"
-            class="space-y-2"
-          >
-            <div class="flex justify-between text-sm">
-              <span>Downloading update...</span>
-              <span>{{ updater.downloadProgress.value }}%</span>
-            </div>
-            <progress
-              class="progress progress-primary w-full"
-              :value="updater.downloadProgress.value"
-              max="100"
-            />
-          </div>
-
-          <!-- Installing state -->
-          <div
-            v-if="updater.isInstalling.value"
-            class="space-y-2"
-          >
-            <div class="flex items-center gap-2 text-sm">
-              <span class="loading loading-spinner loading-sm" />
-              <span>Installing update...</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Actions -->
-        <div class="modal-action">
-          <button
-            v-if="!updater.isDownloading.value && !updater.isInstalling.value"
-            class="btn btn-ghost"
-            @click="handleLater"
-          >
-            Later
-          </button>
-          <button
-            v-if="!updater.isDownloading.value && !updater.isInstalling.value"
-            class="btn btn-primary"
-            :disabled="!updater.updateInfo.value?.available"
-            @click="handleUpdateConfirm"
-          >
-            <Icon
-              name="mdi:download"
-              size="1.4em"
-            />
-            Update Now
-          </button>
-          <button
-            v-if="updater.isDownloading.value || updater.isInstalling.value"
-            class="btn"
-            disabled
-          >
-            <Icon
-              name="line-md:loading-loop"
-              size="1.4em"
-            />
-            {{ updater.isDownloading.value ? 'Downloading...' : 'Installing...' }}
-          </button>
+        <div class="flex justify-between items-center">
+          <span class="text-sm font-medium">New Version:</span>
+          <span class="badge badge-primary">{{ updater.updateInfo.value?.version }}</span>
         </div>
       </div>
+      <p class="text-sm opacity-80">
+        A new version of CEMM is available. Click "Update Now" to download and install automatically.
+      </p>
+
+      <!-- Error Alert -->
       <div
-        class="modal-backdrop"
-        aria-hidden="true"
-        @click="handleLater"
-      />
+        v-if="updateError"
+        class="alert alert-error"
+      >
+        <Icon name="mdi:alert-circle" />
+        <span>{{ updateError }}</span>
+      </div>
+
+      <!-- Progress bar (when downloading) -->
+      <div
+        v-if="updater.isDownloading.value"
+        class="space-y-2"
+      >
+        <div class="flex justify-between text-sm">
+          <span>Downloading update...</span>
+          <span>
+            {{ updater.downloadProgress.value }}%
+            <template v-if="updater.totalBytes.value > 0">
+              ({{ updater.formatBytes(updater.downloadedBytes.value) }} / {{ updater.formatBytes(updater.totalBytes.value) }})
+            </template>
+          </span>
+        </div>
+        <progress
+          class="progress progress-primary w-full"
+          :value="updater.downloadProgress.value"
+          max="100"
+        />
+      </div>
+
+      <!-- Installing state -->
+      <div
+        v-if="updater.isInstalling.value"
+        class="space-y-2"
+      >
+        <div class="flex items-center gap-2 text-sm">
+          <span class="loading loading-spinner loading-sm" />
+          <span>Installing update...</span>
+        </div>
+      </div>
     </div>
-  </Teleport>
+
+    <!-- Actions -->
+    <div class="modal-action">
+      <button
+        v-if="!updater.isDownloading.value && !updater.isInstalling.value"
+        class="btn btn-ghost"
+        @click="handleLater"
+      >
+        Later
+      </button>
+      <button
+        v-if="!updater.isDownloading.value && !updater.isInstalling.value"
+        class="btn btn-primary"
+        :disabled="updater.updateInfo.value === null"
+        @click="handleUpdateConfirm"
+      >
+        <Icon
+          name="mdi:download"
+          size="1.4em"
+        />
+        Update Now
+      </button>
+      <button
+        v-if="updater.isDownloading.value || updater.isInstalling.value"
+        class="btn"
+        disabled
+      >
+        <Icon
+          name="line-md:loading-loop"
+          size="1.4em"
+        />
+        {{ updater.isDownloading.value ? 'Downloading...' : 'Installing...' }}
+      </button>
+    </div>
+  </BaseModal>
 </template>
 
 <script setup lang="ts">
@@ -148,7 +136,7 @@ const handleUpdateConfirm = async () =>
 	}
 	catch (err: unknown)
 	{
-		logger.error('Update failed', err)
+		logger.error({ error: err }, 'Update failed')
 		if (err instanceof Error)
 		{
 			updateError.value = err.message
@@ -176,22 +164,17 @@ const handleLater = () =>
 	updater.handleUpdateCancel()
 }
 
-// Handle body scroll lock
+// Scroll lock, focus trap, and Escape handling now live in BaseModal.
 watch(() => updater.isUpdateDialogVisible.value, (visible) =>
 {
 	if (visible)
 	{
 		logger.info('UpdateDialog: Update available, showing dialog')
-		document.body.style.overflow = 'hidden'
-	}
-	else
-	{
-		document.body.style.overflow = ''
 	}
 }, { immediate: true })
 
 watch(() => updater.updateInfo.value, (updateInfo) =>
 {
-	logger.info('UpdateDialog: Update info changed', updateInfo)
+	logger.info({ updateInfo }, 'UpdateDialog: Update info changed')
 }, { immediate: true })
 </script>

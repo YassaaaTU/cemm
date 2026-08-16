@@ -7,15 +7,21 @@
     <div
       class="settings-page__tabs"
       role="tablist"
+      aria-label="Settings sections"
     >
       <button
         v-for="tab in tabs"
+        :id="`tab-${tab.key}`"
         :key="tab.key"
+        ref="tabRefs"
         class="settings-page__tab"
         :class="{ 'settings-page__tab--active': activeTab === tab.key }"
         role="tab"
         :aria-selected="activeTab === tab.key"
+        :aria-controls="`tabpanel-${tab.key}`"
+        :tabindex="activeTab === tab.key ? 0 : -1"
         @click="activeTab = tab.key"
+        @keydown="handleTabKeydown"
       >
         <Icon
           :name="tab.icon"
@@ -28,7 +34,11 @@
     <div class="settings-page__content">
       <section
         v-if="activeTab === 'github'"
+        id="tabpanel-github"
         class="settings-page__section animate-fade-in-up"
+        role="tabpanel"
+        aria-labelledby="tab-github"
+        tabindex="0"
       >
         <div class="card bg-base-200 shadow-md border border-base-300">
           <div class="card-body">
@@ -47,7 +57,11 @@
 
       <section
         v-if="activeTab === 'appearance'"
+        id="tabpanel-appearance"
         class="settings-page__section animate-fade-in-up"
+        role="tabpanel"
+        aria-labelledby="tab-appearance"
+        tabindex="0"
       >
         <div class="card bg-base-200 shadow-md border border-base-300">
           <div class="card-body">
@@ -85,7 +99,11 @@
 
       <section
         v-if="activeTab === 'updates'"
+        id="tabpanel-updates"
         class="settings-page__section animate-fade-in-up"
+        role="tabpanel"
+        aria-labelledby="tab-updates"
+        tabindex="0"
       >
         <div class="card bg-base-200 shadow-md border border-base-300">
           <div class="card-body">
@@ -138,7 +156,11 @@
 
       <section
         v-if="activeTab === 'about'"
+        id="tabpanel-about"
         class="settings-page__section animate-fade-in-up"
+        role="tabpanel"
+        aria-labelledby="tab-about"
+        tabindex="0"
       >
         <div class="card bg-base-200 shadow-md border border-base-300">
           <div class="card-body">
@@ -228,6 +250,48 @@ const tabs = [
 	{ key: 'about', label: 'About', icon: 'mdi:information' }
 ] as const
 
+// WAI-ARIA tabs pattern: only the active tab sits in the normal tab order
+// (:tabindex on each button above), and arrow keys move both focus and
+// selection between tabs — previously there was no tabpanel/aria-controls
+// pairing and no keyboard way to move between tabs at all (F-P2-14).
+const tabRefs = ref<HTMLButtonElement[]>([])
+
+function handleTabKeydown(e: KeyboardEvent)
+{
+	const currentIndex = tabs.findIndex((t) => t.key === activeTab.value)
+	let nextIndex: number
+
+	switch (e.key)
+	{
+		case 'ArrowRight':
+		case 'ArrowDown':
+			nextIndex = (currentIndex + 1) % tabs.length
+			break
+		case 'ArrowLeft':
+		case 'ArrowUp':
+			nextIndex = (currentIndex - 1 + tabs.length) % tabs.length
+			break
+		case 'Home':
+			nextIndex = 0
+			break
+		case 'End':
+			nextIndex = tabs.length - 1
+			break
+		default:
+			return
+	}
+
+	e.preventDefault()
+	const nextTab = tabs[nextIndex]
+	if (nextTab === undefined) return
+
+	activeTab.value = nextTab.key
+	nextTick(() =>
+	{
+		tabRefs.value[nextIndex]?.focus()
+	})
+}
+
 const currentTheme = computed(() => themeStore.current)
 const setTheme = (theme: 'nord' | 'dracula') =>
 {
@@ -259,9 +323,9 @@ const handleCheckForUpdates = async () =>
 	{
 		const result = await updater.checkForUpdates()
 		lastUpdateCheck.value = new Date().toLocaleString()
-		updateStatus.value = result.available
-			? { type: 'info', message: `Update available: v${result.latest_version}. The update dialog will appear automatically.` }
-			: { type: 'success', message: `You're running the latest version (v${result.current_version}).` }
+		updateStatus.value = result !== null
+			? { type: 'info', message: `Update available: v${result.version}. The update dialog will appear automatically.` }
+			: { type: 'success', message: `You're running the latest version (v${appVersion.value ?? ''}).` }
 	}
 	catch (error)
 	{

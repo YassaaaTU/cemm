@@ -10,14 +10,8 @@
     "dialog:default",
     "opener:default",
     "keyring:default",
-    "fs:default",
-    "fs:allow-appdata-write-recursive",
-    "fs:allow-appdata-read-recursive",
-    "fs:allow-exists",
-    "fs:allow-remove",
-    "updater:allow-check",
-    "updater:allow-download",
-    "updater:allow-install",
+    "updater:default",
+    "process:default",
     "dialog:allow-ask"
   ]
 }

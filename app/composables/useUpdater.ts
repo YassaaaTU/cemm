@@ -1,16 +1,22 @@
 // composables/useUpdater.ts
-import { invoke } from '@tauri-apps/api/core'
+import { relaunch } from '@tauri-apps/plugin-process'
+import { check, type Update } from '@tauri-apps/plugin-updater'
 import { storeToRefs } from 'pinia'
 import { readonly } from 'vue'
 
-import { useAppStore } from '~/stores/app'
 import { type AppUpdateInfo, useUpdaterStore } from '~/stores/updater'
+
+// Holds the live Update resource handle between checkForUpdates() and
+// downloadAndInstall(). Kept outside Pinia state (module-scoped, shared across
+// every useUpdater() call site) so Vue's reactivity never wraps the plugin's
+// Resource class — Update carries a private field and an rid Vue has no
+// business proxying.
+let pendingUpdate: Update | null = null
 
 export const useUpdater = () =>
 {
 	const updaterStore = useUpdaterStore()
 	const { $logger: logger } = useNuxtApp()
-	const appStore = useAppStore()
 
 	// Extract refs from store using storeToRefs
 	const {
@@ -19,27 +25,45 @@ export const useUpdater = () =>
 		isDownloading,
 		isInstalling,
 		downloadProgress,
+		downloadedBytes,
+		totalBytes,
 		isUpdateDialogVisible
 	} = storeToRefs(updaterStore)
-	const checkForUpdates = async (): Promise<AppUpdateInfo> =>
+
+	async function runCheck(): Promise<AppUpdateInfo | null>
 	{
-		const appRepo = appStore.appRepo
-		if (!appRepo)
+		const update = await check()
+		pendingUpdate = update
+
+		if (update === null)
 		{
-			throw new Error('App repository not configured')
+			updateInfo.value = null
+			return null
 		}
-		logger.debug({ appRepo }, 'Manual update check starting')
+
+		const info: AppUpdateInfo = {
+			version: update.version,
+			currentVersion: update.currentVersion,
+			date: update.date,
+			body: update.body
+		}
+		updateInfo.value = info
+		return info
+	}
+
+	const checkForUpdates = async (): Promise<AppUpdateInfo | null> =>
+	{
+		logger.debug('Manual update check starting')
 		isChecking.value = true
 		try
 		{
-			const result = await invoke<AppUpdateInfo>('check_for_updates', { repo: appRepo })
-			updateInfo.value = result
+			const result = await runCheck()
 			logger.info({
-				available: result.available,
-				current: result.current_version,
-				latest: result.latest_version
+				available: result !== null,
+				current: result?.currentVersion,
+				latest: result?.version
 			}, 'Update check completed')
-			if (result.available)
+			if (result !== null)
 			{
 				isUpdateDialogVisible.value = true
 			}
@@ -58,8 +82,8 @@ export const useUpdater = () =>
 
 	const downloadAndInstall = async () =>
 	{
-		const info = updateInfo.value
-		if (info === null || !info.available || (info.download_url ?? '').length === 0)
+		const update = pendingUpdate
+		if (update === null)
 		{
 			throw new Error('No update available')
 		}
@@ -67,19 +91,35 @@ export const useUpdater = () =>
 		{
 			isDownloading.value = true
 			downloadProgress.value = 0
+			downloadedBytes.value = 0
+			totalBytes.value = 0
 
-			logger.debug({ url: info.download_url }, 'Starting update download')
-			const filePath = await invoke('download_updater_file', {
-				downloadUrl: info.download_url,
-				assetName: info.asset_name
-			}) as string
-			downloadProgress.value = 100
-			isDownloading.value = false
-			isInstalling.value = true
-			logger.info({ filePath }, 'Starting update installation')
-			await invoke('install_updater_file', { filePath })
-			logger.info('Update installed successfully')
+			logger.debug({ version: update.version }, 'Starting update download')
+
+			await update.downloadAndInstall((event) =>
+			{
+				switch (event.event)
+				{
+					case 'Started':
+						totalBytes.value = event.data.contentLength ?? 0
+						break
+					case 'Progress':
+						downloadedBytes.value += event.data.chunkLength
+						downloadProgress.value = totalBytes.value > 0
+							? Math.min(100, Math.round((downloadedBytes.value / totalBytes.value) * 100))
+							: 0
+						break
+					case 'Finished':
+						downloadProgress.value = 100
+						isDownloading.value = false
+						isInstalling.value = true
+						break
+				}
+			})
+
+			logger.info('Update installed successfully, relaunching')
 			isUpdateDialogVisible.value = false
+			await relaunch()
 		}
 		catch (error)
 		{
@@ -96,17 +136,10 @@ export const useUpdater = () =>
 
 	const checkForUpdatesOnStartup = async () =>
 	{
-		const appRepo = appStore.appRepo
-		if (!appRepo)
-		{
-			logger.debug('App repository not configured, skipping startup update check')
-			return
-		}
 		try
 		{
-			const result = await invoke<AppUpdateInfo>('check_for_updates', { repo: appRepo })
-			updateInfo.value = result
-			if (result.available)
+			const result = await runCheck()
+			if (result !== null)
 			{
 				isUpdateDialogVisible.value = true
 			}
@@ -137,6 +170,8 @@ export const useUpdater = () =>
 		isDownloading: readonly(isDownloading),
 		isInstalling: readonly(isInstalling),
 		downloadProgress: readonly(downloadProgress),
+		downloadedBytes: readonly(downloadedBytes),
+		totalBytes: readonly(totalBytes),
 		isUpdateDialogVisible: readonly(isUpdateDialogVisible),
 		checkForUpdates,
 		downloadAndInstall,

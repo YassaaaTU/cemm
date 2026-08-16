@@ -1,13 +1,13 @@
 import { defineStore } from 'pinia'
 
+// Plain display data extracted from the plugin's Update resource. The Update
+// object itself is never stored here — see useUpdater.ts.
 export interface AppUpdateInfo
 {
-	available: boolean
-	current_version: string
-	latest_version: string
-	download_url?: string
-	asset_name?: string
-	size?: number
+	version: string
+	currentVersion: string
+	date?: string
+	body?: string
 }
 
 export const useUpdaterStore = defineStore('updater', () =>
@@ -17,6 +17,8 @@ export const useUpdaterStore = defineStore('updater', () =>
 	const isDownloading = ref(false)
 	const isInstalling = ref(false)
 	const downloadProgress = ref(0)
+	const downloadedBytes = ref(0)
+	const totalBytes = ref(0)
 	const isUpdateDialogVisible = ref(false)
 
 	return {
@@ -25,6 +27,8 @@ export const useUpdaterStore = defineStore('updater', () =>
 		isDownloading,
 		isInstalling,
 		downloadProgress,
+		downloadedBytes,
+		totalBytes,
 		isUpdateDialogVisible
 	}
 })
