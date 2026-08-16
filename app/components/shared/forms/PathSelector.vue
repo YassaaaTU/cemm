@@ -40,6 +40,7 @@
       <button
         class="btn btn-primary w-full"
         :disabled="loading"
+        :aria-label="title"
         @click="openDialog"
       >
         <loading-spinner
@@ -54,25 +55,6 @@
         />
         {{ dialogButtonText }}
       </button>
-
-      <!-- Linux Fallback Message -->
-      <div
-        v-if="showLinuxFallback"
-        class="alert alert-warning"
-      >
-        <Icon
-          name="mdi:alert"
-          size="1.2rem"
-        />
-        <div>
-          <h4 class="font-bold">
-            Dialog not responding?
-          </h4>
-          <p class="text-sm">
-            If the file dialog freezes on Linux, try the "Manual Input" option above.
-          </p>
-        </div>
-      </div>
     </div>
 
     <!-- Manual Input Mode -->
@@ -188,7 +170,6 @@ interface Props
 	type: 'directory' | 'file'
 	title?: string
 	multiple?: boolean
-	filters?: Array<{ name: string, extensions: string[] }>
 	modelValue?: string | string[]
 }
 
@@ -201,14 +182,14 @@ interface Emits
 
 const props = withDefaults(defineProps<Props>(), {
 	title: 'Select Path',
-	multiple: false,
-	filters: () => []
+	multiple: false
 })
 
 const emit = defineEmits<Emits>()
 
 // Composables
 const { selectDirectory, selectFile, selectMultipleFiles, validatePath } = useTauri()
+const { $logger: logger } = useNuxtApp()
 
 // State
 const useDialog = ref(true)
@@ -221,8 +202,6 @@ const pathValidation = ref<{
 	message: string
 	details?: Record<string, unknown>
 } | null>(null)
-const showLinuxFallback = ref(false)
-
 // Computed
 const dialogButtonText = computed(() =>
 {
@@ -251,7 +230,6 @@ const inputPlaceholder = computed(() =>
 const openDialog = async () =>
 {
 	loading.value = true
-	showLinuxFallback.value = false
 
 	try
 	{
@@ -288,16 +266,13 @@ const openDialog = async () =>
 	}
 	catch (error)
 	{
-		console.error('Dialog error:', error)
-
-		// Check if it's a timeout or Linux-specific error
+		// selectDirectory/selectFile/selectMultipleFiles all catch their own
+		// errors internally and resolve to null/[] rather than rejecting
+		// (useTauri.ts), so this branch is unreachable today — kept only so a
+		// future change to that error-swallowing doesn't produce an unhandled
+		// rejection here.
+		logger.error({ error }, 'PathSelector dialog error')
 		const errorMessage = error instanceof Error ? error.message : String(error)
-		if (errorMessage.includes('timeout') || errorMessage.includes('Dialog error'))
-		{
-			showLinuxFallback.value = true
-			useDialog.value = false // Auto-switch to manual input
-		}
-
 		emit('error', errorMessage)
 	}
 	finally
@@ -366,7 +341,7 @@ const validateManualPath = async () =>
 			valid: false,
 			message: '❌ Unable to validate path'
 		}
-		console.error('Path validation error:', error)
+		logger.error({ error }, 'PathSelector path validation error')
 	}
 	finally
 	{

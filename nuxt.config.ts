@@ -7,12 +7,6 @@ process.env.BROWSERSLIST_IGNORE_OLD_DATA ??= 'true'
 export default defineNuxtConfig({
 	modules: [
 		[
-			'nuxt-svgo',
-			{
-				autoImportPath: '@/assets/'
-			}
-		],
-		[
 			'@nuxt/eslint',
 			{
 				checker: false,
@@ -22,7 +16,6 @@ export default defineNuxtConfig({
 			}
 		],
 		'@vueuse/nuxt',
-		'@nuxt/image',
 		'@nuxt/icon',
 		'@pinia/nuxt',
 		'pinia-plugin-persistedstate'
@@ -104,14 +97,6 @@ export default defineNuxtConfig({
 		}
 	},
 
-	runtimeConfig: {
-		public: {
-			version: process.env.VERSION ?? 'N/A'
-			// ...other public config...
-		}
-		// ...other private config...
-	},
-
 	// Reduce noisy source map warnings in production builds.
 	sourcemap: {
 		client: false,
@@ -175,8 +160,10 @@ export default defineNuxtConfig({
 				output: {
 					manualChunks: {
 						vendor: ['vue', 'pinia'],
-						tauri: ['@tauri-apps/api'],
-						ui: ['tailwindcss']
+						tauri: ['@tauri-apps/api']
+						// tailwindcss was listed here too, but it's a build-time Vite/PostCSS
+						// plugin, never present in the client module graph — the chunk it
+						// produced was always empty (F-P3-5, confirmed via build output).
 					}
 				}
 			},

@@ -5,7 +5,6 @@ import type { Manifest, ManifestUpdateInfo } from '~/types'
 export const useManifestStore = defineStore('manifest', () =>
 {
 	const manifest = ref<Manifest | null>(null)
-	const selectedAddons = ref<string[]>([])
 	const previousManifest = ref<Manifest | null>(null)
 	const updateInfo = ref<ManifestUpdateInfo | null>(null)
 	const excludedAddons = ref<string[]>([])
@@ -63,7 +62,6 @@ export const useManifestStore = defineStore('manifest', () =>
 
 	return {
 		manifest,
-		selectedAddons,
 		previousManifest,
 		updateInfo,
 		excludedAddons,

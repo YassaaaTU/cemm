@@ -21,10 +21,6 @@ export const useCache = <T>(key: string, ttlMs = 300000) =>
 		set: (k: string, data: T): void =>
 		{
 			cache.value.set(k, { data, expires: Date.now() + ttlMs })
-		},
-		clear: (): void =>
-		{
-			cache.value.clear()
 		}
 	}
 }
