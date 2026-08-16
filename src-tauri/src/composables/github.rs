@@ -1,8 +1,26 @@
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, Emitter};
 
 use crate::composables::manifest::Manifest;
+
+/// Encodes downloaded config-file bytes for storage in `ConfigFileWithContent.content`.
+/// Valid UTF-8 is kept as plain text; anything else is base64-wrapped in the same
+/// `data:application/octet-stream;base64,` form `installer::install_update` already
+/// decodes, so binary files round-trip byte-for-byte instead of being corrupted by
+/// lossy UTF-8 decoding (F-P1-4).
+fn encode_downloaded_content(bytes: Vec<u8>) -> String {
+    match String::from_utf8(bytes) {
+        Ok(text) => text,
+        Err(e) => {
+            use base64::engine::general_purpose::STANDARD;
+            use base64::Engine;
+            format!(
+                "data:application/octet-stream;base64,{}",
+                STANDARD.encode(e.into_bytes())
+            )
+        }
+    }
+}
 
 /// Configuration file with content for GitHub upload/download operations.
 ///
@@ -21,12 +39,6 @@ pub struct ConfigFileWithContent {
     pub is_binary: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DownloadResult {
-    pub manifest: Manifest,
-    pub config_files: Vec<ConfigFileWithContent>,
-}
-
 /// Progress event payload for upload operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UploadProgress {
@@ -36,10 +48,13 @@ pub struct UploadProgress {
 
 /// Helper to emit progress events
 fn emit_progress(app: &AppHandle, progress: u8, message: &str) {
-    let _ = app.emit("upload_progress", UploadProgress {
-        progress,
-        message: message.to_string(),
-    });
+    let _ = app.emit(
+        "upload_progress",
+        UploadProgress {
+            progress,
+            message: message.to_string(),
+        },
+    );
 }
 
 fn sanitize_modpack_key(name: &str) -> String {
@@ -138,6 +153,39 @@ fn normalize_update_uuid_arg(uuid: String) -> Result<String, String> {
     Ok(normalized)
 }
 
+/// Splits and validates a GitHub "owner/repo" string, mirroring the frontend's
+/// own check (`GitHubSettings.vue`'s `/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/`).
+/// `UserPanel.vue` writes `githubRepo` directly on input with no such check, so
+/// the backend cannot trust that value has ever been validated (F-P2-20) — every
+/// caller here interpolates the result straight into a GitHub API URL, and a
+/// value like `owner/repo/contents/x?ref=` would otherwise inject extra path
+/// and query segments.
+fn parse_and_validate_repo(repo: &str) -> Result<(&str, &str), String> {
+    let mut parts = repo.splitn(2, '/');
+    let owner = parts
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or("Invalid repo format")?;
+    let repo_name = parts
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or("Invalid repo format")?;
+
+    let is_valid_segment = |s: &str| {
+        s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    };
+
+    if !is_valid_segment(owner) || !is_valid_segment(repo_name) {
+        return Err(format!(
+            "Invalid repository format: '{}'. Expected 'owner/repo'.",
+            repo
+        ));
+    }
+
+    Ok((owner, repo_name))
+}
+
 #[command]
 pub async fn upload_update(
     app: AppHandle,
@@ -157,11 +205,11 @@ pub async fn upload_update(
 
     let uuid = normalize_update_uuid_arg(uuid)?;
 
-    // Parse repo as "owner/repo"
-    let mut parts = repo.splitn(2, '/');
-    let owner = parts.next().ok_or("Invalid repo format")?;
-    let repo_name = parts.next().ok_or("Invalid repo format")?;
-    let client = Client::new();
+    let (owner, repo_name) = parse_and_validate_repo(&repo)?;
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| e.to_string())?;
     let user_agent = "cemm-app-tauri";
 
     // Step 1: Get the current commit SHA of main branch
@@ -174,7 +222,7 @@ pub async fn upload_update(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    
+
     if !refs_response.status().is_success() {
         return Err(format!(
             "Failed to get main branch ref: {}",
@@ -189,7 +237,8 @@ pub async fn upload_update(
 
     // Step 2: Get the base tree SHA
     emit_progress(&app, 15, "Getting tree structure...");
-    let commit_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/commits/{base_commit_sha}");
+    let commit_url =
+        format!("https://api.github.com/repos/{owner}/{repo_name}/git/commits/{base_commit_sha}");
     let commit_response = client
         .get(&commit_url)
         .header("Authorization", format!("token {}", token))
@@ -206,7 +255,7 @@ pub async fn upload_update(
     // Step 3: Create blobs for all files
     emit_progress(&app, 20, "Uploading manifest...");
     let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
-    
+
     // Create blob for manifest
     let manifest_blob_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/blobs");
     let manifest_blob_response = client
@@ -221,7 +270,10 @@ pub async fn upload_update(
         .await
         .map_err(|e| e.to_string())?;
 
-    let manifest_blob_json: serde_json::Value = manifest_blob_response.json().await.map_err(|e| e.to_string())?;
+    let manifest_blob_json: serde_json::Value = manifest_blob_response
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
     let manifest_blob_sha = manifest_blob_json["sha"]
         .as_str()
         .ok_or("Could not get manifest blob SHA")?;
@@ -232,18 +284,32 @@ pub async fn upload_update(
     for (index, file) in config_files.iter().enumerate() {
         // Calculate progress: 20-70% for config files
         let progress = 20 + ((index + 1) as f32 / total_config_files as f32 * 50.0) as u8;
-        emit_progress(&app, progress, &format!("Uploading config file {}/{}...", index + 1, total_config_files));
+        emit_progress(
+            &app,
+            progress,
+            &format!(
+                "Uploading config file {}/{}...",
+                index + 1,
+                total_config_files
+            ),
+        );
 
         // Check if content is already base64-encoded (binary files)
-        let (content, encoding) = if file.content.starts_with("data:application/octet-stream;base64,") {
+        let (content, encoding) = if file
+            .content
+            .starts_with("data:application/octet-stream;base64,")
+        {
             // Already base64-encoded binary content, extract the base64 part
-            let base64_content = file.content.strip_prefix("data:application/octet-stream;base64,").unwrap_or(&file.content);
+            let base64_content = file
+                .content
+                .strip_prefix("data:application/octet-stream;base64,")
+                .unwrap_or(&file.content);
             (base64_content.to_string(), "base64")
         } else {
             // Text content, encode as base64
             (STANDARD.encode(&file.content), "base64")
         };
-        
+
         let config_blob_response = client
             .post(&manifest_blob_url) // Same URL for creating blobs
             .header("Authorization", format!("token {}", token))
@@ -256,7 +322,10 @@ pub async fn upload_update(
             .await
             .map_err(|e| e.to_string())?;
 
-        let config_blob_json: serde_json::Value = config_blob_response.json().await.map_err(|e| e.to_string())?;
+        let config_blob_json: serde_json::Value = config_blob_response
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
         let config_blob_sha = config_blob_json["sha"]
             .as_str()
             .ok_or("Could not get config blob SHA")?
@@ -270,14 +339,12 @@ pub async fn upload_update(
     emit_progress(&app, 75, "Creating file tree...");
     // Note: This will automatically overwrite any existing files at the same paths
     // because Git tree creation replaces the entire directory structure
-    let mut tree_items = vec![
-        json!({
-            "path": format!("{}/cemm-manifest.json", update_base_path),
-            "mode": "100644",
-            "type": "blob",
-            "sha": manifest_blob_sha
-        })
-    ];
+    let mut tree_items = vec![json!({
+        "path": format!("{}/cemm-manifest.json", update_base_path),
+        "mode": "100644",
+        "type": "blob",
+        "sha": manifest_blob_sha
+    })];
 
     // Add config files to tree (will overwrite existing config files if same UUID)
     for (i, file) in config_files.iter().enumerate() {
@@ -311,7 +378,10 @@ pub async fn upload_update(
     emit_progress(&app, 85, "Creating commit...");
     let config_count = config_files.len();
     let commit_message = if config_count > 0 {
-        format!("Upload update {} (manifest + {} config files)", uuid, config_count)
+        format!(
+            "Upload update {} (manifest + {} config files)",
+            uuid, config_count
+        )
     } else {
         format!("Upload update {} (manifest only)", uuid)
     };
@@ -330,7 +400,8 @@ pub async fn upload_update(
         .await
         .map_err(|e| e.to_string())?;
 
-    let new_commit_json: serde_json::Value = commit_response.json().await.map_err(|e| e.to_string())?;
+    let new_commit_json: serde_json::Value =
+        commit_response.json().await.map_err(|e| e.to_string())?;
     let new_commit_sha = new_commit_json["sha"]
         .as_str()
         .ok_or("Could not get new commit SHA")?;
@@ -370,20 +441,25 @@ pub async fn download_manifest(
     use serde_json::Value;
 
     let uuid = normalize_update_uuid_arg(uuid)?;
-    
+
     // Debug logging
-    eprintln!("download_manifest called with repo: '{}', uuid: '{}'", repo, uuid);
-    
-    let mut parts = repo.splitn(2, '/');
-    let owner = parts.next().ok_or("Invalid repo format")?;
-    let repo_name = parts.next().ok_or("Invalid repo format")?;
+    eprintln!(
+        "download_manifest called with repo: '{}', uuid: '{}'",
+        repo, uuid
+    );
+
+    let (owner, repo_name) = parse_and_validate_repo(&repo)?;
     let base_paths = update_base_path_candidates(modpack_key.as_deref(), &uuid);
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
     let user_agent = "cemm-app-tauri";
     let mut last_error = String::new();
 
     for base_path in base_paths {
-        let api_base = format!("https://api.github.com/repos/{owner}/{repo_name}/contents/{base_path}");
+        let api_base =
+            format!("https://api.github.com/repos/{owner}/{repo_name}/contents/{base_path}");
         eprintln!("Trying manifest path: {}", api_base);
 
         let list_res = client
@@ -477,15 +553,21 @@ pub async fn download_config_files(
     use reqwest::Client;
 
     let uuid = normalize_update_uuid_arg(uuid)?;
-    
-    let mut parts = repo.splitn(2, '/');
-    let owner = parts.next().ok_or("Invalid repo format")?;
-    let repo_name = parts.next().ok_or("Invalid repo format")?;
-    let client = Client::new();
+
+    let (owner, repo_name) = parse_and_validate_repo(&repo)?;
+    // Config files can be sizeable binaries (e.g. resource-pack-adjacent assets),
+    // so this gets more headroom than the plain API-listing client above.
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
     let user_agent = "cemm-app-tauri";
     let base_paths = update_base_path_candidates(modpack_key.as_deref(), &uuid);
 
-    eprintln!("Downloading {} config files from manifest", manifest.config_files.len());
+    eprintln!(
+        "Downloading {} config files from manifest",
+        manifest.config_files.len()
+    );
 
     // Download config files based on manifest list
     let mut config_files = Vec::new();
@@ -543,18 +625,26 @@ pub async fn download_config_files(
                 continue;
             }
 
-            downloaded_content = Some(content_res.text().await.map_err(|e| e.to_string())?);
+            // .text() performs lossy UTF-8 decoding, which silently corrupts binary
+            // config files (e.g. .emotecraft) by replacing invalid byte sequences
+            // with U+FFFD (F-P1-4). Reading raw bytes and only decoding as UTF-8
+            // when that round-trips cleanly keeps both text and binary files intact.
+            let bytes = content_res.bytes().await.map_err(|e| e.to_string())?;
+            downloaded_content = Some(encode_downloaded_content(bytes.to_vec()));
             break;
         }
 
         let content = downloaded_content.ok_or_else(|| {
             if last_error.is_empty() {
-                format!("Failed to download config file {}", config_file.relative_path)
+                format!(
+                    "Failed to download config file {}",
+                    config_file.relative_path
+                )
             } else {
                 last_error
             }
         })?;
-        
+
         config_files.push(ConfigFileWithContent {
             filename: config_file.filename,
             relative_path: config_file.relative_path,
@@ -562,22 +652,88 @@ pub async fn download_config_files(
             is_binary: None, // Will be determined during installation
         });
     }
-    
-    eprintln!("Successfully downloaded {} config files", config_files.len());
+
+    eprintln!(
+        "Successfully downloaded {} config files",
+        config_files.len()
+    );
     Ok(config_files)
 }
 
-#[command]
-pub async fn download_update(
-    repo: String,
-    uuid: String,
-    modpack_key: Option<String>,
-) -> Result<DownloadResult, String> {
-    let manifest = download_manifest(repo.clone(), uuid.clone(), modpack_key.clone()).await?;
-    let config_files = download_config_files(repo, uuid, modpack_key, manifest.clone()).await?;
-    
-    Ok(DownloadResult {
-        manifest,
-        config_files,
-    })
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_and_validate_repo_accepts_well_formed_values() {
+        assert_eq!(
+            parse_and_validate_repo("YassaaaTU/cemm").unwrap(),
+            ("YassaaaTU", "cemm")
+        );
+        assert_eq!(
+            parse_and_validate_repo("some.org/repo_name-2").unwrap(),
+            ("some.org", "repo_name-2")
+        );
+    }
+
+    #[test]
+    fn parse_and_validate_repo_rejects_injection_attempts() {
+        for bad in [
+            "owner/repo/contents/x?ref=",
+            "owner/../repo",
+            "owner",
+            "owner/",
+            "/repo",
+            "owner/repo?evil=1",
+            "owner/repo#fragment",
+            "",
+        ] {
+            assert!(
+                parse_and_validate_repo(bad).is_err(),
+                "expected '{bad}' to be rejected"
+            );
+        }
+    }
+
+    /// Mirrors the decode step in installer.rs's config-file install loop, so this
+    /// test exercises the same encode/decode pair the real upload -> download ->
+    /// install pipeline uses, without needing a live GitHub download.
+    fn decode_installed_content(content: &str) -> Vec<u8> {
+        use base64::engine::general_purpose::STANDARD;
+        use base64::Engine;
+
+        match content.strip_prefix("data:application/octet-stream;base64,") {
+            Some(base64_content) => STANDARD.decode(base64_content).expect("valid base64"),
+            None => content.as_bytes().to_vec(),
+        }
+    }
+
+    #[test]
+    fn valid_utf8_bytes_are_kept_as_plain_text() {
+        let content = encode_downloaded_content(b"key = \"value\"\n".to_vec());
+        assert_eq!(content, "key = \"value\"\n");
+        assert!(!content.starts_with("data:application/octet-stream;base64,"));
+    }
+
+    #[test]
+    fn non_utf8_bytes_round_trip_through_the_data_uri_encoding() {
+        // The exact byte sequence the audit calls out: invalid as UTF-8, and
+        // previously mangled into three U+FFFD replacement characters by .text().
+        let original: Vec<u8> = vec![0xFF, 0xFE, 0x00, b'r', b'e', b's', b't'];
+
+        let content = encode_downloaded_content(original.clone());
+        assert!(content.starts_with("data:application/octet-stream;base64,"));
+
+        let round_tripped = decode_installed_content(&content);
+        assert_eq!(
+            round_tripped, original,
+            "binary content must round-trip byte-for-byte"
+        );
+    }
+
+    #[test]
+    fn empty_bytes_round_trip_as_empty_text() {
+        let content = encode_downloaded_content(Vec::new());
+        assert_eq!(content, "");
+    }
 }

@@ -122,8 +122,10 @@
 </template>
 
 <script setup lang="ts">
+import { isValidGithubRepo } from '~/utils/githubRepo'
+
 const appStore = useAppStore()
-const { setSecure, getSecure } = useSecureStorage()
+const { setSecure, getSecure, removeSecure } = useSecureStorage()
 const { $logger: logger } = useNuxtApp()
 
 const githubRepo = computed({
@@ -148,17 +150,17 @@ onMounted(async () =>
 	try
 	{
 		logger.info('Loading GitHub settings...')
-		logger.info('Current store githubRepo value', { repo: appStore.githubRepo })
+		logger.info({ repo: appStore.githubRepo }, 'Current store githubRepo value')
 
 		const token = await getSecure('cemm_github_token')
 		githubToken.value = token ?? ''
 		tokenSaved.value = githubToken.value.length > 0
 
-		logger.info('GitHub settings loaded', {
+		logger.info({
 			hasToken: tokenSaved.value,
 			hasRepo: githubRepo.value.length > 0,
 			repoValue: githubRepo.value
-		})
+		}, 'GitHub settings loaded')
 	}
 	catch (err)
 	{
@@ -170,7 +172,7 @@ onMounted(async () =>
 	{
 		loading.value = false
 		const t1 = performance.now()
-		logger.info('GitHub settings load time (ms)', { duration: t1 - t0 })
+		logger.info({ duration: t1 - t0 }, 'GitHub settings load time (ms)')
 	}
 })
 
@@ -184,7 +186,7 @@ const saveSettings = async () =>
 	try
 	{
 		logger.info('Saving GitHub settings...')
-		logger.info('Before save - githubRepo value', { repo: githubRepo.value })
+		logger.info({ repo: githubRepo.value }, 'Before save - githubRepo value')
 
 		if (!githubRepo.value.trim())
 		{
@@ -192,8 +194,7 @@ const saveSettings = async () =>
 			throw new Error('GitHub repository is required')
 		}
 
-		const repoPattern = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/
-		if (!repoPattern.test(githubRepo.value.trim()))
+		if (!isValidGithubRepo(githubRepo.value))
 		{
 			fieldErrors.value.repo = 'Invalid format. Use "owner/repo" (e.g., YassaaaTU/cemm-updates)'
 			throw new Error('Invalid repository format')
@@ -201,10 +202,10 @@ const saveSettings = async () =>
 
 		appStore.githubRepo = githubRepo.value.trim()
 
-		logger.info('After save - store githubRepo value', {
+		logger.info({
 			repo: appStore.githubRepo,
 			computedRepo: githubRepo.value
-		})
+		}, 'After save - store githubRepo value')
 
 		if (githubToken.value.trim())
 		{
@@ -213,7 +214,18 @@ const saveSettings = async () =>
 		}
 		else
 		{
-			await setSecure('cemm_github_token', '')
+			// Clearing the field should delete the credential, not store an empty
+			// string under it (removeSecure existed but nothing called it). The OS
+			// keyring rejects deleting an entry that was never set — harmless here,
+			// since "no token stored" is the desired end state either way.
+			try
+			{
+				await removeSecure('cemm_github_token')
+			}
+			catch (removeError)
+			{
+				logger.debug({ error: removeError }, 'No stored GitHub token to remove')
+			}
 			tokenSaved.value = false
 		}
 		successMessage.value = 'Settings saved successfully!'
@@ -236,7 +248,7 @@ const saveSettings = async () =>
 	{
 		loading.value = false
 		const t1 = performance.now()
-		logger.info('GitHub settings save time (ms)', { duration: t1 - t0 })
+		logger.info({ duration: t1 - t0 }, 'GitHub settings save time (ms)')
 	}
 }
 </script>

@@ -1,5 +1,5 @@
 import type { ConfigFileWithContent, Manifest } from '~/types'
-import { getErrorMessage, withNetworkRetry } from '~/utils/errorHandler'
+import { getErrorMessage } from '~/utils/errorHandler'
 import { resolveModpackKey } from '~/utils/modpackKey'
 
 /**
@@ -315,20 +315,22 @@ export function useAdminApi()
 
 			const updateReference = `${modpackKey}/${uuid}`
 
-			await withNetworkRetry(async () =>
-			{
-				await uploadUpdate({
-					repo,
-					token,
-					uuid,
-					modpackKey,
-					manifest: manifestWithConfig,
-					configFiles,
-					onProgress: (p, msg) =>
-					{
-						onProgress(p, msg)
-					}
-				})
+			// Not wrapped in withNetworkRetry: upload_update is not idempotent —
+			// it creates blobs/trees/commits and moves the branch ref forward, so
+			// retrying after a partial success would create duplicate commits, and
+			// "force": false on the ref update makes a naive retry fail anyway
+			// once the ref has already moved (F-P1-7).
+			await uploadUpdate({
+				repo,
+				token,
+				uuid,
+				modpackKey,
+				manifest: manifestWithConfig,
+				configFiles,
+				onProgress: (p, msg) =>
+				{
+					onProgress(p, msg)
+				}
 			})
 
 			setStatus(

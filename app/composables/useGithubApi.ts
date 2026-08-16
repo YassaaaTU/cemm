@@ -91,65 +91,6 @@ export const useGithubApi = () =>
 	}
 
 	/**
-	 * Downloads an update from GitHub. Accepts an options object for progress callback.
-	 */
-	const downloadUpdate = async (opts: {
-		repo: string
-		uuid: string
-		modpackKey?: string
-		onProgress?: (progress: number, message?: string) => void
-	}): Promise<{ manifest: Manifest, configFiles: ConfigFileWithContent[] }> =>
-	{
-		const cacheKey = `${opts.repo}-${opts.modpackKey ?? 'legacy'}-${opts.uuid}`
-		const startTime = performance.now()
-
-		// Check cache first
-		const cached = cache.get(cacheKey)
-		if (cached !== null)
-		{
-			logger.info({ repo: opts.repo, uuid: opts.uuid }, 'Using cached download')
-			if (typeof opts.onProgress === 'function') opts.onProgress(100, 'Using cached data')
-			return {
-				manifest: cached.manifest,
-				configFiles: cached.configFiles
-			}
-		}
-
-		if (typeof opts.onProgress === 'function') opts.onProgress(10, 'Contacting GitHub...')
-
-		const result = await invoke('download_update', {
-			repo: opts.repo,
-			uuid: opts.uuid,
-			modpackKey: opts.modpackKey
-		}) as { manifest: Manifest, config_files: ConfigFileWithContent[] }
-
-		const downloadResult = {
-			manifest: result.manifest,
-			configFiles: result.config_files
-		}
-
-		// Cache the result
-		cache.set(cacheKey, {
-			manifest: result.manifest,
-			configFiles: result.config_files,
-			downloadedAt: Date.now()
-		})
-
-		const duration = performance.now() - startTime
-		logger.info({
-			repo: opts.repo,
-			modpackKey: opts.modpackKey,
-			uuid: opts.uuid,
-			duration: `${duration.toFixed(2)}ms`,
-			manifestSize: JSON.stringify(result.manifest).length,
-			configFileCount: result.config_files.length
-		}, 'Download completed')
-
-		if (typeof opts.onProgress === 'function') opts.onProgress(100, 'Download complete')
-		return downloadResult
-	}
-
-	/**
 	 * Downloads only the manifest from GitHub (phase 1 of two-phase update).
 	 */
 	const downloadManifest = async (opts: {
@@ -191,5 +132,5 @@ export const useGithubApi = () =>
 		return configFiles
 	}
 
-	return { uploadUpdate, downloadUpdate, downloadManifest, downloadConfigFiles }
+	return { uploadUpdate, downloadManifest, downloadConfigFiles }
 }

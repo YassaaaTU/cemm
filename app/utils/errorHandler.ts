@@ -3,18 +3,6 @@
  * Provides basic error state management without over-engineering
  */
 
-export interface ErrorState
-{
-	error: {
-		message: string
-		userMessage: string
-		suggestion?: string
-		canRetry: boolean
-	} | null
-	isRetrying: boolean
-	retryCount: number
-}
-
 /**
  * Simple network retry utility
  */
@@ -37,8 +25,16 @@ export async function withNetworkRetry<T>(
 				throw error
 			}
 
-			// Check if it's a network-related error worth retrying
-			const errorMessage = error instanceof Error ? error.message.toLowerCase() : ''
+			// Check if it's a network-related error worth retrying. Tauri's invoke()
+			// rejects with the *string* returned by the Rust Err variant, not an
+			// Error instance — checking only `error instanceof Error` meant every
+			// Tauri rejection fell through to '' here and never matched, so no
+			// retry in this codebase ever actually retried anything (F-P1-7).
+			const errorMessage = error instanceof Error
+				? error.message.toLowerCase()
+				: typeof error === 'string'
+					? error.toLowerCase()
+					: ''
 			const isNetworkError = (
 				errorMessage.includes('network')
 				|| errorMessage.includes('fetch')
@@ -65,9 +61,19 @@ export async function withNetworkRetry<T>(
  */
 export function getErrorMessage(error: unknown, context?: string): string
 {
-	if (error instanceof Error)
+	// Tauri's invoke() rejects with the *string* Err value from Rust, not an
+	// Error instance — the contextual rewrites below used to only run for
+	// `error instanceof Error`, so every real Tauri failure skipped straight to
+	// the raw string fallback further down and never got a friendly message.
+	const rawMessage = error instanceof Error
+		? error.message
+		: typeof error === 'string'
+			? error
+			: null
+
+	if (rawMessage !== null)
 	{
-		const message = error.message.toLowerCase()
+		const message = rawMessage.toLowerCase()
 
 		// Network errors
 		if (message.includes('network') || message.includes('fetch') || message.includes('connection'))
@@ -102,12 +108,7 @@ export function getErrorMessage(error: unknown, context?: string): string
 			return 'GitHub authentication failed. Please check your token in settings.'
 		}
 
-		return error.message
-	}
-
-	if (typeof error === 'string')
-	{
-		return error
+		return rawMessage
 	}
 
 	if (context !== undefined && context.trim().length > 0)
