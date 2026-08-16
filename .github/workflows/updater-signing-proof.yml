@@ -44,16 +44,15 @@ jobs:
           trap 'rm -rf "$proof_dir"' EXIT
 
           payload="$proof_dir/updater-signing-proof.txt"
-          signature_file="$proof_dir/updater-signing-proof.sig"
+          signature_file="$payload.sig"
           public_key_file="$proof_dir/updater-signing-proof.pub"
           verifier_dir="$proof_dir/verifier"
 
           printf 'CEMM updater signing proof\n' > "$payload"
 
-          signature="$(bunx tauri signer sign "$payload" | tail -n 1 | tr -d '\r\n')"
-          test -n "$signature"
+          bunx tauri signer sign "$payload" > /dev/null
+          test -s "$signature_file"
 
-          printf '%s' "$signature" | base64 --decode > "$signature_file"
           jq --raw-output '.plugins.updater.pubkey' src-tauri/tauri.conf.json \
             | base64 --decode > "$public_key_file"
 
