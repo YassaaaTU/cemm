@@ -17,3 +17,6 @@ mcpServers/
 plans/
 
 .cursor/
+
+*.local
+testing_keys.ps1
