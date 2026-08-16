@@ -180,7 +180,16 @@ export default defineNuxtConfig({
 		},
 		// Optimize deps
 		optimizeDeps: {
-			include: ['pinia', '@tauri-apps/api', 'pino']
+			include: [
+				'pinia',
+				'@tauri-apps/api',
+				'pino', // CJS
+				'@vue/devtools-core',
+				'@vue/devtools-kit',
+				'@tauri-apps/plugin-process',
+				'@tauri-apps/plugin-updater',
+				'@tauri-apps/api/app'
+			]
 		}
 	}
 })
