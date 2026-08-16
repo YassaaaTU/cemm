@@ -53,12 +53,15 @@ export function useUserApi()
 			manifestStore.setManifest(downloadedManifest)
 			onProgress(50, 'Manifest downloaded. Ready to preview update.')
 
-			// Load existing manifest for comparison if modpack path is selected
+			// Load existing manifest for comparison if modpack path is selected.
+			// cemm-manifest.json itself is NOT written here — only once the user
+			// actually confirms the install (see installUpdate below). Writing it
+			// at download time meant cancelling after seeing a scary preview still
+			// left disk state describing an update that was never applied (F-P1-5).
 			const modpackPath = appStore.modpackPath
 			if (modpackPath && modpackPath.trim().length > 0)
 			{
 				await generatePreviousManifest(modpackPath, onProgress)
-				await writeNewManifest(modpackPath, downloadedManifest)
 			}
 
 			setStatus('Manifest ready for preview. Config files will be downloaded after confirmation.', 'success')
@@ -98,35 +101,17 @@ export function useUserApi()
 				}
 			})
 
-			// Write config files to disk if modpack path is selected
-			const modpackPath = appStore.modpackPath
-			if (modpackPath && modpackPath.trim().length > 0 && configFiles.length > 0)
-			{
-				const filesToWrite: Array<[string, string]> = []
-
-				for (const configFile of configFiles)
-				{
-					filesToWrite.push([configFile.relative_path, configFile.content])
-				}
-
-				const writeSuccess = await writeFile(modpackPath, filesToWrite)
-				if (!writeSuccess)
-				{
-					setStatus('Config files downloaded but failed to write to disk.', 'warning')
-					return { success: false, configFiles: [] }
-				}
-
-				setStatus(`Config files downloaded and written to ${modpackPath}`, 'success')
-			}
-			else
-			{
-				setStatus(
-					configFiles.length > 0
-						? 'Config files downloaded (no modpack path selected)'
-						: 'No config files to download',
-					'success'
-				)
-			}
+			// Config file content is held in memory and written to disk later by
+			// installUpdate, which validates every relative_path against the modpack
+			// root before writing (see installer.rs). Writing here too — before that
+			// validation, and before the user has confirmed the install — let a
+			// traversing path in a downloaded manifest reach disk unchecked (F-P0-4).
+			setStatus(
+				configFiles.length > 0
+					? 'Config files downloaded. They will be written to disk when you confirm the install.'
+					: 'No config files to download',
+				'success'
+			)
 
 			return { success: true, configFiles }
 		}
@@ -227,6 +212,23 @@ export function useUserApi()
 					cleanupOld: previousManifest !== null
 				}
 			)
+
+			// Only now — after the install has actually succeeded — does the new
+			// manifest become the on-disk record of what's installed. A failure
+			// here doesn't undo the install that just succeeded, so it's reported
+			// as a warning rather than turning the whole operation into a failure —
+			// its only consequence is a stale diff baseline for the *next* update.
+			try
+			{
+				await writeNewManifest(appStore.modpackPath, manifest)
+			}
+			catch (manifestWriteError)
+			{
+				logger.error(
+					{ error: manifestWriteError },
+					'Install succeeded but failed to write cemm-manifest.json; next update\'s diff may use a stale baseline'
+				)
+			}
 
 			setStatus(
 				previousManifest !== null ? 'Update installation complete!' : 'Fresh installation complete!',

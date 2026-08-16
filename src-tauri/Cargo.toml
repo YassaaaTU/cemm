@@ -47,3 +47,6 @@ tauri-plugin-process = "2.3.1"
 # macOS-specific dependencies for better compatibility
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26.1"  # macOS native APIs
+
+[dev-dependencies]
+tempfile = "3.14"

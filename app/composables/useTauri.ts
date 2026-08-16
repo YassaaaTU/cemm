@@ -4,6 +4,12 @@ import type { Addon, ConfigFileWithContent, Manifest, ManifestUpdateInfo, Update
 
 export const useTauri = () =>
 {
+	// drop_console strips every console.* call in production builds
+	// (nuxt.config.ts), which previously meant every failure at this IPC
+	// boundary vanished silently in release builds — the one place callers
+	// most need a diagnostic trail (F-P2-18). $logger (pino) survives that.
+	const { $logger: logger } = useNuxtApp()
+
 	const selectDirectory = async (): Promise<string | null> =>
 	{
 		try
@@ -12,7 +18,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] selectDirectory failed:', error)
+			logger.error({ error }, '[useTauri] selectDirectory failed')
 			return null
 		}
 	}
@@ -25,7 +31,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] selectFile failed:', error)
+			logger.error({ error }, '[useTauri] selectFile failed')
 			return null
 		}
 	}
@@ -38,7 +44,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] selectSaveFile failed:', error)
+			logger.error({ error }, '[useTauri] selectSaveFile failed')
 			return null
 		}
 	}
@@ -51,7 +57,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] selectMultipleFiles failed:', error)
+			logger.error({ error }, '[useTauri] selectMultipleFiles failed')
 			return []
 		}
 	}
@@ -64,7 +70,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] isBinaryFile failed:', { path, error })
+			logger.error({ path, error }, '[useTauri] isBinaryFile failed')
 			return false
 		}
 	}
@@ -77,7 +83,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] readFile failed:', { path, error })
+			logger.error({ path, error }, '[useTauri] readFile failed')
 			return null
 		}
 	}
@@ -101,7 +107,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] writeFile failed:', { pathOrDir, error })
+			logger.error({ pathOrDir, error }, '[useTauri] writeFile failed')
 			return false
 		}
 	}
@@ -114,7 +120,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] parseMinecraftInstance failed:', { path, error })
+			logger.error({ path, error }, '[useTauri] parseMinecraftInstance failed')
 			return null
 		}
 	}
@@ -127,7 +133,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] compareManifests failed:', error)
+			logger.error({ error }, '[useTauri] compareManifests failed')
 			return null
 		}
 	}
@@ -140,7 +146,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] openCurseforgeUrl failed:', { addonName, error })
+			logger.error({ addonName, error }, '[useTauri] openCurseforgeUrl failed')
 		}
 	}
 
@@ -152,7 +158,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] openUrl failed:', { url, error })
+			logger.error({ url, error }, '[useTauri] openUrl failed')
 		}
 	}
 
@@ -179,33 +185,6 @@ export const useTauri = () =>
 		})
 	}
 
-	const keyringTestDirect = async (): Promise<string> =>
-	{
-		return await invoke<string>('keyring_test_direct')
-	}
-
-	const keyringSetAndVerify = async (key: string, value: string): Promise<boolean> =>
-	{
-		return await invoke<boolean>('keyring_set_and_verify', { key, value })
-	}
-
-	const loadExistingManifest = async (modpackPath: string): Promise<Manifest | null> =>
-	{
-		try
-		{
-			const manifestPath = `${modpackPath}/cemm-manifest.json`
-			const content = await readFile(manifestPath)
-			if (content === null) return null
-			return JSON.parse(content) as Manifest
-		}
-		catch (_error)
-		{
-			// No existing manifest found, this is a fresh install
-			console.info('[useTauri] loadExistingManifest: No existing manifest found (fresh install)', { modpackPath })
-			return null
-		}
-	}
-
 	const downloadManifest = async (repo: string, uuid: string, modpackKey?: string): Promise<Manifest | null> =>
 	{
 		try
@@ -214,7 +193,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] downloadManifest failed:', { repo, uuid, modpackKey, error })
+			logger.error({ repo, uuid, modpackKey, error }, '[useTauri] downloadManifest failed')
 			return null
 		}
 	}
@@ -227,21 +206,8 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] downloadConfigFiles failed:', { repo, uuid, modpackKey, error })
+			logger.error({ repo, uuid, modpackKey, error }, '[useTauri] downloadConfigFiles failed')
 			return []
-		}
-	}
-
-	const selectConfigDirectory = async (): Promise<string | null> =>
-	{
-		try
-		{
-			return await invoke<string>('select_config_directory')
-		}
-		catch (error)
-		{
-			console.error('[useTauri] selectConfigDirectory failed:', error)
-			return null
 		}
 	}
 
@@ -253,7 +219,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] readDirectoryRecursive failed:', { dirPath, basePath, error })
+			logger.error({ dirPath, basePath, error }, '[useTauri] readDirectoryRecursive failed')
 			return []
 		}
 	}
@@ -279,7 +245,7 @@ export const useTauri = () =>
 		}
 		catch (error)
 		{
-			console.error('[useTauri] validatePath failed:', { path, error })
+			logger.error({ path, error }, '[useTauri] validatePath failed')
 			return {
 				exists: false,
 				original_path: path
@@ -300,12 +266,8 @@ export const useTauri = () =>
 		openCurseforgeUrl,
 		openUrl,
 		installUpdate,
-		keyringTestDirect,
-		keyringSetAndVerify,
-		loadExistingManifest,
 		downloadManifest,
 		downloadConfigFiles,
-		selectConfigDirectory,
 		readDirectoryRecursive,
 		validatePath
 	}
@@ -317,6 +279,17 @@ export const useTauri = () =>
  */
 export function calculateUpdateDiff(oldManifest: Manifest | null, newManifest: Manifest): UpdateDiff
 {
+	// Config-only updates never change addons. Key this behavior to the explicit
+	// discriminator so a legitimate full update can still empty a category.
+	if (newManifest.updateType === 'config')
+	{
+		return {
+			removed_addons: [],
+			updated_addon_ids: [],
+			new_addons: []
+		}
+	}
+
 	// If no old manifest, everything is new
 	if (oldManifest === null)
 	{
