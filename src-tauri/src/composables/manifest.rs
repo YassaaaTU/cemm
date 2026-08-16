@@ -39,13 +39,21 @@ pub struct Manifest {
     pub config_files: Vec<ConfigFile>,
 }
 
+// Not persisted or published — computed fresh per compare_manifests call and
+// consumed only by the admin preview, so renaming its serde output is safe.
+// (Unlike `Manifest`/`Addon`, which are published and must never gain rename_all.)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
     pub uuid: String,
     pub timestamp: String,
     pub added_addons: Vec<Addon>,
     pub removed_addons: Vec<String>,
-    pub config_files: Vec<String>,
+    /// Project IDs of addons present in both manifests with a changed version.
+    /// Matches `installer::UpdateDiff::updated_addon_ids`, which is what the
+    /// installer actually acts on — keeping this the same shape means the
+    /// admin preview and the installer agree on what "updated" means.
+    pub updated_addon_ids: Vec<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,60 +218,105 @@ fn find_disabled_files(dir: PathBuf) -> Vec<String> {
 #[command]
 pub fn compare_manifests(old: Manifest, new: Manifest) -> Result<UpdateInfo, String> {
     log::info!("compare_manifests: comparing manifests");
-    
-    // Helper function to process a single addon category
+
+    // Helper function to process a single addon category. Identity is matched on
+    // addon_project_id, the same key installer::calculate_update_diff uses — a
+    // renamed addon (same project, different addon_name) is therefore reported as
+    // "updated" here too, rather than as "removed + added" (F-P2-12). Matching by
+    // name previously meant this preview and the installer's own diff could
+    // disagree on the same manifest pair.
     fn process_category(
         old_addons: &[Addon],
         new_addons: &[Addon],
         added: &mut Vec<Addon>,
         removed: &mut Vec<String>,
+        updated: &mut Vec<u64>,
     ) {
-        let old_ids: std::collections::HashSet<_> = old_addons.iter().map(|a| &a.addon_name).collect();
-        let new_ids: std::collections::HashSet<_> = new_addons.iter().map(|a| &a.addon_name).collect();
-        
-        // Find added addons (in new but not in old, and not disabled)
+        // Find added addons (no matching project ID in old, and not disabled)
         for new_addon in new_addons {
-            if !old_ids.contains(&new_addon.addon_name) && new_addon.disabled != Some(true) {
+            let exists_in_old = old_addons
+                .iter()
+                .any(|a| a.addon_project_id == new_addon.addon_project_id);
+            if !exists_in_old && new_addon.disabled != Some(true) {
                 added.push(new_addon.clone());
             }
         }
-        
-        // Build a set of disabled addon names in the new manifest
-        let disabled_in_new: std::collections::HashSet<_> = new_addons
-            .iter()
-            .filter(|a| a.disabled == Some(true))
-            .map(|a| &a.addon_name)
-            .collect();
-        
-        // Find removed addons (in old but not in new, or disabled in new)
-        // Skip if old addon was already disabled - can't "remove" something that wasn't active
+
+        // Find removed addons (no matching project ID in new, or disabled in new).
+        // Skip if old addon was already disabled - can't "remove" something that wasn't active.
         for old_addon in old_addons {
             if old_addon.disabled.unwrap_or(false) {
-                continue; // Skip disabled addons in old manifest
+                continue;
             }
-            if !new_ids.contains(&old_addon.addon_name) || disabled_in_new.contains(&old_addon.addon_name) {
-                removed.push(old_addon.addon_name.clone());
+            match new_addons
+                .iter()
+                .find(|a| a.addon_project_id == old_addon.addon_project_id)
+            {
+                None => removed.push(old_addon.addon_name.clone()),
+                Some(new_addon) if new_addon.disabled == Some(true) => {
+                    removed.push(old_addon.addon_name.clone())
+                }
+                Some(_) => {}
+            }
+        }
+
+        // Find updated addons (same project ID present in both, version changed)
+        for old_addon in old_addons {
+            if old_addon.disabled.unwrap_or(false) {
+                continue;
+            }
+            if let Some(new_addon) = new_addons
+                .iter()
+                .find(|a| a.addon_project_id == old_addon.addon_project_id)
+            {
+                if new_addon.disabled != Some(true) && old_addon.version != new_addon.version {
+                    updated.push(old_addon.addon_project_id);
+                }
             }
         }
     }
-    
+
     let mut added: Vec<Addon> = Vec::new();
     let mut removed: Vec<String> = Vec::new();
-    
+    let mut updated: Vec<u64> = Vec::new();
+
     // Process all addon categories
-    process_category(&old.mods, &new.mods, &mut added, &mut removed);
-    process_category(&old.resourcepacks, &new.resourcepacks, &mut added, &mut removed);
-    process_category(&old.shaderpacks, &new.shaderpacks, &mut added, &mut removed);
-    process_category(&old.datapacks, &new.datapacks, &mut added, &mut removed);
-    
-    log::info!("compare_manifests: {} added, {} removed", added.len(), removed.len());
-    
+    process_category(&old.mods, &new.mods, &mut added, &mut removed, &mut updated);
+    process_category(
+        &old.resourcepacks,
+        &new.resourcepacks,
+        &mut added,
+        &mut removed,
+        &mut updated,
+    );
+    process_category(
+        &old.shaderpacks,
+        &new.shaderpacks,
+        &mut added,
+        &mut removed,
+        &mut updated,
+    );
+    process_category(
+        &old.datapacks,
+        &new.datapacks,
+        &mut added,
+        &mut removed,
+        &mut updated,
+    );
+
+    log::info!(
+        "compare_manifests: {} added, {} removed, {} updated",
+        added.len(),
+        removed.len(),
+        updated.len()
+    );
+
     let update_info = UpdateInfo {
         uuid: Uuid::new_v4().to_string(),
         timestamp: Utc::now().to_rfc3339(),
         added_addons: added,
         removed_addons: removed,
-        config_files: vec![], // Placeholder, fill as needed
+        updated_addon_ids: updated,
     };
     log::info!("compare_manifests: update info generated");
     Ok(update_info)
@@ -294,7 +347,202 @@ pub fn open_curseforge_url(addon_name: String) -> Result<(), String> {
     opener::open(url).map_err(|e| format!("Failed to open browser: {e}"))
 }
 
+/// Hosts a manifest-supplied `webSiteURL` is legitimately allowed to point at.
+/// CurseForge only ever issues `https://www.curseforge.com/...` (and its bare
+/// `curseforge.com` form) for this field — anything else is either a mistake or
+/// an attacker-controlled manifest attempting to launch an arbitrary target via
+/// `opener::open` (F-P1-3), which on Windows resolves through ShellExecute and
+/// will happily open a UNC path or local file if not stopped here.
+const ALLOWED_OPEN_URL_HOSTS: &[&str] = &["www.curseforge.com", "curseforge.com"];
+
+fn validate_open_url(url: &str) -> Result<(), String> {
+    let parsed = url::Url::parse(url).map_err(|_| "Invalid or unsupported URL".to_string())?;
+
+    if parsed.scheme() != "https" {
+        return Err(format!(
+            "Refusing to open non-https URL scheme: {}",
+            parsed.scheme()
+        ));
+    }
+
+    match parsed.host_str() {
+        Some(host) if ALLOWED_OPEN_URL_HOSTS.contains(&host) => Ok(()),
+        Some(host) => Err(format!("Refusing to open disallowed host: {}", host)),
+        None => Err("Refusing to open a URL with no host".to_string()),
+    }
+}
+
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
+    validate_open_url(&url)?;
     opener::open(url).map_err(|e| format!("Failed to open browser: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_url_rejects_non_https_and_disallowed_hosts() {
+        for bad in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "http://www.curseforge.com/minecraft/mc-mods/sodium", // http, not https
+            "https://evil.example.com/",
+            "https://curseforge.com.evil.example.com/", // host-confusable, not a real subdomain
+            "\\\\attacker.example\\share\\setup.exe",
+            "not a url",
+            "",
+        ] {
+            assert!(
+                validate_open_url(bad).is_err(),
+                "expected '{bad}' to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn open_url_accepts_curseforge_hosts() {
+        for good in [
+            "https://www.curseforge.com/minecraft/mc-mods/sodium",
+            "https://curseforge.com/minecraft/mc-mods/sodium",
+        ] {
+            assert!(
+                validate_open_url(good).is_ok(),
+                "expected '{good}' to be accepted"
+            );
+        }
+    }
+
+    fn make_addon(project_id: u64, name: &str, version: &str) -> Addon {
+        Addon {
+            addon_file_id: project_id,
+            addon_name: name.to_string(),
+            addon_project_id: project_id,
+            cdn_download_url: format!("https://edge.forgecdn.net/{name}"),
+            mod_folder_path: "mods".to_string(),
+            version: version.to_string(),
+            web_site_url: None,
+            disabled: None,
+            file_name_on_disk: format!("{name}.jar"),
+        }
+    }
+
+    fn make_manifest(mods: Vec<Addon>) -> Manifest {
+        Manifest {
+            update_type: Some("full".to_string()),
+            mods,
+            resourcepacks: Vec::new(),
+            shaderpacks: Vec::new(),
+            datapacks: Vec::new(),
+            config_files: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn renamed_addon_with_version_bump_is_updated_not_removed_and_added() {
+        // Same project_id, different addon_name AND version — the exact shape
+        // that used to read as "removed + added" under name-based matching
+        // (F-P2-12), while installer::calculate_update_diff already treated it
+        // as "updated". This asserts compare_manifests now agrees.
+        let old = make_manifest(vec![make_addon(1, "Sodium", "sodium-mc1.20-0.5.jar")]);
+        let new = make_manifest(vec![make_addon(
+            1,
+            "Sodium Renamed",
+            "sodium-mc1.20-0.6.jar",
+        )]);
+
+        let info = compare_manifests(old, new).expect("compare_manifests should succeed");
+
+        assert!(
+            info.added_addons.is_empty(),
+            "renamed addon must not be reported as added"
+        );
+        assert!(
+            info.removed_addons.is_empty(),
+            "renamed addon must not be reported as removed"
+        );
+        assert_eq!(info.updated_addon_ids, vec![1]);
+    }
+
+    #[test]
+    fn renamed_addon_with_same_version_is_neither_added_removed_nor_updated() {
+        // A pure rename with no version change is invisible to both this
+        // function and the installer's diff — consistent, if quiet.
+        let old = make_manifest(vec![make_addon(1, "Sodium", "sodium-mc1.20-0.5.jar")]);
+        let new = make_manifest(vec![make_addon(
+            1,
+            "Sodium Renamed",
+            "sodium-mc1.20-0.5.jar",
+        )]);
+
+        let info = compare_manifests(old, new).expect("compare_manifests should succeed");
+
+        assert!(info.added_addons.is_empty());
+        assert!(info.removed_addons.is_empty());
+        assert!(info.updated_addon_ids.is_empty());
+    }
+
+    #[test]
+    fn genuinely_new_addon_is_added() {
+        let old = make_manifest(vec![make_addon(1, "Sodium", "1.0.jar")]);
+        let new = make_manifest(vec![
+            make_addon(1, "Sodium", "1.0.jar"),
+            make_addon(2, "Lithium", "1.0.jar"),
+        ]);
+
+        let info = compare_manifests(old, new).expect("compare_manifests should succeed");
+
+        assert_eq!(info.added_addons.len(), 1);
+        assert_eq!(info.added_addons[0].addon_project_id, 2);
+        assert!(info.removed_addons.is_empty());
+        assert!(info.updated_addon_ids.is_empty());
+    }
+
+    #[test]
+    fn genuinely_removed_addon_is_removed() {
+        let old = make_manifest(vec![
+            make_addon(1, "Sodium", "1.0.jar"),
+            make_addon(2, "Lithium", "1.0.jar"),
+        ]);
+        let new = make_manifest(vec![make_addon(1, "Sodium", "1.0.jar")]);
+
+        let info = compare_manifests(old, new).expect("compare_manifests should succeed");
+
+        assert!(info.added_addons.is_empty());
+        assert_eq!(info.removed_addons, vec!["Lithium".to_string()]);
+        assert!(info.updated_addon_ids.is_empty());
+    }
+
+    #[test]
+    fn update_info_serializes_with_camel_case_keys() {
+        let info = UpdateInfo {
+            uuid: "test-uuid".to_string(),
+            timestamp: "2026-01-01T00:00:00Z".to_string(),
+            added_addons: Vec::new(),
+            removed_addons: Vec::new(),
+            updated_addon_ids: vec![42],
+        };
+
+        let json = serde_json::to_value(&info).expect("UpdateInfo should serialize");
+        let obj = json
+            .as_object()
+            .expect("UpdateInfo should serialize to an object");
+
+        for key in [
+            "uuid",
+            "timestamp",
+            "addedAddons",
+            "removedAddons",
+            "updatedAddonIds",
+        ] {
+            assert!(
+                obj.contains_key(key),
+                "expected camelCase key '{key}' in serialized UpdateInfo, got: {obj:?}"
+            );
+        }
+        // snake_case must not leak through now that rename_all is applied.
+        assert!(!obj.contains_key("added_addons"));
+        assert!(!obj.contains_key("updated_addon_ids"));
+    }
 }

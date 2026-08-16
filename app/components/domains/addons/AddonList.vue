@@ -154,19 +154,10 @@
         @toggle-exclusion="handleToggleExclusion"
       />
     </div>
-
-    <div
-      v-if="showStats && isDev"
-      class="addon-grid__stats"
-    >
-      <div>Total: {{ totalAddons }} | Visible: {{ visibleCount }} | Render ratio: {{ renderRatio }}%</div>
-      <div>Search time: {{ searchDuration }}ms | Memory: ~{{ memoryEstimate }}KB</div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { invoke } from '@tauri-apps/api/core'
 import { VList } from 'virtua/vue'
 
 import type { Addon, ManifestUpdateInfo } from '~/types'
@@ -178,12 +169,10 @@ interface Props
 	addons: Addon[]
 	title?: string
 	category?: string
-	selectedAddons?: string[]
 	showSelection?: boolean
 	isLoading?: boolean
 	virtualScrollThreshold?: number
 	containerHeight?: number
-	showStats?: boolean
 	updateInfo?: ManifestUpdateInfo | null
 	excludedAddons?: string[]
 	showExclusion?: boolean
@@ -193,12 +182,10 @@ interface Props
 const props = withDefaults(defineProps<Props>(), {
 	title: 'Addons',
 	category: 'addons',
-	selectedAddons: () => [],
 	showSelection: false,
 	isLoading: false,
 	virtualScrollThreshold: 100,
 	containerHeight: 400,
-	showStats: false,
 	updateInfo: null,
 	excludedAddons: () => [],
 	showExclusion: false,
@@ -206,20 +193,13 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{
-	toggleSelection: [addonName: string]
 	toggleExclusion: [addonName: string]
 	bulkActions: [action: 'exclude', addonNames: string[]]
 }>()
 
 const currentLayout = ref<'grid' | 'list'>(props.layout)
-const selectedAddonsInternal = ref<string[]>([...props.selectedAddons])
+const selectedAddonsInternal = ref<string[]>([])
 const searchTerm = ref('')
-const isSearching = computed(() => searchTerm.value.length > 0)
-
-watch(() => props.selectedAddons, (val) =>
-{
-	selectedAddonsInternal.value = [...val]
-}, { deep: true })
 
 const filteredItems = computed(() =>
 {
@@ -238,28 +218,6 @@ const displayedAddons = computed(() =>
 	filteredItems.value.filter((a) => a.disabled !== true)
 )
 const totalAddons = computed(() => props.addons.length)
-const visibleCount = computed(() => displayedAddons.value.length)
-const renderRatio = computed(() => Math.round((visibleCount.value / Math.max(totalAddons.value, 1)) * 100))
-
-const searchDuration = ref(0)
-const memoryEstimate = computed(() => Math.round(visibleCount.value * 0.5))
-const isDev = computed(() => import.meta.dev)
-
-watch(isSearching, (searching) =>
-{
-	if (searching)
-	{
-		const start = performance.now()
-		const unwatch = watch(isSearching, (stillSearching) =>
-		{
-			if (!stillSearching)
-			{
-				searchDuration.value = Math.round(performance.now() - start)
-				unwatch()
-			}
-		})
-	}
-})
 
 function handleToggleSelection(addonName: string)
 {
@@ -272,7 +230,6 @@ function handleToggleSelection(addonName: string)
 	{
 		selectedAddonsInternal.value.push(addonName)
 	}
-	emit('toggleSelection', addonName)
 }
 
 function handleToggleExclusion(addonName: string)
@@ -293,33 +250,16 @@ function clearSelection()
 
 async function openCurseforge(addon: Addon)
 {
-	logger.info('Opening CurseForge page for addon', {
-		addonName: addon.addon_name,
-		webSiteURL: addon.webSiteURL,
-		hasWebSiteURL: !(addon.webSiteURL == null)
-	})
+	// Derives the CurseForge URL from addon_name via a fixed https://www.curseforge.com/...
+	// prefix, rather than trusting webSiteURL — a downloaded manifest is
+	// attacker-influenced, and webSiteURL previously went straight to
+	// opener::open with no scheme/host check (F-P1-3). open_url itself is now
+	// also host-allowlisted as defense in depth, but this path avoids relying
+	// on manifest-supplied navigation targets at all.
+	logger.info({ addonName: addon.addon_name }, 'Opening CurseForge page for addon')
 
-	if ((addon.webSiteURL != null) && addon.webSiteURL.length > 0)
-	{
-		logger.info('Attempting to open URL:', addon.webSiteURL)
-		try
-		{
-			await invoke('open_url', { url: addon.webSiteURL })
-			logger.info('Successfully called open_url')
-		}
-		catch (e)
-		{
-			logger.error('Failed to open URL', { url: addon.webSiteURL, error: e })
-		}
-	}
-	else
-	{
-		logger.warn('No valid webSiteURL found for addon', {
-			addonName: addon.addon_name,
-			webSiteURL: addon.webSiteURL,
-			webSiteURLType: typeof addon.webSiteURL
-		})
-	}
+	const { openCurseforgeUrl } = useTauri()
+	await openCurseforgeUrl(addon.addon_name)
 }
 
 function getAddonStatus(addon: Addon): '' | 'added' | 'removed' | 'updated'
@@ -332,32 +272,13 @@ function getAddonStatus(addon: Addon): '' | 'added' | 'removed' | 'updated'
 	if (added != null) return 'added'
 	if (removed) return 'removed'
 
-	if (props.updateInfo.updated_addon_ids != null)
+	if (props.updateInfo.updatedAddonIds.includes(addon.addon_project_id))
 	{
-		const updated = props.updateInfo.updated_addon_ids.includes(addon.addon_project_id)
-		if (updated === true) return 'updated'
+		return 'updated'
 	}
 
 	return ''
 }
-
-function getSelectedItems(): string[]
-{
-	return [...selectedAddonsInternal.value]
-}
-
-const getPerformanceStats = () => ({
-	searchDuration: searchDuration.value,
-	memoryEstimate: memoryEstimate.value,
-	useVirtualScrolling: useVirtualScrolling.value
-})
-
-defineExpose({
-	getPerformanceStats,
-	searchTerm,
-	filteredItems,
-	getSelectedItems
-})
 </script>
 
 <style scoped>

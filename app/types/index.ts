@@ -61,7 +61,7 @@ export interface ManifestUpdateInfo
 	timestamp: string
 	addedAddons: Addon[]
 	removedAddons: string[]
-	configFiles: string[]
+	updatedAddonIds: number[]
 }
 
 /**

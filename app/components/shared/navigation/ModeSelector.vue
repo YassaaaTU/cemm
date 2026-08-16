@@ -26,5 +26,5 @@ const appStore = useAppStore()
 const modeOptions = [
 	{ value: 'admin', label: 'Admin', icon: 'mdi:shield-crown' },
 	{ value: 'user', label: 'User', icon: 'mdi:account' }
-]
+] as const
 </script>
