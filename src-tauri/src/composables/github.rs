@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tauri::{command, AppHandle, Emitter};
 
 use crate::composables::manifest::Manifest;
@@ -55,6 +55,54 @@ fn emit_progress(app: &AppHandle, progress: u8, message: &str) {
             message: message.to_string(),
         },
     );
+}
+
+#[derive(Deserialize)]
+struct GitHubErrorResponse {
+    message: Option<String>,
+}
+
+/// Produces a credential-safe error for a failed GitHub API response.
+///
+/// GitHub's JSON `message` is useful to the caller, while raw response bodies
+/// are intentionally not returned: they may be non-JSON proxy output and are
+/// not needed to diagnose the upload stage or HTTP failure.
+fn format_github_api_error(operation: &str, status: reqwest::StatusCode, body: &str) -> String {
+    let detail = if body.trim().is_empty() {
+        "GitHub returned no error details".to_string()
+    } else if let Ok(error) = serde_json::from_str::<GitHubErrorResponse>(body) {
+        error
+            .message
+            .filter(|message| !message.trim().is_empty())
+            .unwrap_or_else(|| "GitHub returned an error response without a message".to_string())
+    } else {
+        "GitHub returned a non-JSON error response".to_string()
+    };
+
+    format!("GitHub {operation} failed ({status}): {detail}")
+}
+
+/// Reads a GitHub response once, preserving API failure context before decoding
+/// the successful response body into its requested shape.
+async fn decode_github_response<T>(
+    operation: &str,
+    response: reqwest::Response,
+) -> Result<T, String>
+where
+    T: DeserializeOwned,
+{
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|error| format!("Failed to read GitHub response for {operation}: {error}"))?;
+
+    if !status.is_success() {
+        return Err(format_github_api_error(operation, status, &body));
+    }
+
+    serde_json::from_str(&body)
+        .map_err(|error| format!("Failed to decode GitHub response for {operation}: {error}"))
 }
 
 fn sanitize_modpack_key(name: &str) -> String {
@@ -223,14 +271,8 @@ pub async fn upload_update(
         .await
         .map_err(|e| e.to_string())?;
 
-    if !refs_response.status().is_success() {
-        return Err(format!(
-            "Failed to get main branch ref: {}",
-            refs_response.text().await.unwrap_or_default()
-        ));
-    }
-
-    let refs_json: serde_json::Value = refs_response.json().await.map_err(|e| e.to_string())?;
+    let refs_json: serde_json::Value =
+        decode_github_response("get main branch reference", refs_response).await?;
     let base_commit_sha = refs_json["object"]["sha"]
         .as_str()
         .ok_or("Could not find main branch SHA")?;
@@ -247,7 +289,8 @@ pub async fn upload_update(
         .await
         .map_err(|e| e.to_string())?;
 
-    let commit_json: serde_json::Value = commit_response.json().await.map_err(|e| e.to_string())?;
+    let commit_json: serde_json::Value =
+        decode_github_response("get base commit", commit_response).await?;
     let base_tree_sha = commit_json["tree"]["sha"]
         .as_str()
         .ok_or("Could not find base tree SHA")?;
@@ -270,10 +313,8 @@ pub async fn upload_update(
         .await
         .map_err(|e| e.to_string())?;
 
-    let manifest_blob_json: serde_json::Value = manifest_blob_response
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
+    let manifest_blob_json: serde_json::Value =
+        decode_github_response("create manifest blob", manifest_blob_response).await?;
     let manifest_blob_sha = manifest_blob_json["sha"]
         .as_str()
         .ok_or("Could not get manifest blob SHA")?;
@@ -322,10 +363,8 @@ pub async fn upload_update(
             .await
             .map_err(|e| e.to_string())?;
 
-        let config_blob_json: serde_json::Value = config_blob_response
-            .json()
-            .await
-            .map_err(|e| e.to_string())?;
+        let config_blob_json: serde_json::Value =
+            decode_github_response("create config file blob", config_blob_response).await?;
         let config_blob_sha = config_blob_json["sha"]
             .as_str()
             .ok_or("Could not get config blob SHA")?
@@ -369,7 +408,8 @@ pub async fn upload_update(
         .await
         .map_err(|e| e.to_string())?;
 
-    let tree_json: serde_json::Value = tree_response.json().await.map_err(|e| e.to_string())?;
+    let tree_json: serde_json::Value =
+        decode_github_response("create file tree", tree_response).await?;
     let new_tree_sha = tree_json["sha"]
         .as_str()
         .ok_or("Could not get new tree SHA")?;
@@ -401,7 +441,7 @@ pub async fn upload_update(
         .map_err(|e| e.to_string())?;
 
     let new_commit_json: serde_json::Value =
-        commit_response.json().await.map_err(|e| e.to_string())?;
+        decode_github_response("create commit", commit_response).await?;
     let new_commit_sha = new_commit_json["sha"]
         .as_str()
         .ok_or("Could not get new commit SHA")?;
@@ -420,12 +460,8 @@ pub async fn upload_update(
         .await
         .map_err(|e| e.to_string())?;
 
-    if !update_ref_response.status().is_success() {
-        return Err(format!(
-            "Failed to update main branch: {}",
-            update_ref_response.text().await.unwrap_or_default()
-        ));
-    }
+    let _: serde_json::Value =
+        decode_github_response("update main branch reference", update_ref_response).await?;
 
     emit_progress(&app, 100, "Upload complete");
     Ok(())
@@ -663,6 +699,49 @@ pub async fn download_config_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn github_json_error_retains_the_api_message_and_status() {
+        let error = format_github_api_error(
+            "create commit",
+            reqwest::StatusCode::UNAUTHORIZED,
+            r#"{"message":"Bad credentials"}"#,
+        );
+
+        assert_eq!(
+            error,
+            "GitHub create commit failed (401 Unauthorized): Bad credentials"
+        );
+    }
+
+    #[test]
+    fn github_non_json_error_reports_stage_and_status_without_echoing_body() {
+        let error = format_github_api_error(
+            "create file tree",
+            reqwest::StatusCode::BAD_GATEWAY,
+            "upstream service unavailable",
+        );
+
+        assert_eq!(
+            error,
+            "GitHub create file tree failed (502 Bad Gateway): GitHub returned a non-JSON error response"
+        );
+        assert!(!error.contains("upstream service unavailable"));
+    }
+
+    #[test]
+    fn github_empty_error_reports_stage_and_status() {
+        let error = format_github_api_error(
+            "update main branch reference",
+            reqwest::StatusCode::CONFLICT,
+            "  \n",
+        );
+
+        assert_eq!(
+            error,
+            "GitHub update main branch reference failed (409 Conflict): GitHub returned no error details"
+        );
+    }
 
     #[test]
     fn parse_and_validate_repo_accepts_well_formed_values() {
