@@ -1,13 +1,9 @@
 <template>
   <div class="container mx-auto px-4 py-6 min-h-screen flex flex-col">
-    <!-- Main content area with responsive constraints -->
-    <main
-      id="main-content"
-      class="flex-1 w-full max-w-5xl mx-auto"
-      tabindex="-1"
-    >
+    <!-- Content wrapper — the page's <main> landmark lives in layouts/default.vue -->
+    <div class="flex-1 w-full max-w-5xl mx-auto">
       <component :is="panelComponent" />
-    </main>
+    </div>
   </div>
 </template>
 

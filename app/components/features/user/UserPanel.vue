@@ -1,7 +1,7 @@
 <template>
   <div
     class="user-panel"
-    role="main"
+    role="region"
     aria-labelledby="user-mode-title"
   >
     <h1
@@ -350,24 +350,25 @@
 
           <!-- Config Files preview -->
           <div
-            v-if="downloadedConfigFiles.length > 0"
+            v-if="configFilesPreview.length > 0"
             class="mt-2"
           >
             <h4 class="font-semibold text-sm mb-2">
-              Config Files ({{ downloadedConfigFiles.length }})
+              Config Files ({{ configFilesPreview.length }})
             </h4>
             <div
-              v-for="cf in downloadedConfigFiles"
-              :key="cf.relative_path"
+              v-for="cf in configFilesPreview"
+              :key="cf.relativePath"
               class="flex items-center gap-2 py-1"
             >
               <span
+                v-if="cf.badge !== null"
                 class="badge badge-sm"
-                :class="cf.is_binary ? 'badge-secondary' : 'badge-primary'"
+                :class="cf.badge === 'BIN' ? 'badge-secondary' : 'badge-primary'"
               >
-                {{ cf.is_binary ? 'BIN' : 'CFG' }}
+                {{ cf.badge }}
               </span>
-              <span class="font-mono text-sm">{{ cf.relative_path }}</span>
+              <span class="font-mono text-sm">{{ cf.relativePath }}</span>
             </div>
           </div>
 
@@ -529,95 +530,83 @@
     </div>
 
     <!-- Confirmation Dialog -->
-    <Teleport to="body">
-      <div
-        v-if="showConfirmDialog"
-        class="modal modal-open z-50"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="confirm-update-title"
+    <BaseModal
+      v-model="showConfirmDialog"
+      labelled-by="confirm-update-title"
+    >
+      <h3
+        id="confirm-update-title"
+        class="text-lg font-bold text-warning flex items-center gap-2"
       >
-        <div class="modal-box">
-          <h3
-            id="confirm-update-title"
-            class="text-lg font-bold text-warning flex items-center gap-2"
-          >
-            <Icon
-              name="mdi:alert-circle"
-              size="1.4rem"
-            />
-            Confirm Update
-          </h3>
-          <p class="py-4">
-            You are about to apply an update that will:
-          </p>
-          <ul class="menu bg-base-200 rounded-box mb-4">
-            <li
-              v-if="newAddonNames.length > 0"
-              class="text-success"
-            >
-              <span>Add {{ newAddonNames.length }} new addon(s)</span>
-            </li>
-            <li
-              v-if="updatedAddonNames.length > 0"
-              class="text-warning"
-            >
-              <span>Update {{ updatedAddonNames.length }} addon(s)</span>
-            </li>
-            <li
-              v-if="removedAddonNames.length > 0"
-              class="text-error"
-            >
-              <span>Remove {{ removedAddonNames.length }} addon(s). These files will be deleted.</span>
-            </li>
-          </ul>
-          <div
-            v-if="hasDestructiveChanges"
-            class="alert alert-warning mb-4"
-          >
-            <Icon name="mdi:alert" />
-            <span>This action cannot be undone. Removed addon files will be permanently deleted.</span>
-          </div>
-          <div
-            v-if="hasDestructiveChanges"
-            class="form-control mb-4"
-          >
-            <label class="label cursor-pointer justify-start gap-2">
-              <input
-                v-model="confirmAcknowledged"
-                type="checkbox"
-                class="checkbox checkbox-sm"
-              />
-              <span class="label-text">I understand this action cannot be undone</span>
-            </label>
-          </div>
-          <div class="modal-action">
-            <button
-              class="btn btn-ghost"
-              @click="showConfirmDialog = false"
-            >
-              Cancel
-            </button>
-            <button
-              class="btn btn-warning"
-              :disabled="hasDestructiveChanges && !confirmAcknowledged"
-              @click="handleConfirmedInstall"
-            >
-              <Icon
-                name="mdi:check"
-                size="1.1rem"
-              />
-              {{ hasDestructiveChanges ? 'I understand, apply update' : 'Apply update' }}
-            </button>
-          </div>
-        </div>
-        <div
-          class="modal-backdrop"
-          aria-hidden="true"
-          @click="showConfirmDialog = false"
+        <Icon
+          name="mdi:alert-circle"
+          size="1.4rem"
         />
+        Confirm Update
+      </h3>
+      <p class="py-4">
+        You are about to apply an update that will:
+      </p>
+      <ul class="menu bg-base-200 rounded-box mb-4">
+        <li
+          v-if="newAddonNames.length > 0"
+          class="text-success"
+        >
+          <span>Add {{ newAddonNames.length }} new addon(s)</span>
+        </li>
+        <li
+          v-if="updatedAddonNames.length > 0"
+          class="text-warning"
+        >
+          <span>Update {{ updatedAddonNames.length }} addon(s)</span>
+        </li>
+        <li
+          v-if="removedAddonNames.length > 0"
+          class="text-error"
+        >
+          <span>Remove {{ removedAddonNames.length }} addon(s). These files will be deleted.</span>
+        </li>
+      </ul>
+      <div
+        v-if="hasDestructiveChanges"
+        class="alert alert-warning mb-4"
+      >
+        <Icon name="mdi:alert" />
+        <span>This action cannot be undone. Removed addon files will be permanently deleted.</span>
       </div>
-    </Teleport>
+      <div
+        v-if="hasDestructiveChanges"
+        class="form-control mb-4"
+      >
+        <label class="label cursor-pointer justify-start gap-2">
+          <input
+            v-model="confirmAcknowledged"
+            type="checkbox"
+            class="checkbox checkbox-sm"
+          />
+          <span class="label-text">I understand this action cannot be undone</span>
+        </label>
+      </div>
+      <div class="modal-action">
+        <button
+          class="btn btn-ghost"
+          @click="showConfirmDialog = false"
+        >
+          Cancel
+        </button>
+        <button
+          class="btn btn-warning"
+          :disabled="hasDestructiveChanges && !confirmAcknowledged"
+          @click="handleConfirmedInstall"
+        >
+          <Icon
+            name="mdi:check"
+            size="1.1rem"
+          />
+          {{ hasDestructiveChanges ? 'I understand, apply update' : 'Apply update' }}
+        </button>
+      </div>
+    </BaseModal>
   </div>
 </template>
 
@@ -626,6 +615,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 import { calculateUpdateDiff } from '~/composables/useTauri'
 import type { ConfigFileWithContent } from '~/types'
+import { isValidGithubRepo } from '~/utils/githubRepo'
 
 interface InstallProgressEvent
 {
@@ -673,11 +663,7 @@ const githubRepo = computed({
 	}
 })
 
-const githubRepoValid = computed(() =>
-{
-	const repo = githubRepo.value.trim()
-	return repo.length > 0 && repo.includes('/')
-})
+const githubRepoValid = computed(() => isValidGithubRepo(githubRepo.value))
 
 const canDownload = computed(() =>
 	!downloading.value
@@ -709,17 +695,9 @@ const previewData = computed(() =>
 	const oldManifest = manifestStore.previousManifest
 	const newManifest = manifest.value
 
-	if (newManifest.updateType === 'config')
-	{
-		return {
-			oldManifest,
-			newManifest,
-			diff: { removed_addons: [], updated_addon_ids: [], new_addons: [] },
-			hasChanges: false,
-			configFiles: downloadedConfigFiles.value
-		}
-	}
-
+	// calculateUpdateDiff keys config-only behavior to the explicit updateType
+	// discriminator, so the preview and installer agree without preventing a
+	// legitimate full update from emptying an addon category.
 	const diff = calculateUpdateDiff(oldManifest, newManifest)
 
 	const hasChanges = oldManifest !== null && (
@@ -741,6 +719,26 @@ const hasDestructiveChanges = computed(() =>
 	previewData.value !== null
 	&& (previewData.value.diff.removed_addons.length > 0 || previewData.value.diff.updated_addon_ids.length > 0)
 )
+
+// Before confirmation, config file *content* hasn't been downloaded yet, so
+// downloadedConfigFiles is empty and the preview showed nothing at all even
+// though the manifest already lists which files are coming (F-P3-13). Falling
+// back to manifest.config_files shows the file list immediately; the BIN/CFG
+// badge only becomes available once content — and with it is_binary — exists.
+const configFilesPreview = computed(() =>
+{
+	if (downloadedConfigFiles.value.length > 0)
+	{
+		return downloadedConfigFiles.value.map((cf) => ({
+			relativePath: cf.relative_path,
+			badge: cf.is_binary === true ? 'BIN' : 'CFG'
+		}))
+	}
+	return (manifest.value?.config_files ?? []).map((cf) => ({
+		relativePath: cf.relative_path,
+		badge: null as 'BIN' | 'CFG' | null
+	}))
+})
 
 const allNewAddons = computed(() =>
 {
@@ -786,7 +784,7 @@ const statusIcon = computed(() =>
 		warning: 'mdi:alert',
 		info: 'mdi:information'
 	}
-	return icons[statusType.value] ?? icons.info
+	return icons[statusType.value] ?? 'mdi:information'
 })
 
 const alertClass = computed(() => `alert-${statusType.value}`)
@@ -822,13 +820,13 @@ const updateModpackPath = (newPath: string | string[] | null) =>
 	if (singlePath !== null && singlePath !== undefined && singlePath.trim().length > 0)
 	{
 		appStore.modpackPath = singlePath
-		logger.info('Modpack path updated via PathSelector', { path: singlePath })
+		logger.info({ path: singlePath }, 'Modpack path updated via PathSelector')
 	}
 }
 
 const handlePathSelectorError = (error: string) =>
 {
-	logger.error('PathSelector error', { error })
+	logger.error({ error }, 'PathSelector error')
 	setStatus(`Path selection error: ${error}`, 'error')
 }
 
@@ -836,7 +834,7 @@ const saveGithubRepo = () =>
 {
 	if (githubRepo.value.trim())
 	{
-		logger.info('GitHub repository saved', { repo: githubRepo.value })
+		logger.info({ repo: githubRepo.value }, 'GitHub repository saved')
 	}
 }
 
@@ -854,7 +852,7 @@ async function handleDownloadFromGithub()
 
 	try
 	{
-		await downloadFromGithub(
+		const result = await downloadFromGithub(
 			uuid.value,
 			(p: number, msg?: string) =>
 			{
@@ -863,6 +861,10 @@ async function handleDownloadFromGithub()
 			},
 			setStatus
 		)
+		if (result.success)
+		{
+			progress.value = 100
+		}
 		if (!expandedSections.value.includes(2))
 		{
 			expandedSections.value.push(2)
@@ -871,7 +873,6 @@ async function handleDownloadFromGithub()
 	finally
 	{
 		downloading.value = false
-		progress.value = 100
 	}
 }
 
@@ -895,6 +896,10 @@ async function confirmInstall()
 			)
 			downloadedConfigFiles.value = result.configFiles
 			configFilesDownloaded.value = true
+			if (result.success)
+			{
+				progress.value = 100
+			}
 		}
 		catch (error)
 		{
@@ -904,7 +909,6 @@ async function confirmInstall()
 		finally
 		{
 			downloading.value = false
-			progress.value = 100
 		}
 	}
 

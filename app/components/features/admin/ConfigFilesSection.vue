@@ -118,39 +118,35 @@
     </div>
   </div>
 
-  <Teleport to="body">
-    <div
-      v-if="showDirectorySelector"
-      class="modal modal-open"
+  <BaseModal
+    v-model="showDirectorySelector"
+    labelled-by="select-config-directory-title"
+    box-class="max-w-lg"
+  >
+    <h3
+      id="select-config-directory-title"
+      class="text-lg font-bold"
     >
-      <div class="modal-box max-w-lg">
-        <h3 class="text-lg font-bold">
-          Select Config Directory
-        </h3>
-        <p class="py-1 text-sm opacity-70">
-          Choose a directory to scan for config files
-        </p>
-        <PathSelector
-          type="directory"
-          title="Select Config Directory"
-          @selected="handleDirectorySelected"
-          @error="handleDirectoryError"
-        />
-        <div class="modal-action">
-          <button
-            class="btn btn-ghost"
-            @click="showDirectorySelector = false"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-      <div
-        class="modal-backdrop"
+      Select Config Directory
+    </h3>
+    <p class="py-1 text-sm opacity-70">
+      Choose a directory to scan for config files
+    </p>
+    <PathSelector
+      type="directory"
+      title="Select Config Directory"
+      @selected="handleDirectorySelected"
+      @error="handleDirectoryError"
+    />
+    <div class="modal-action">
+      <button
+        class="btn btn-ghost"
         @click="showDirectorySelector = false"
-      />
+      >
+        Cancel
+      </button>
     </div>
-  </Teleport>
+  </BaseModal>
 </template>
 
 <script setup lang="ts">
@@ -167,36 +163,7 @@ const emit = defineEmits<{
 
 const showDirectorySelector = ref(false)
 
-function handleModalEscape(e: KeyboardEvent)
-{
-	if (e.key === 'Escape') showDirectorySelector.value = false
-}
-
-watch(showDirectorySelector, (open) =>
-{
-	if (import.meta.client)
-	{
-		if (open)
-		{
-			document.addEventListener('keydown', handleModalEscape)
-			document.body.style.overflow = 'hidden'
-		}
-		else
-		{
-			document.removeEventListener('keydown', handleModalEscape)
-			document.body.style.overflow = ''
-		}
-	}
-})
-
-onUnmounted(() =>
-{
-	if (import.meta.client)
-	{
-		document.removeEventListener('keydown', handleModalEscape)
-		document.body.style.overflow = ''
-	}
-})
+// Escape, scroll lock, and focus trapping now live in BaseModal.
 
 async function handleSelectFiles()
 {

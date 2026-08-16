@@ -13,9 +13,14 @@
         <slot name="breadcrumb" />
       </div>
 
-      <!-- Main content area -->
+      <!-- Main content area. The single <main> landmark for every page using this
+           layout (dashboard.vue, settings.vue) — page-level content must not add
+           its own role="main"/<main>, or screen-reader landmark navigation sees
+           multiple nested "main" regions (F-P2-8). id/tabindex give a skip-link
+           target, shared across pages rather than duplicated per-page. -->
       <main
-        role="main"
+        id="main-content"
+        tabindex="-1"
         class="app-shell__content scrollbar-thin"
       >
         <slot />
