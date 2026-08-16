@@ -18,13 +18,11 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
-
-      - name: Install signature verifier
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes minisign
 
       - name: Confirm signing secrets are available
         env:
@@ -48,6 +46,7 @@ jobs:
           payload="$proof_dir/updater-signing-proof.txt"
           signature_file="$proof_dir/updater-signing-proof.sig"
           public_key_file="$proof_dir/updater-signing-proof.pub"
+          verifier_dir="$proof_dir/verifier"
 
           printf 'CEMM updater signing proof\n' > "$payload"
 
@@ -58,5 +57,39 @@ jobs:
           jq --raw-output '.plugins.updater.pubkey' src-tauri/tauri.conf.json \
             | base64 --decode > "$public_key_file"
 
-          minisign -Vm "$payload" -x "$signature_file" -p "$public_key_file"
+          mkdir -p "$verifier_dir/src"
+          cat > "$verifier_dir/Cargo.toml" <<'EOF'
+          [package]
+          name = "updater-signature-verifier"
+          version = "0.0.0"
+          edition = "2021"
+          publish = false
+
+          [dependencies]
+          minisign-verify = "=0.2.5"
+          EOF
+          cat > "$verifier_dir/src/main.rs" <<'EOF'
+          use minisign_verify::{PublicKey, Signature};
+          use std::{env, fs, path::Path};
+
+          fn main() -> Result<(), Box<dyn std::error::Error>> {
+              let mut args = env::args_os().skip(1);
+              let payload_path = args.next().ok_or("missing payload path")?;
+              let signature_path = args.next().ok_or("missing signature path")?;
+              let public_key_path = args.next().ok_or("missing public key path")?;
+
+              if args.next().is_some() {
+                  return Err("unexpected verifier argument".into());
+              }
+
+              let payload = fs::read(&payload_path)?;
+              let signature = Signature::from_file(Path::new(&signature_path))?;
+              let public_key = PublicKey::from_file(Path::new(&public_key_path))?;
+              public_key.verify(&payload, &signature, false)?;
+              Ok(())
+          }
+          EOF
+
+          cargo run --quiet --manifest-path "$verifier_dir/Cargo.toml" -- \
+            "$payload" "$signature_file" "$public_key_file"
           echo "Existing updater key signed successfully and matches the configured public key."
