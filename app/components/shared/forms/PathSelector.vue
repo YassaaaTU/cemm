@@ -75,8 +75,6 @@
               'input-error': pathValidation && !pathValidation.valid,
             }"
             :placeholder="inputPlaceholder"
-            @input="validateManualPath"
-            @paste="validateManualPath"
           />
           <div class="absolute inset-y-0 right-0 flex items-center pr-3">
             <Icon
@@ -197,6 +195,7 @@ const loading = ref(false)
 const validating = ref(false)
 const manualPath = ref('')
 const selectedPath = ref<string | null>(null)
+let validationGeneration = 0
 const pathValidation = ref<{
 	valid: boolean
 	message: string
@@ -281,19 +280,17 @@ const openDialog = async () =>
 	}
 }
 
-const validateManualPath = async () =>
+const validateManualPath = async (path: string, generation: number) =>
 {
-	if (!manualPath.value.trim())
-	{
-		pathValidation.value = null
-		return
-	}
-
 	validating.value = true
 
 	try
 	{
-		const result = await validatePath(manualPath.value.trim())
+		const result = await validatePath(path)
+		if (generation !== validationGeneration || manualPath.value.trim() !== path)
+		{
+			return
+		}
 
 		if (result.exists)
 		{
@@ -337,6 +334,11 @@ const validateManualPath = async () =>
 	}
 	catch (error)
 	{
+		if (generation !== validationGeneration || manualPath.value.trim() !== path)
+		{
+			return
+		}
+
 		pathValidation.value = {
 			valid: false,
 			message: '❌ Unable to validate path'
@@ -345,9 +347,37 @@ const validateManualPath = async () =>
 	}
 	finally
 	{
-		validating.value = false
+		if (generation === validationGeneration && manualPath.value.trim() === path)
+		{
+			validating.value = false
+		}
 	}
 }
+
+const debouncedValidateManualPath = useDebounceFn((path: string, generation: number) =>
+{
+	if (generation !== validationGeneration || manualPath.value.trim() !== path)
+	{
+		return
+	}
+
+	void validateManualPath(path, generation)
+}, 300)
+
+watch(manualPath, (newPath) =>
+{
+	const path = newPath.trim()
+	const generation = ++validationGeneration
+	pathValidation.value = null
+
+	if (!path)
+	{
+		validating.value = false
+		return
+	}
+
+	debouncedValidateManualPath(path, generation)
+})
 
 const selectManualPath = () =>
 {

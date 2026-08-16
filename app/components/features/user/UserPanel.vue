@@ -822,6 +822,10 @@ const updateModpackPath = (newPath: string | string[] | null) =>
 		appStore.modpackPath = singlePath
 		logger.info({ path: singlePath }, 'Modpack path updated via PathSelector')
 	}
+	else
+	{
+		appStore.modpackPath = ''
+	}
 }
 
 const handlePathSelectorError = (error: string) =>
