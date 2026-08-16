@@ -1,7 +1,7 @@
 @import "./design-tokens.css";
 @import "tailwindcss";
 @plugin "daisyui" {
-  themes: nord, dracula;
+  themes: dracula --default, nord;
 }
 
 body {

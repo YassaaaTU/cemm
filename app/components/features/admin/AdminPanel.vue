@@ -1,7 +1,7 @@
 <template>
   <div
     class="admin-panel"
-    role="main"
+    role="region"
     aria-labelledby="admin-mode-title"
   >
     <h1
@@ -221,7 +221,7 @@ const alertIcon = computed(() =>
 		warning: 'mdi:alert',
 		info: 'mdi:information'
 	}
-	return icons[statusType.value] ?? icons.info
+	return icons[statusType.value] ?? 'mdi:information'
 })
 
 const clearStatus = () =>
@@ -305,12 +305,12 @@ async function handleUploadToGithub()
 		if (result.success && typeof result.updateReference === 'string')
 		{
 			latestUpdateReference.value = result.updateReference
+			progress.value = 100
 		}
 	}
 	finally
 	{
 		uploading.value = false
-		progress.value = 100
 	}
 }
 

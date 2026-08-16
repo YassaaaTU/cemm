@@ -46,8 +46,11 @@
           class="addon-card__badge addon-card__badge--excluded"
         >EXCLUDED</span>
       </div>
+      <!-- `version` actually holds the installed JAR's filename (see
+           parse_minecraft_instance in manifest.rs), not a semantic version —
+           a "v" prefix falsely implies the latter, so it's shown as-is. -->
       <p class="addon-card__version">
-        v{{ addon.version }}
+        {{ addon.version }}
       </p>
     </div>
 

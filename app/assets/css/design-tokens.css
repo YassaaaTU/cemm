@@ -25,7 +25,9 @@
   /* Text */
   --color-text-primary:     #E4E6EB;
   --color-text-secondary:   #9A9CB0;
-  --color-text-tertiary:    #7D8597;
+  /* #7D8597 measured 3.98:1 against --color-surface-overlay, under WCAG AA's
+     4.5:1 for normal text (F-P3-7). #8891A3 measures ~4.65:1 there. */
+  --color-text-tertiary:    #8891A3;
   --color-text-inverse:     #0F1117;
 
   /* Accent */
@@ -42,8 +44,10 @@
   --color-status-success-muted: rgba(34, 197, 94, 0.15);
   --color-status-warning:       #F59E0B;
   --color-status-warning-muted: rgba(245, 158, 11, 0.15);
-  --color-status-error:         #EF4444;
-  --color-status-error-muted:   rgba(239, 68, 68, 0.15);
+  /* #EF4444 measured 4.47:1 against --color-surface-raised, marginally under
+     WCAG AA's 4.5:1 (F-P3-7). #F04646 measures ~4.55:1 there. */
+  --color-status-error:         #F04646;
+  --color-status-error-muted:   rgba(240, 70, 70, 0.15);
   --color-status-info:          #3B82F6;
   --color-status-info-muted:    rgba(59, 130, 246, 0.15);
 }

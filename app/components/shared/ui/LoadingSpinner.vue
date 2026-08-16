@@ -60,13 +60,26 @@ const props = withDefaults(defineProps<Props>(), {
 	center: true
 })
 
+// Tailwind 4 scans source text for literal class names — a template-literal
+// class like `loading-${variant}` is invisible to it, so every variant except
+// whichever happens to appear literally elsewhere gets dropped from the build
+// (see F-P2-5). Mapping through a static object keeps every class name literal.
+const variantClassMap: Record<NonNullable<Props['variant']>, string> = {
+	spinner: 'loading-spinner',
+	dots: 'loading-dots',
+	ring: 'loading-ring',
+	ball: 'loading-ball',
+	bars: 'loading-bars',
+	infinity: 'loading-infinity'
+}
+
 // Computed classes for different spinner styles and sizes
 const spinnerClass = computed(() =>
 {
 	const classes = []
 
 	// Base loading class from daisyUI
-	classes.push(`loading-${props.variant}`)
+	classes.push(variantClassMap[props.variant])
 
 	// Size classes
 	switch (props.size)

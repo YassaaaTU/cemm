@@ -49,7 +49,22 @@ const props = withDefaults(defineProps<Props>(), {
 	size: 'md'
 })
 
-const colorClass = computed(() => `progress-${props.color}`)
+// Tailwind 4 scans source text for literal class names — a template-literal
+// class like `progress-${color}` is invisible to it, so every variant is
+// dropped from the build except whichever one happens to appear literally
+// elsewhere (see F-P2-5). Mapping through a static object keeps every class
+// name literal in this file.
+const colorClassMap: Record<NonNullable<Props['color']>, string> = {
+	primary: 'progress-primary',
+	secondary: 'progress-secondary',
+	accent: 'progress-accent',
+	success: 'progress-success',
+	warning: 'progress-warning',
+	error: 'progress-error',
+	info: 'progress-info'
+}
+
+const colorClass = computed(() => colorClassMap[props.color])
 
 const sizeClass = computed(() =>
 {

@@ -61,7 +61,12 @@ export default defineNuxtConfig({
 			],
 			htmlAttrs: {
 				'lang': 'en',
-				'data-theme': 'light'
+				// Must match the theme store's default (stores/theme.ts) and the
+				// daisyUI `--default` theme in main.css — otherwise the page ships
+				// with a data-theme value the compiled CSS has no rules for at all,
+				// leaving every daisyUI color variable undefined until
+				// plugins/theme.client.ts runs post-hydration (F-P2-6).
+				'data-theme': 'dracula'
 			},
 			link: [
 				{
