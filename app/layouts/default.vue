@@ -1,81 +1,68 @@
 <template>
-  <div class="app-shell">
-    <!-- Sidebar -->
-    <SideBar class="app-shell__sidebar" />
+  <div class="flex h-dvh flex-col overflow-hidden bg-base-100 font-sans text-base-content antialiased">
+    <a
+      href="#main-content"
+      class="sr-only left-2 top-2 z-50 rounded-lg border border-primary bg-base-100 px-3 py-2 text-sm font-semibold text-base-content focus:not-sr-only focus:absolute"
+    >
+      Skip to main content
+    </a>
 
-    <!-- Right side content area -->
-    <div class="app-shell__main">
-      <!-- Breadcrumb area -->
-      <div
-        v-if="$slots.breadcrumb"
-        class="app-shell__breadcrumb"
-      >
-        <slot name="breadcrumb" />
-      </div>
+    <TitleBar />
 
-      <!-- Main content area. The single <main> landmark for every page using this
-           layout (dashboard.vue, settings.vue) — page-level content must not add
-           its own role="main"/<main>, or screen-reader landmark navigation sees
-           multiple nested "main" regions (F-P2-8). id/tabindex give a skip-link
-           target, shared across pages rather than duplicated per-page. -->
+    <div class="flex min-h-0 flex-1">
+      <IconRail />
+
+      <!-- The single <main> landmark for every page using this layout. Pages
+           must not add their own <main> or role="main", or screen-reader
+           landmark navigation sees nested "main" regions (F-P2-8). The id and
+           tabindex give the skip link a target shared across pages. -->
       <main
         id="main-content"
         tabindex="-1"
-        class="app-shell__content scrollbar-thin"
+        class="flex min-h-0 min-w-0 flex-1 flex-col"
       >
         <slot />
       </main>
-
-      <!-- Footer -->
-      <PageFooter class="app-shell__footer" />
     </div>
 
-    <!-- Global Update Dialog -->
     <UpdateDialog />
+
+    <!-- Toasts sit bottom-right, above the pinned action bar rather than over
+         the diff, and follow the resolved theme so they never appear as a light
+         card on a dark app. -->
+    <toaster
+      :theme="themeStore.isDark ? 'dark' : 'light'"
+      position="bottom-right"
+      :offset="'72px'"
+      close-button
+      rich-colors
+      :visible-toasts="4"
+      :toast-options="toastOptions"
+    />
   </div>
 </template>
 
-<style scoped>
-.app-shell {
-  height: 100dvh;
-  display: flex;
-  background: var(--color-surface-base);
-  color: var(--color-text-primary);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  overflow: hidden;
-}
+<script setup lang="ts">
+import { Toaster } from 'vue-sonner'
 
-.app-shell__sidebar {
-  flex: none;
-}
+const themeStore = useThemeStore()
 
-.app-shell__main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  margin-left: 200px;
+/**
+ * Sonner's own surface is replaced with the app's, so a toast reads as part of
+ * CEMM rather than as a third-party widget. Only the container is restyled —
+ * its positioning, stacking and swipe behaviour are left alone.
+ */
+const toastOptions = {
+	classes: {
+		// Only radius and type are ours. Sonner owns the surface: richColors
+		// already derives semantic backgrounds per type and follows the theme
+		// prop, so overriding bg here would fight it and flatten success/error
+		// back into identical grey cards.
+		toast: 'rounded-box font-sans shadow-lg',
+		title: 'text-sm font-semibold',
+		description: 'text-xs opacity-80',
+		actionButton: 'btn btn-xs btn-primary',
+		cancelButton: 'btn btn-xs'
+	}
 }
-
-.app-shell__breadcrumb {
-  flex: none;
-  padding: var(--space-3) var(--space-6);
-  border-bottom: 1px solid var(--color-border-divider);
-  background: var(--color-surface-raised);
-}
-
-.app-shell__content {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: var(--space-6);
-}
-
-.app-shell__footer {
-  flex: none;
-}
-</style>
+</script>

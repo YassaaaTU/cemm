@@ -1,245 +1,221 @@
 <template>
-  <div class="landing">
-    <!-- Gradient mesh background -->
-    <div class="landing__bg" />
-
-    <!-- Content -->
-    <div class="landing__content">
-      <!-- Brand -->
-      <div class="landing__brand animate-fade-in-up">
-        <div class="landing__brand-mark">
-          C
-        </div>
-        <h1 class="landing__brand-name">
-          CEMM
-        </h1>
-        <p class="landing__brand-tagline">
-          Custom Edition Modpack Manager
+  <div class="flex min-h-0 flex-1 items-center overflow-y-auto px-6 py-8">
+    <div class="mx-auto w-full max-w-2xl">
+      <!-- First run only. This is where the settings that never change between
+           updates get captured — which is what lets the workspaces be a single
+           screen instead of a wizard that re-asks them every time. -->
+      <header class="mb-6">
+        <p class="text-xs text-base-content/50">
+          First use
         </p>
-      </div>
+        <h1 class="mt-1 text-2xl font-bold tracking-tight">
+          {{ chosen === null ? 'Which side are you on?' : 'One-time setup' }}
+        </h1>
+        <p class="mt-2 max-w-lg text-sm leading-relaxed text-base-content/65">
+          <template v-if="chosen === null">
+            CEMM moves modpack changes between the person who makes them and
+            everyone who plays with them. You can switch any time from the rail.
+          </template>
+          <template v-else>
+            These stay saved, so from now on {{ chosen === 'user' ? 'installing an update is just pasting a code' : 'publishing is load, curate, publish' }}.
+          </template>
+        </p>
+      </header>
 
-      <!-- Mode Selection Cards -->
+      <!-- Phase 1 — pick a side -->
       <div
-        class="landing__cards animate-fade-in-up"
-        style="animation-delay: 100ms"
+        v-if="chosen === null"
+        class="grid gap-3 sm:grid-cols-2"
       >
-        <!-- Admin Card -->
         <button
-          class="landing-card"
-          :class="{ 'landing-card--active': hoveredMode === 'admin' }"
-          @click="goToApp('admin')"
-          @mouseenter="hoveredMode = 'admin'"
-          @mouseleave="hoveredMode = ''"
+          v-for="counter in counters"
+          :key="counter.mode"
+          type="button"
+          class="group rounded-box border border-base-300 bg-base-200 p-4 text-left transition-colors duration-200 ease-[var(--ease-standard)] hover:border-primary/60 hover:bg-base-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          @click="chosen = counter.mode"
         >
-          <Icon
-            name="mdi:shield-crown"
-            size="2.5rem"
-            class="landing-card__icon card-icon card-icon--admin"
-          />
-          <span class="landing-card__title card-title">Admin</span>
-          <span class="landing-card__subtitle">Create & Publish Updates</span>
-          <span class="landing-card__desc card-desc">
-            Manage modpacks, curate addon lists, and publish updates for your players.
+          <span class="grid size-10 place-items-center rounded-box bg-primary/15 text-primary">
+            <Icon
+              :name="counter.icon"
+              size="1.25rem"
+              aria-hidden="true"
+            />
+          </span>
+
+          <span class="mt-3 block text-base font-semibold">{{ counter.title }}</span>
+          <span class="mt-1 block text-sm leading-relaxed text-base-content/65">
+            {{ counter.description }}
+          </span>
+
+          <span class="mt-3 flex items-center gap-1.5 text-sm font-medium text-primary">
+            {{ counter.action }}
+            <Icon
+              name="mdi:arrow-right"
+              size="0.9375rem"
+              class="transition-transform duration-200 ease-[var(--ease-out-quick)] group-hover:translate-x-1"
+              aria-hidden="true"
+            />
           </span>
         </button>
-
-        <!-- User Card -->
-        <button
-          class="landing-card"
-          :class="{ 'landing-card--active': hoveredMode === 'user' }"
-          @click="goToApp('user')"
-          @mouseenter="hoveredMode = 'user'"
-          @mouseleave="hoveredMode = ''"
-        >
-          <Icon
-            name="mdi:account"
-            size="2.5rem"
-            class="landing-card__icon card-icon card-icon--user"
-          />
-          <span class="landing-card__title card-title">User</span>
-          <span class="landing-card__subtitle">Receive & Install Updates</span>
-          <span class="landing-card__desc card-desc">
-            Install modpack updates from your admin using an update code.
-          </span>
-        </button>
       </div>
 
-      <!-- Version -->
+      <!-- Phase 2 — the settings that never change -->
       <div
-        v-if="appVersion !== null"
-        class="landing__version animate-fade-in-up"
-        style="animation-delay: 200ms"
+        v-else
+        class="space-y-5 rounded-box border border-base-300 bg-base-200 p-5"
       >
-        v{{ appVersion }}
+        <fieldset class="fieldset">
+          <label
+            class="label text-sm font-medium text-base-content"
+            for="setup-repo"
+          >
+            GitHub repository
+          </label>
+          <label class="input input-sm w-full max-w-md border-base-300 bg-base-100 font-mono text-xs">
+            <Icon
+              name="mdi:github"
+              size="0.9375rem"
+              class="shrink-0 text-base-content/40"
+              aria-hidden="true"
+            />
+            <input
+              id="setup-repo"
+              v-model="repo"
+              type="text"
+              class="grow"
+              placeholder="owner/repository"
+              spellcheck="false"
+              autocomplete="off"
+            />
+          </label>
+          <p class="label text-xs">
+            <template v-if="chosen === 'user'">
+              Your admin will tell you which one to use — it is the same for
+              everyone in your group.
+            </template>
+            <template v-else>
+              Where your updates get published. Players point CEMM at the same one.
+            </template>
+          </p>
+        </fieldset>
+
+        <!-- Only the player has a fixed destination; an admin picks the instance
+             per publish through the native dialog. -->
+        <fieldset
+          v-if="chosen === 'user'"
+          class="fieldset border-t border-base-300 pt-4"
+        >
+          <p class="label text-sm font-medium text-base-content">
+            Your modpack folder
+          </p>
+          <PathSelector
+            type="directory"
+            title="Select modpack directory"
+            hint="The folder containing your modpack — the one with a mods folder inside it."
+            :model-value="folder"
+            @update:model-value="onFolder"
+            @error="(message: string) => notify(`Could not use that folder: ${message}`, 'error')"
+          />
+        </fieldset>
+
+        <div class="flex items-center gap-3 border-t border-base-300 pt-4">
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            @click="chosen = null"
+          >
+            Back
+          </button>
+          <div class="flex-1" />
+          <button
+            type="button"
+            class="btn btn-sm"
+            @click="finish"
+          >
+            Skip for now
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            :disabled="!canFinish"
+            @click="finish"
+          >
+            Get started
+          </button>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useAppStore } from '~/stores/app'
+import type { AppMode } from '~/stores/app'
+import { isValidGithubRepo } from '~/utils/githubRepo'
 
 const appStore = useAppStore()
-const router = useRouter()
+const { notify } = useNotify()
 
-const hoveredMode = ref<'admin' | 'user' | ''>('')
-const appVersion = ref<string | null>(null)
+const chosen = ref<AppMode | null>(null)
+const repo = ref(appStore.githubRepo)
+const folder = ref(appStore.modpackPath)
 
-function goToApp(mode: 'admin' | 'user')
+const counters: Array<{ mode: AppMode, title: string, description: string, action: string, icon: string }> = [
+	{
+		mode: 'user',
+		title: 'Install an update',
+		description: 'Someone sent you a code. Paste it in, see exactly what changes, and apply it to your modpack.',
+		action: 'Set this up',
+		icon: 'mdi:tray-arrow-down'
+	},
+	{
+		mode: 'admin',
+		title: 'Publish an update',
+		description: 'You changed the modpack. Package the difference, upload it, and get a code to hand out.',
+		action: 'Set this up',
+		icon: 'mdi:tray-arrow-up'
+	}
+]
+
+const canFinish = computed(() =>
 {
-	appStore.mode = mode
-	router.push({ name: 'dashboard' })
+	if (!isValidGithubRepo(repo.value)) return false
+	if (chosen.value === 'user' && folder.value.trim().length === 0) return false
+	return true
+})
+
+const onFolder = (value: string | string[] | null) =>
+{
+	const single = Array.isArray(value) ? value[0] : value
+	folder.value = single ?? ''
 }
 
-// Auto-navigate if user has already chosen a mode (returning user)
+/**
+ * Skipping is allowed on purpose: a player who has not been given the repository
+ * yet should still reach the workspace, where both settings are editable inline.
+ */
+const finish = async () =>
+{
+	if (chosen.value === null) return
+
+	if (isValidGithubRepo(repo.value))
+	{
+		appStore.githubRepo = repo.value.trim()
+	}
+	if (folder.value.trim().length > 0)
+	{
+		appStore.modpackPath = folder.value.trim()
+	}
+
+	appStore.setMode(chosen.value)
+	await navigateTo('/dashboard')
+}
+
+// A returning user never sees this screen.
 onMounted(async () =>
 {
-	if (import.meta.client)
+	if (appStore.modeChosen)
 	{
-		try
-		{
-			const { getVersion } = await import('@tauri-apps/api/app')
-			const version = await getVersion()
-			appVersion.value = version
-		}
-		catch
-		{
-			// Not in Tauri - fallback
-		}
-
-		// If mode is already set (returning user), go straight to dashboard
-		// Commented out for now to always show landing - uncomment to skip:
-		// if (appStore.mode && appStore.mode.length > 0) {
-		//   router.replace({ name: 'dashboard' })
-		// }
+		await navigateTo('/dashboard', { replace: true })
 	}
 })
-
-definePageMeta({
-	layout: 'landing'
-})
 </script>
-
-<style scoped>
-.landing {
-  position: relative;
-  min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-/* Gradient mesh background */
-.landing__bg {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 60% 50% at 10% 20%, rgba(232, 75, 187, 0.12) 0%, transparent 70%),
-    radial-gradient(ellipse 50% 60% at 90% 80%, rgba(124, 92, 252, 0.08) 0%, transparent 70%),
-    radial-gradient(ellipse 40% 40% at 50% 50%, rgba(0, 212, 170, 0.04) 0%, transparent 60%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-.landing__content {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  max-width: 580px;
-  padding: var(--space-8);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-8);
-}
-
-/* Brand */
-.landing__brand {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.landing__brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-lg);
-  background: var(--color-accent-primary);
-  color: var(--color-text-inverse);
-  font-family: var(--font-heading);
-  font-weight: 700;
-  font-size: 1.5rem;
-  margin-bottom: var(--space-2);
-  box-shadow: 0 0 0 4px var(--color-accent-primary-muted),
-              0 8px 32px rgba(232, 75, 187, 0.25);
-}
-
-.landing__brand-name {
-  font-family: var(--font-heading);
-  font-size: var(--text-heading-xl-size);
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  color: var(--color-text-primary);
-  line-height: 1;
-}
-
-.landing__brand-tagline {
-  font-size: var(--text-body-md-size);
-  color: var(--color-text-secondary);
-  margin-top: var(--space-1);
-}
-
-/* Cards container */
-.landing__cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-4);
-  width: 100%;
-}
-
-/* Landing card - extends the base .landing-card from main.css */
-.landing-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: var(--space-2);
-  padding: var(--space-8) var(--space-6);
-  min-height: 220px;
-}
-
-.landing-card__subtitle {
-  font-size: var(--text-body-md-size);
-  font-weight: 600;
-  color: var(--color-accent-primary);
-  margin-top: var(--space-1);
-}
-
-.landing-card--active {
-  border-color: var(--color-accent-primary);
-  box-shadow: 0 0 0 1px var(--color-accent-primary), var(--elev-2);
-}
-
-/* Version */
-.landing__version {
-  font-size: var(--text-body-xs-size);
-  color: var(--color-text-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Responsive */
-@media (max-width: 480px) {
-  .landing__cards {
-    grid-template-columns: 1fr;
-  }
-  .landing-card {
-    min-height: 120px;
-    padding: var(--space-6) var(--space-4);
-  }
-}
-</style>

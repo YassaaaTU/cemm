@@ -1,25 +1,23 @@
 <template>
-  <div class="container mx-auto px-4 py-6 min-h-screen flex flex-col">
-    <!-- Content wrapper — the page's <main> landmark lives in layouts/default.vue -->
-    <div class="flex-1 w-full max-w-5xl mx-auto">
-      <component :is="panelComponent" />
-    </div>
+  <div class="flex min-h-0 flex-1 flex-col">
+    <component :is="panelComponent" />
   </div>
 </template>
 
 <script setup lang="ts">
+// The layout owns the <main> landmark, page width and padding, so this page is
+// a straight switch between the two counters and nothing else. The wrapper div
+// exists because Nuxt page transitions require a single static root node.
 import AdminPanel from '~/components/features/admin/AdminPanel.vue'
 import UserPanel from '~/components/features/user/UserPanel.vue'
 import { useAppStore } from '~/stores/app'
 
 const appStore = useAppStore()
 
-// Dynamic component based on current mode
 const panelComponent = computed(() =>
 	appStore.mode === 'admin' ? AdminPanel : UserPanel
 )
 
-// Use the default layout (with sidebar)
 definePageMeta({
 	layout: 'default'
 })

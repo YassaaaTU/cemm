@@ -60,6 +60,19 @@ export const useManifestStore = defineStore('manifest', () =>
 		excludedAddons.value = []
 	}
 
+	/**
+	 * Full reset. Used when switching between the Install and Publish counters:
+	 * both read this same store, so an admin's freshly loaded local instance
+	 * left in place would make the player preview diff against the wrong thing.
+	 */
+	function clearManifest()
+	{
+		manifest.value = null
+		previousManifest.value = null
+		updateInfo.value = null
+		excludedAddons.value = []
+	}
+
 	return {
 		manifest,
 		previousManifest,
@@ -71,6 +84,7 @@ export const useManifestStore = defineStore('manifest', () =>
 		setUpdateInfo,
 		toggleExclusion,
 		isExcluded,
-		clearExclusions
+		clearExclusions,
+		clearManifest
 	}
 })
