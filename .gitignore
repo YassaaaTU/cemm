@@ -20,3 +20,5 @@ plans/
 
 *.local
 testing_keys.ps1
+.claude/
+.impeccable/
