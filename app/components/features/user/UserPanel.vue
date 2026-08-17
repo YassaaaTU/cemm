@@ -1,621 +1,288 @@
 <template>
-  <div
-    class="user-panel"
-    role="region"
-    aria-labelledby="user-mode-title"
-  >
-    <h1
-      id="user-mode-title"
-      class="sr-only"
-    >
-      User Mode
-    </h1>
+  <WorkspacePage heading="Install update">
+    <template #lede>
+      <template v-if="manifest !== null">
+        Nothing is written to your modpack until you confirm.
+      </template>
+      <template v-else>
+        Paste a code to see exactly what it changes.
+      </template>
+    </template>
 
-    <nav
-      class="user-panel__progress-bar"
-      aria-label="Setup progress"
-    >
+    <!-- The only per-use input. The repository and the modpack folder are
+         settings, not steps, so they sit here as context rather than as
+         screens the user walks through on every update. -->
+    <template #context>
       <div
-        v-for="(step, index) in wizardSteps"
-        :key="step.key"
-        class="user-panel__progress-item"
-        :class="{
-          'user-panel__progress-item--completed': stepCompleted[index],
-          'user-panel__progress-item--active': expandedSections.includes(index),
-        }"
+        class="overflow-hidden rounded-box border bg-base-200 transition-colors duration-150 ease-[var(--ease-standard)]"
+        :class="manifest !== null ? 'border-primary/50' : 'border-base-300'"
       >
-        <button
-          class="btn btn-sm btn-ghost gap-1"
-          :class="{ 'text-success': stepCompleted[index], 'text-primary': expandedSections.includes(index) }"
-          @click="toggleSection(index)"
-        >
-          <Icon
-            v-if="stepCompleted[index]"
-            name="mdi:check-circle"
-            size="1rem"
-          />
-          <Icon
-            v-else
-            :name="step.icon"
-            size="1rem"
-          />
-          {{ step.label }}
-        </button>
-      </div>
-    </nav>
-
-    <!-- Source Section -->
-    <div
-      class="collapse collapse-arrow bg-base-200 mb-3"
-      :class="{ 'collapse-open': expandedSections.includes(0) }"
-    >
-      <input
-        type="checkbox"
-        :checked="expandedSections.includes(0)"
-        aria-label="Toggle update source section"
-        @change="toggleSection(0)"
-      />
-      <div class="collapse-title font-semibold flex items-center gap-2">
-        <Icon
-          name="mdi:source-branch"
-          size="1.2rem"
-          class="text-secondary"
-        />
-        Update Source
-        <span
-          v-if="stepCompleted[0]"
-          class="badge badge-success badge-sm"
-        >
-          Complete
-        </span>
-        <span
-          v-else-if="!expandedSections.includes(0)"
-          class="badge badge-ghost badge-sm"
-        >
-          Setup needed
-        </span>
-      </div>
-      <div class="collapse-content">
-        <div class="flex flex-col gap-3 pt-2">
-          <label
-            class="label"
-            for="user-github-repository"
-          >
-            <span class="label-text">GitHub Repository</span>
-          </label>
-          <input
-            id="user-github-repository"
-            :value="githubRepo"
-            type="text"
-            class="input input-bordered w-full"
-            :class="{ 'font-mono': true }"
-            placeholder="owner/repository"
-            aria-label="GitHub repository name"
-            @input="githubRepo = ($event.target as HTMLInputElement).value"
-            @blur="saveGithubRepo"
-          />
-          <label class="label">
-            <span class="label-text-alt">Example: YassaaaTU/cemm-updates</span>
-          </label>
-        </div>
-      </div>
-    </div>
-
-    <!-- Destination Section -->
-    <div
-      class="collapse collapse-arrow bg-base-200 mb-3"
-      :class="{ 'collapse-open': expandedSections.includes(1) }"
-    >
-      <input
-        type="checkbox"
-        :checked="expandedSections.includes(1)"
-        aria-label="Toggle destination section"
-        @change="toggleSection(1)"
-      />
-      <div class="collapse-title font-semibold flex items-center gap-2">
-        <Icon
-          name="mdi:folder-marker"
-          size="1.2rem"
-          class="text-primary"
-        />
-        Destination
-        <span
-          v-if="stepCompleted[1]"
-          class="badge badge-success badge-sm"
-        >
-          Complete
-        </span>
-        <span
-          v-else-if="!expandedSections.includes(1)"
-          class="badge badge-ghost badge-sm"
-        >
-          Setup needed
-        </span>
-      </div>
-      <div class="collapse-content">
-        <div class="flex flex-col gap-4 pt-2">
-          <div>
-            <label
-              class="label"
-              for="user-update-code"
-            >
-              <span class="label-text font-semibold">Modpack Directory</span>
-            </label>
-            <p class="text-xs opacity-70 mb-2">
-              Select the modpack directory where you want to install the update
-            </p>
-            <PathSelector
-              type="directory"
-              title="Select Modpack Directory"
-              :model-value="path"
-              @update:model-value="updateModpackPath"
-              @error="handlePathSelectorError"
-            />
-          </div>
-          <div>
-            <label class="label">
-              <span class="label-text font-semibold">Update Code</span>
-            </label>
-            <input
-              id="user-update-code"
-              :value="uuid"
-              type="text"
-              class="input input-bordered w-full font-mono"
-              placeholder="modpack-key/uuid"
-              aria-label="Update code"
-              @input="uuid = ($event.target as HTMLInputElement).value"
-            />
-            <label class="label">
-              <span class="label-text-alt">Format: modpack-key/uuid or plain UUID (from your admin)</span>
-            </label>
-          </div>
-          <button
-            class="btn btn-primary btn-sm self-end"
-            :disabled="!canDownload"
-            @click="handleDownloadFromGithub"
-          >
-            <span
-              v-if="downloading"
-              class="loading loading-spinner loading-xs"
-            />
+        <!-- Destination first, and stated in full. This is the folder that gets
+             written to and deleted from, so it cannot be a footnote. Showing
+             only the folder name was actively unsafe: a library holding
+             "FTB Evolution" and "FTB Evolution (1)" renders two identical
+             chips for two different modpacks. -->
+        <div class="flex flex-wrap items-start gap-x-4 gap-y-2 border-b border-base-300 bg-base-300/40 px-4 py-3">
+          <span class="grid size-9 shrink-0 place-items-center rounded-box bg-base-100 text-base-content/60">
             <Icon
-              v-else
-              name="mdi:download"
-              size="1.1rem"
+              name="mdi:folder-outline"
+              size="1.125rem"
+              aria-hidden="true"
             />
-            Download Manifest
+          </span>
+
+          <span class="min-w-0 flex-1">
+            <span class="block text-xs font-medium uppercase tracking-wide text-base-content/45">
+              Installing to
+            </span>
+            <span
+              v-if="appStore.modpackPath.length > 0"
+              class="mt-0.5 block truncate text-[0.9375rem] font-semibold"
+              :title="appStore.modpackPath"
+            >{{ modpackLabel }}</span>
+            <span
+              v-else
+              class="mt-0.5 block text-[0.9375rem] font-semibold text-warning"
+            >No modpack folder chosen</span>
+            <span
+              v-if="appStore.modpackPath.length > 0"
+              class="mt-0.5 block truncate font-mono text-xs text-base-content/50"
+              :title="appStore.modpackPath"
+            >{{ appStore.modpackPath }}</span>
+          </span>
+
+          <button
+            type="button"
+            class="btn btn-sm shrink-0"
+            :aria-expanded="editingDestination"
+            @click="editingDestination = !editingDestination"
+          >
+            {{ editingDestination ? 'Done' : 'Change' }}
           </button>
         </div>
-      </div>
-    </div>
 
-    <!-- Preview Section -->
-    <div
-      class="collapse collapse-arrow bg-base-200 mb-3"
-      :class="{ 'collapse-open': expandedSections.includes(2) }"
-    >
-      <input
-        type="checkbox"
-        :checked="expandedSections.includes(2)"
-        aria-label="Toggle preview changes section"
-        @change="toggleSection(2)"
-      />
-      <div class="collapse-title font-semibold flex items-center gap-2">
-        <Icon
-          name="mdi:eye"
-          size="1.2rem"
-          class="text-accent"
-        />
-        Preview Changes
-        <span
-          v-if="manifest"
-          class="badge badge-info badge-sm"
-        >
-          {{ manifestTotalAddons }} addons
-        </span>
-        <span
-          v-else
-          class="badge badge-ghost badge-sm"
-        >
-          Download first
-        </span>
-      </div>
-      <div class="collapse-content">
         <div
-          v-if="manifest"
-          class="pt-2 space-y-4"
+          v-if="editingDestination"
+          class="border-b border-base-300 px-4 py-3"
         >
-          <!-- Config-only notice -->
-          <div
-            v-if="manifest.updateType === 'config'"
-            class="alert alert-info"
-          >
-            <Icon name="mdi:information" />
-            <span>Config-only update: Only configuration files will be updated. No addons will be modified.</span>
-          </div>
+          <PathSelector
+            type="directory"
+            title="Select modpack directory"
+            hint="The folder containing your modpack — the one with a mods folder inside it."
+            :model-value="appStore.modpackPath"
+            @update:model-value="updateModpackPath"
+            @error="handlePathSelectorError"
+          />
+        </div>
 
-          <!-- Destructive changes warning -->
-          <div
-            v-if="hasDestructiveChanges"
-            class="alert alert-warning"
+        <!-- Then the code — the only thing that changes per update. -->
+        <div class="px-4 py-3">
+          <label
+            class="mb-1.5 block text-xs font-medium uppercase tracking-wide text-base-content/45"
+            for="user-update-code"
           >
-            <Icon name="mdi:alert" />
-            <span>This update will remove {{ removedAddonNames.length }} addon(s) and update {{ updatedAddonNames.length }} addon(s). Old files will be deleted.</span>
-          </div>
-
-          <!-- New Addons List -->
-          <div
-            v-if="newAddonNames.length > 0"
-            class="collapse collapse-arrow bg-base-100 border border-base-300"
-          >
-            <input
-              type="checkbox"
-              checked
-              aria-label="Toggle new addons list"
-            />
-            <div class="collapse-title font-semibold text-success">
+            Update code
+          </label>
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="input input-md min-w-0 flex-1 border-base-300 bg-base-100 font-mono text-sm">
               <Icon
-                name="mdi:plus-circle"
-                size="1.1rem"
-                class="mr-1"
+                name="mdi:key-variant"
+                size="1rem"
+                class="shrink-0"
+                :class="manifest !== null ? 'text-primary' : 'text-base-content/40'"
+                aria-hidden="true"
               />
-              New Addons ({{ newAddonNames.length }})
-            </div>
-            <div class="collapse-content">
-              <ul class="menu bg-base-100 rounded-box">
-                <li
-                  v-for="name in newAddonNames"
-                  :key="name"
-                >
-                  <div class="flex items-center gap-2">
-                    <span class="badge badge-success badge-sm">NEW</span>
-                    <span class="text-sm">{{ name }}</span>
-                    <span
-                      v-if="getNewAddonVersion(name)"
-                      class="text-xs opacity-60 font-mono"
-                    >
-                      v{{ getNewAddonVersion(name) }}
-                    </span>
-                  </div>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <!-- Updated Addons List -->
-          <div
-            v-if="updatedAddonNames.length > 0"
-            class="collapse collapse-arrow bg-base-100 border border-base-300"
-          >
-            <input
-              type="checkbox"
-              checked
-              aria-label="Toggle updated addons list"
-            />
-            <div class="collapse-title font-semibold text-warning">
-              <Icon
-                name="mdi:update"
-                size="1.1rem"
-                class="mr-1"
+              <input
+                id="user-update-code"
+                v-model="uuid"
+                type="text"
+                class="grow"
+                placeholder="paste update code…"
+                spellcheck="false"
+                autocomplete="off"
+                @keydown.enter="handleFetch"
               />
-              Updated Addons ({{ updatedAddonNames.length }})
-            </div>
-            <div class="collapse-content">
-              <ul class="menu bg-base-100 rounded-box">
-                <li
-                  v-for="name in updatedAddonNames"
-                  :key="name"
-                >
-                  <div class="flex items-center gap-2">
-                    <span class="badge badge-warning badge-sm">UPD</span>
-                    <span class="text-sm">{{ name }}</span>
-                  </div>
-                </li>
-              </ul>
-            </div>
-          </div>
+            </label>
 
-          <!-- Removed Addons List -->
-          <div
-            v-if="removedAddonNames.length > 0"
-            class="collapse collapse-arrow bg-base-100 border border-base-300"
-          >
-            <input
-              type="checkbox"
-              checked
-              aria-label="Toggle removed addons list"
-            />
-            <div class="collapse-title font-semibold text-error">
-              <Icon
-                name="mdi:minus-circle"
-                size="1.1rem"
-                class="mr-1"
-              />
-              Removed Addons ({{ removedAddonNames.length }})
-            </div>
-            <div class="collapse-content">
-              <ul class="menu bg-base-100 rounded-box">
-                <li
-                  v-for="name in removedAddonNames"
-                  :key="name"
-                >
-                  <div class="flex items-center gap-2">
-                    <span class="badge badge-error badge-sm">DEL</span>
-                    <span class="text-sm line-through opacity-70">{{ name }}</span>
-                  </div>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <!-- Config Files preview -->
-          <div
-            v-if="configFilesPreview.length > 0"
-            class="mt-2"
-          >
-            <h4 class="font-semibold text-sm mb-2">
-              Config Files ({{ configFilesPreview.length }})
-            </h4>
-            <div
-              v-for="cf in configFilesPreview"
-              :key="cf.relativePath"
-              class="flex items-center gap-2 py-1"
+            <button
+              v-if="manifest === null"
+              type="button"
+              class="btn btn-primary btn-md gap-1.5"
+              :disabled="!canFetch"
+              @click="handleFetch"
             >
               <span
-                v-if="cf.badge !== null"
-                class="badge badge-sm"
-                :class="cf.badge === 'BIN' ? 'badge-secondary' : 'badge-primary'"
-              >
-                {{ cf.badge }}
-              </span>
-              <span class="font-mono text-sm">{{ cf.relativePath }}</span>
-            </div>
-          </div>
-
-          <!-- Unchanged Addons summary (collapsed by default) -->
-          <div
-            v-if="unchangedAddonNames.length > 0"
-            class="collapse collapse-arrow bg-base-100 border border-base-300"
-          >
-            <input type="checkbox" />
-            <div class="collapse-title font-semibold opacity-70">
-              <Icon
-                name="mdi:check-circle"
-                size="1.1rem"
-                class="mr-1"
+                v-if="downloading"
+                class="loading loading-spinner loading-xs"
+                aria-hidden="true"
               />
-              Unchanged Addons ({{ unchangedAddonNames.length }})
-            </div>
-            <div class="collapse-content">
-              <ul class="menu bg-base-100 rounded-box">
-                <li
-                  v-for="name in unchangedAddonNames"
-                  :key="name"
-                >
-                  <div class="text-sm opacity-60">
-                    {{ name }}
-                  </div>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <!-- Apply Update button -->
-          <div class="flex justify-end pt-2">
+              {{ downloading ? 'Fetching…' : 'Fetch' }}
+            </button>
             <button
-              class="btn btn-primary"
-              :disabled="!canInstall"
-              @click="showConfirmDialog = true; confirmAcknowledged = false"
+              v-else
+              type="button"
+              class="btn btn-md"
+              :disabled="installing"
+              @click="clearFetched"
             >
-              {{ previewData?.hasChanges ? 'Apply Update' : 'Install' }}
+              Clear
             </button>
           </div>
-        </div>
 
+          <NuxtLink
+            to="/settings"
+            class="link link-hover mt-2 inline-block text-xs text-base-content/50"
+          >
+            from {{ appStore.githubRepo.length > 0 ? appStore.githubRepo : 'no repository set' }}
+          </NuxtLink>
+        </div>
+      </div>
+    </template>
+
+    <!-- The content swaps between resting, diff and installing. That swap is a
+         real state change, so it gets the one transition on this screen. -->
+    <Transition v-bind="paneTransition">
+      <!-- Installing / installed -->
+      <div
+        v-if="installing || installComplete"
+        class="max-w-xl space-y-4"
+      >
         <div
-          v-else
-          class="text-center py-8 opacity-60"
-        >
-          <Icon
-            name="mdi:package-variant-closed"
-            size="2.5rem"
-            class="mb-2"
-          />
-          <p>No manifest downloaded yet</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Install Section -->
-    <div
-      class="collapse collapse-arrow bg-base-200 mb-3"
-      :class="{ 'collapse-open': expandedSections.includes(3) }"
-    >
-      <input
-        type="checkbox"
-        :checked="expandedSections.includes(3)"
-        aria-label="Toggle install section"
-        @change="toggleSection(3)"
-      />
-      <div class="collapse-title font-semibold flex items-center gap-2">
-        <Icon
-          name="mdi:download"
-          size="1.2rem"
-          class="text-success"
-        />
-        Install
-        <span
           v-if="installComplete"
-          class="badge badge-success badge-sm"
-        >
-          Done
-        </span>
-      </div>
-      <div class="collapse-content">
-        <div class="flex flex-col gap-4 pt-2">
-          <div class="flex items-center gap-3">
-            <Icon
-              name="mdi:progress-download"
-              size="1.5rem"
-              class="text-success"
-            />
-            <div>
-              <h3 class="font-semibold">
-                Installing Update
-              </h3>
-              <p
-                v-if="installing"
-                class="text-sm opacity-70"
-              >
-                Your modpack is being updated...
-              </p>
-              <p
-                v-else-if="installComplete"
-                class="text-sm opacity-70"
-              >
-                Update complete!
-              </p>
-            </div>
-          </div>
-
-          <ProgressBar
-            :progress="progress"
-            :label="getProgressLabel()"
-            :color="getProgressColor()"
-            :show-percentage="installing || downloading"
-          />
-
-          <div
-            v-if="statusMessage"
-            class="alert"
-            :class="alertClass"
-            role="alert"
-          >
-            <Icon :name="statusIcon" />
-            <span>{{ statusMessage }}</span>
-            <button
-              class="btn btn-sm btn-ghost"
-              aria-label="Dismiss status message"
-              @click="clearStatus"
-            >
-              <Icon
-                name="mdi:close"
-                size="1.2rem"
-              />
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Status Alert (outside sections) -->
-    <div
-      v-if="statusMessage && !expandedSections.includes(3)"
-      class="alert mt-4"
-      :class="alertClass"
-      role="alert"
-    >
-      <Icon :name="statusIcon" />
-      <span>{{ statusMessage }}</span>
-      <button
-        class="btn btn-sm btn-ghost"
-        aria-label="Dismiss status message"
-        @click="clearStatus"
-      >
-        <Icon
-          name="mdi:close"
-          size="1.2rem"
-        />
-      </button>
-    </div>
-
-    <!-- Confirmation Dialog -->
-    <BaseModal
-      v-model="showConfirmDialog"
-      labelled-by="confirm-update-title"
-    >
-      <h3
-        id="confirm-update-title"
-        class="text-lg font-bold text-warning flex items-center gap-2"
-      >
-        <Icon
-          name="mdi:alert-circle"
-          size="1.4rem"
-        />
-        Confirm Update
-      </h3>
-      <p class="py-4">
-        You are about to apply an update that will:
-      </p>
-      <ul class="menu bg-base-200 rounded-box mb-4">
-        <li
-          v-if="newAddonNames.length > 0"
-          class="text-success"
-        >
-          <span>Add {{ newAddonNames.length }} new addon(s)</span>
-        </li>
-        <li
-          v-if="updatedAddonNames.length > 0"
-          class="text-warning"
-        >
-          <span>Update {{ updatedAddonNames.length }} addon(s)</span>
-        </li>
-        <li
-          v-if="removedAddonNames.length > 0"
-          class="text-error"
-        >
-          <span>Remove {{ removedAddonNames.length }} addon(s). These files will be deleted.</span>
-        </li>
-      </ul>
-      <div
-        v-if="hasDestructiveChanges"
-        class="alert alert-warning mb-4"
-      >
-        <Icon name="mdi:alert" />
-        <span>This action cannot be undone. Removed addon files will be permanently deleted.</span>
-      </div>
-      <div
-        v-if="hasDestructiveChanges"
-        class="form-control mb-4"
-      >
-        <label class="label cursor-pointer justify-start gap-2">
-          <input
-            v-model="confirmAcknowledged"
-            type="checkbox"
-            class="checkbox checkbox-sm"
-          />
-          <span class="label-text">I understand this action cannot be undone</span>
-        </label>
-      </div>
-      <div class="modal-action">
-        <button
-          class="btn btn-ghost"
-          @click="showConfirmDialog = false"
-        >
-          Cancel
-        </button>
-        <button
-          class="btn btn-warning"
-          :disabled="hasDestructiveChanges && !confirmAcknowledged"
-          @click="handleConfirmedInstall"
+          class="flex items-start gap-3 rounded-box border border-success/50 bg-success/10 px-4 py-3.5"
         >
           <Icon
-            name="mdi:check"
-            size="1.1rem"
+            name="mdi:check-circle-outline"
+            size="1.25rem"
+            class="mt-px shrink-0 text-success"
+            aria-hidden="true"
           />
-          {{ hasDestructiveChanges ? 'I understand, apply update' : 'Apply update' }}
-        </button>
+          <div>
+            <p class="text-sm font-semibold text-success">
+              Update installed
+            </p>
+            <p class="mt-0.5 text-xs text-base-content/65">
+              Your modpack now matches the update. You can launch the game.
+            </p>
+          </div>
+        </div>
+
+        <div v-else>
+          <div class="mb-1.5 flex items-baseline justify-between gap-3">
+            <p class="text-sm font-medium">
+              {{ progressLabel }}
+            </p>
+            <p class="font-mono text-xs tabular-nums text-base-content/60">
+              {{ Math.round(smoothProgress) }}%
+            </p>
+          </div>
+          <progress
+            class="progress w-full"
+            :value="smoothProgress"
+            max="100"
+            :aria-label="progressLabel"
+          />
+        </div>
       </div>
-    </BaseModal>
-  </div>
+
+      <!-- The diff — the same screen, grown -->
+      <UpdatePreview
+        v-else-if="manifest !== null"
+        :added="addedRows"
+        :updated="updatedRows"
+        :removed="removedRows"
+        :unchanged="unchangedRows"
+        :config-files="configFilesPreview"
+        :update-type="manifest.updateType"
+      />
+
+      <!-- Resting state -->
+      <EmptyState
+        v-else
+        icon="mdi:package-variant-closed"
+        title="Nothing to install yet"
+      >
+        Paste the code your admin sent you. You will see exactly what is added,
+        updated and deleted before anything touches your modpack.
+      </EmptyState>
+    </Transition>
+
+    <template #actions>
+      <label
+        v-if="showDiffActions && hasDestructiveChanges"
+        class="flex cursor-pointer items-center gap-2.5 text-sm text-base-content/75"
+      >
+        <input
+          v-model="acknowledged"
+          type="checkbox"
+          class="checkbox checkbox-sm border-error"
+        />
+        I understand {{ removedRows.length }} {{ removedRows.length === 1 ? 'file' : 'files' }}
+        will be permanently deleted
+      </label>
+
+      <p
+        v-else-if="showDiffActions"
+        class="text-sm text-base-content/60"
+      >
+        Nothing will be deleted by this update.
+      </p>
+
+      <p
+        v-else-if="installComplete"
+        class="text-sm text-base-content/60"
+      >
+        Done — you can close CEMM or install another update.
+      </p>
+
+      <div class="flex-1" />
+
+      <!-- The destination at the moment of commit. The context bar scrolls
+           away with the content, so this is where "which modpack" has to be
+           answered when the irreversible button is pressed. -->
+      <span
+        v-if="showDiffActions && appStore.modpackPath.length > 0"
+        class="flex min-w-0 items-center gap-1.5 text-xs text-base-content/55"
+        :title="appStore.modpackPath"
+      >
+        <Icon
+          name="mdi:folder-outline"
+          size="0.875rem"
+          class="shrink-0"
+          aria-hidden="true"
+        />
+        <span class="max-w-[18rem] truncate">{{ modpackLabel }}</span>
+      </span>
+
+      <button
+        v-if="showDiffActions"
+        type="button"
+        class="btn btn-sm"
+        :class="hasDestructiveChanges ? 'btn-error' : 'btn-primary'"
+        :disabled="!canApply"
+        @click="handleApply"
+      >
+        {{ hasAnyChange ? 'Install update' : 'Install' }}
+      </button>
+
+      <button
+        v-else-if="installComplete"
+        type="button"
+        class="btn btn-primary btn-sm"
+        @click="startOver"
+      >
+        Install another
+      </button>
+    </template>
+  </WorkspacePage>
 </template>
 
 <script setup lang="ts">
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
+import type { AddonRow } from '~/components/domains/addons/AddonTable.vue'
 import { calculateUpdateDiff } from '~/composables/useTauri'
 import type { ConfigFileWithContent } from '~/types'
-import { isValidGithubRepo } from '~/utils/githubRepo'
 
 interface InstallProgressEvent
 {
@@ -626,73 +293,56 @@ interface InstallProgressEvent
 }
 
 const { downloadFromGithub, downloadConfigFiles, installUpdate } = useUserApi()
+const { notify } = useNotify()
+const { paneTransition } = useMotion()
 const manifestStore = useManifestStore()
 const appStore = useAppStore()
 const { $logger: logger } = useNuxtApp()
 
 const uuid = ref('')
 const progress = ref(0)
-const statusMessage = ref('')
-const statusType = ref<'success' | 'error' | 'info' | 'warning'>('info')
+/** Eased for display so event-driven jumps do not read as a broken bar. */
+const { displayed: smoothProgress } = useSmoothProgress(progress)
+/** Running commentary while work is in flight. Deliberately NOT a toast: the
+ *  Tauri install path emits this repeatedly and would spam the corner. */
+const progressMessage = ref('')
 const downloading = ref(false)
 const installing = ref(false)
 const configFilesDownloaded = ref(false)
 const downloadedConfigFiles = ref<ConfigFileWithContent[]>([])
-
-const expandedSections = ref<number[]>([0])
-const showConfirmDialog = ref(false)
-const confirmAcknowledged = ref(false)
 const installComplete = ref(false)
-
-const wizardSteps = [
-	{ key: 'source', label: 'Source', icon: 'mdi:source-branch' },
-	{ key: 'destination', label: 'Destination', icon: 'mdi:folder-marker' },
-	{ key: 'preview', label: 'Preview', icon: 'mdi:eye' },
-	{ key: 'install', label: 'Install', icon: 'mdi:download' }
-]
+const acknowledged = ref(false)
+const editingDestination = ref(false)
 
 const manifest = computed(() => manifestStore.manifest)
-const path = computed(() => appStore.modpackPath)
 const previousManifest = computed(() => manifestStore.previousManifest)
 
-const githubRepo = computed({
-	get: () => appStore.githubRepo,
-	set: (val: string) =>
-	{
-		appStore.githubRepo = val
-	}
-})
-
-const githubRepoValid = computed(() => isValidGithubRepo(githubRepo.value))
-
-const canDownload = computed(() =>
-	!downloading.value
-	&& uuid.value.trim().length > 0
-	&& path.value.trim().length > 0
-)
-
-const canInstall = computed(() =>
-	manifest.value !== null
-	&& appStore.modpackPath.trim().length > 0
-	&& !installing.value
-	&& !downloading.value
-)
-
-const stepCompleted = computed(() =>
+/** Just the folder name — the full path is in the title attribute. */
+const modpackLabel = computed(() =>
 {
-	const completed: Record<number, boolean> = {}
-	completed[0] = githubRepoValid.value
-	completed[1] = path.value.trim().length > 0 && uuid.value.trim().length > 0
-	completed[2] = manifest.value !== null
-	completed[3] = installComplete.value
-	return completed
+	const path = appStore.modpackPath.trim()
+	if (path.length === 0) return 'no folder chosen'
+	const parts = path.split(/[\\/]/).filter((part) => part.length > 0)
+	return parts[parts.length - 1] ?? path
 })
+
+/**
+ * Deliberately does NOT require a modpack folder. Gating the button on it left
+ * the user with a dead control and no stated reason; handleFetch now explains
+ * the missing folder and opens the picker instead.
+ */
+const canFetch = computed(() => !downloading.value && uuid.value.trim().length > 0)
+
+/** The diff is on screen and actionable. */
+const showDiffActions = computed(
+	() => manifest.value !== null && !installing.value && !installComplete.value
+)
 
 const previewData = computed(() =>
 {
 	if (manifest.value === null) return null
 
-	const oldManifest = manifestStore.previousManifest
+	const oldManifest = previousManifest.value
 	const newManifest = manifest.value
 
 	// calculateUpdateDiff keys config-only behavior to the explicit updateType
@@ -706,19 +356,115 @@ const previewData = computed(() =>
 		|| diff.new_addons.length > 0
 	)
 
-	return {
-		oldManifest,
-		newManifest,
-		diff,
-		hasChanges: oldManifest === null ? false : hasChanges,
-		configFiles: downloadedConfigFiles.value
-	}
+	return { diff, hasChanges: oldManifest === null ? false : hasChanges }
 })
 
+const hasAnyChange = computed(() => previewData.value?.hasChanges === true)
+
 const hasDestructiveChanges = computed(() =>
-	previewData.value !== null
-	&& (previewData.value.diff.removed_addons.length > 0 || previewData.value.diff.updated_addon_ids.length > 0)
+	previewData.value !== null && previewData.value.diff.removed_addons.length > 0
 )
+
+const canApply = computed(() =>
+	manifest.value !== null
+	&& appStore.modpackPath.trim().length > 0
+	&& !installing.value
+	&& !downloading.value
+	&& (!hasDestructiveChanges.value || acknowledged.value)
+)
+
+const allIncomingAddons = computed(() =>
+{
+	if (manifest.value === null) return []
+	return [
+		...manifest.value.mods,
+		...manifest.value.resourcepacks,
+		...manifest.value.shaderpacks,
+		...manifest.value.datapacks
+	]
+})
+
+const previousById = computed(() =>
+{
+	const map = new Map<number, string>()
+	const previous = previousManifest.value
+	if (previous === null) return map
+	for (const addon of [...previous.mods, ...previous.resourcepacks, ...previous.shaderpacks, ...previous.datapacks])
+	{
+		map.set(addon.addon_project_id, addon.version)
+	}
+	return map
+})
+
+const addedRows = computed<AddonRow[]>(() =>
+	(previewData.value?.diff.new_addons ?? []).map((name) =>
+	{
+		const addon = allIncomingAddons.value.find((candidate) => candidate.addon_name === name)
+		return {
+			key: `new-${name}`,
+			name,
+			subtitle: addon?.fileNameOnDisk ?? '',
+			version: addon?.version ?? '',
+			versionNote: 'new install',
+			tone: 'new' as const,
+			label: 'New',
+			thumbnailUrl: addon?.thumbnailUrl
+		}
+	})
+)
+
+const updatedRows = computed<AddonRow[]>(() =>
+	(previewData.value?.diff.updated_addon_ids ?? []).map((id) =>
+	{
+		const addon = allIncomingAddons.value.find((candidate) => candidate.addon_project_id === id)
+		const from = previousById.value.get(id)
+		return {
+			key: `upd-${id}`,
+			name: addon?.addon_name ?? `Unknown addon (id ${id})`,
+			subtitle: addon?.fileNameOnDisk ?? '',
+			version: addon?.version ?? '',
+			versionNote: from !== undefined ? `from ${from}` : 'replaced',
+			tone: 'updated' as const,
+			label: 'Update',
+			thumbnailUrl: addon?.thumbnailUrl
+		}
+	})
+)
+
+const removedRows = computed<AddonRow[]>(() =>
+	(previewData.value?.diff.removed_addons ?? []).map((name) => ({
+		key: `del-${name}`,
+		name,
+		subtitle: '',
+		version: '',
+		versionNote: 'removed from disk',
+		tone: 'removed' as const,
+		label: 'Delete',
+		struck: true
+	}))
+)
+
+const unchangedRows = computed<AddonRow[]>(() =>
+{
+	if (manifest.value === null) return []
+	const changed = new Set([
+		...addedRows.value.map((row) => row.name),
+		...updatedRows.value.map((row) => row.name),
+		...removedRows.value.map((row) => row.name)
+	])
+	return allIncomingAddons.value
+		.filter((addon) => !changed.has(addon.addon_name))
+		.map((addon) => ({
+			key: `same-${addon.addon_project_id}-${addon.version}`,
+			name: addon.addon_name,
+			subtitle: addon.fileNameOnDisk,
+			version: addon.version,
+			versionNote: 'unchanged',
+			tone: 'unchanged' as const,
+			label: 'Same',
+			thumbnailUrl: addon.thumbnailUrl
+		}))
+})
 
 // Before confirmation, config file *content* hasn't been downloaded yet, so
 // downloadedConfigFiles is empty and the preview showed nothing at all even
@@ -729,89 +475,46 @@ const configFilesPreview = computed(() =>
 {
 	if (downloadedConfigFiles.value.length > 0)
 	{
-		return downloadedConfigFiles.value.map((cf) => ({
-			relativePath: cf.relative_path,
-			badge: cf.is_binary === true ? 'BIN' : 'CFG'
+		return downloadedConfigFiles.value.map((file) => ({
+			relativePath: file.relative_path,
+			badge: file.is_binary === true ? 'BIN' as const : 'CFG' as const
 		}))
 	}
-	return (manifest.value?.config_files ?? []).map((cf) => ({
-		relativePath: cf.relative_path,
-		badge: null as 'BIN' | 'CFG' | null
+	return (manifest.value?.config_files ?? []).map((file) => ({
+		relativePath: file.relative_path,
+		badge: null
 	}))
 })
 
-const allNewAddons = computed(() =>
+const progressLabel = computed(() =>
 {
-	if (manifest.value === null) return []
-	return [...manifest.value.mods, ...manifest.value.resourcepacks, ...manifest.value.shaderpacks, ...manifest.value.datapacks]
+	if (progressMessage.value.length > 0) return progressMessage.value
+	if (downloading.value) return 'Downloading from GitHub…'
+	if (installing.value) return 'Installing addons and config files…'
+	if (installComplete.value) return 'Done'
+	return 'Waiting to start'
 })
-
-const newAddonNames = computed(() => previewData.value?.diff.new_addons ?? [])
-const removedAddonNames = computed(() => previewData.value?.diff.removed_addons ?? [])
-const updatedAddonNames = computed(() =>
-{
-	if (previewData.value === null) return []
-	const ids = previewData.value.diff.updated_addon_ids
-	return ids.map((id) =>
-	{
-		const addon = allNewAddons.value.find((a) => a.addon_project_id === id)
-		return addon?.addon_name ?? `Unknown (ID: ${id})`
-	})
-})
-
-const unchangedAddonNames = computed(() =>
-{
-	if (manifest.value === null) return []
-	const changed = new Set([...newAddonNames.value, ...updatedAddonNames.value, ...removedAddonNames.value])
-	return allNewAddons.value
-		.filter((a) => !changed.has(a.addon_name))
-		.map((a) => a.addon_name)
-})
-
-const getNewAddonVersion = (name: string): string =>
-{
-	const addon = allNewAddons.value.find((a) => a.addon_name === name)
-	return addon?.version ?? ''
-}
-
-const manifestTotalAddons = computed(() => allNewAddons.value.length)
-
-const statusIcon = computed(() =>
-{
-	const icons: Record<string, string> = {
-		success: 'mdi:check-circle',
-		error: 'mdi:alert-circle',
-		warning: 'mdi:alert',
-		info: 'mdi:information'
-	}
-	return icons[statusType.value] ?? 'mdi:information'
-})
-
-const alertClass = computed(() => `alert-${statusType.value}`)
-
-const toggleSection = (index: number) =>
-{
-	const idx = expandedSections.value.indexOf(index)
-	if (idx >= 0)
-	{
-		expandedSections.value.splice(idx, 1)
-	}
-	else
-	{
-		expandedSections.value.push(index)
-	}
-}
 
 const clearStatus = () =>
 {
-	statusMessage.value = ''
-	statusType.value = 'info'
+	progressMessage.value = ''
 }
 
+const busy = computed(() => downloading.value || installing.value)
+
+/**
+ * Routes the shared status callback: in-flight informational messages stay
+ * inline beside the progress bar, everything else is an outcome and becomes a
+ * toast.
+ */
 const setStatus = (message: string, type: 'success' | 'error' | 'info' | 'warning') =>
 {
-	statusMessage.value = message
-	statusType.value = type
+	if (type === 'info' && busy.value)
+	{
+		progressMessage.value = message
+		return
+	}
+	notify(message, type)
 }
 
 const updateModpackPath = (newPath: string | string[] | null) =>
@@ -831,22 +534,17 @@ const updateModpackPath = (newPath: string | string[] | null) =>
 const handlePathSelectorError = (error: string) =>
 {
 	logger.error({ error }, 'PathSelector error')
-	setStatus(`Path selection error: ${error}`, 'error')
+	setStatus(`Could not use that folder: ${error}`, 'error')
 }
 
-const saveGithubRepo = () =>
+async function handleFetch()
 {
-	if (githubRepo.value.trim())
-	{
-		logger.info({ repo: githubRepo.value }, 'GitHub repository saved')
-	}
-}
+	if (!canFetch.value) return
 
-async function handleDownloadFromGithub()
-{
-	if (uuid.value.trim().length === 0)
+	if (appStore.modpackPath.trim().length === 0)
 	{
-		setStatus('Please enter a valid UUID code.', 'error')
+		notify('Choose the modpack folder to install into first.', 'error')
+		editingDestination.value = true
 		return
 	}
 
@@ -858,20 +556,20 @@ async function handleDownloadFromGithub()
 	{
 		const result = await downloadFromGithub(
 			uuid.value,
-			(p: number, msg?: string) =>
+			(value: number, message?: string) =>
 			{
-				progress.value = p
-				if (msg !== undefined) setStatus(msg, 'info')
+				progress.value = value
+				if (message !== undefined) setStatus(message, 'info')
 			},
 			setStatus
 		)
 		if (result.success)
 		{
 			progress.value = 100
-		}
-		if (!expandedSections.value.includes(2))
-		{
-			expandedSections.value.push(2)
+			// Consent resets for every fetched update: acknowledging one diff is
+			// not consent to a different one.
+			acknowledged.value = false
+			editingDestination.value = false
 		}
 	}
 	finally
@@ -880,9 +578,31 @@ async function handleDownloadFromGithub()
 	}
 }
 
+const clearFetched = () =>
+{
+	manifestStore.clearManifest()
+	uuid.value = ''
+	acknowledged.value = false
+	configFilesDownloaded.value = false
+	downloadedConfigFiles.value = []
+	progress.value = 0
+	clearStatus()
+}
+
+async function handleApply()
+{
+	if (!canApply.value) return
+	await confirmInstall()
+}
+
 async function confirmInstall()
 {
-	if (!configFilesDownloaded.value && uuid.value.trim().length > 0 && manifest.value !== null && manifest.value.config_files.length > 0)
+	if (
+		!configFilesDownloaded.value
+		&& uuid.value.trim().length > 0
+		&& manifest.value !== null
+		&& manifest.value.config_files.length > 0
+	)
 	{
 		try
 		{
@@ -891,10 +611,10 @@ async function confirmInstall()
 			const result = await downloadConfigFiles(
 				uuid.value,
 				manifest.value,
-				(p: number, msg?: string) =>
+				(value: number, message?: string) =>
 				{
-					progress.value = p
-					if (msg !== undefined) setStatus(msg, 'info')
+					progress.value = value
+					if (message !== undefined) setStatus(message, 'info')
 				},
 				setStatus
 			)
@@ -907,7 +627,10 @@ async function confirmInstall()
 		}
 		catch (error)
 		{
-			setStatus(`Failed to download config files: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+			setStatus(
+				`Could not download the config files: ${error instanceof Error ? error.message : 'unknown error'}`,
+				'error'
+			)
 			return
 		}
 		finally
@@ -916,26 +639,12 @@ async function confirmInstall()
 		}
 	}
 
-	if (!expandedSections.value.includes(3))
-	{
-		expandedSections.value.push(3)
-	}
 	await performInstall()
-}
-
-async function handleConfirmedInstall()
-{
-	showConfirmDialog.value = false
-	if (!expandedSections.value.includes(3))
-	{
-		expandedSections.value.push(3)
-	}
-	await confirmInstall()
 }
 
 async function performInstall()
 {
-	if (!canInstall.value || manifest.value === null) return
+	if (manifest.value === null) return
 
 	installing.value = true
 	installComplete.value = false
@@ -946,16 +655,16 @@ async function performInstall()
 	{
 		unlisten = await listen('install-progress', (event) =>
 		{
-			const prog = (event as InstallProgressEvent).payload?.progress
+			const value = (event as InstallProgressEvent).payload?.progress
 			const message = (event as InstallProgressEvent).payload?.message
 
-			if (typeof prog === 'number')
+			if (typeof value === 'number')
 			{
-				progress.value = prog
+				progress.value = value
 			}
 			if (typeof message === 'string')
 			{
-				statusMessage.value = message
+				progressMessage.value = message
 			}
 		})
 
@@ -963,10 +672,10 @@ async function performInstall()
 			manifest.value,
 			downloadedConfigFiles.value,
 			previousManifest.value,
-			(p: number, msg?: string) =>
+			(value: number, message?: string) =>
 			{
-				progress.value = p
-				if (msg !== undefined) setStatus(msg, 'info')
+				progress.value = value
+				if (message !== undefined) setStatus(message, 'info')
 			},
 			setStatus
 		)
@@ -986,56 +695,11 @@ async function performInstall()
 	}
 }
 
-const getProgressLabel = () =>
+const startOver = () =>
 {
-	if (downloading.value) return 'Downloading from GitHub...'
-	if (installing.value) return 'Installing addons and config files...'
-	return ''
-}
-
-const getProgressColor = (): 'primary' | 'secondary' | 'accent' | 'success' | 'warning' | 'error' | 'info' =>
-{
-	if (downloading.value) return 'info'
-	if (installing.value) return 'primary'
-	if (progress.value === 100) return 'success'
-	return 'primary'
-}
-
-const route = useRoute()
-
-const resetComponentState = () =>
-{
-	uuid.value = ''
-	progress.value = 0
-	statusMessage.value = ''
-	statusType.value = 'info'
-	downloading.value = false
-	installing.value = false
-	expandedSections.value = [0]
-	configFilesDownloaded.value = false
-	downloadedConfigFiles.value = []
-	showConfirmDialog.value = false
-	confirmAcknowledged.value = false
 	installComplete.value = false
-	logger.info('Component state reset after navigation')
+	clearFetched()
 }
-
-watch(() => route.name, (newRouteName, oldRouteName) =>
-{
-	if (oldRouteName === 'settings' && newRouteName === 'dashboard')
-	{
-		resetComponentState()
-		logger.info('Detected navigation from settings to dashboard, state reset')
-	}
-})
-
-watch(manifest, (newManifest) =>
-{
-	if (newManifest !== null && !expandedSections.value.includes(2))
-	{
-		expandedSections.value.push(2)
-	}
-})
 
 onMounted(() =>
 {
@@ -1047,24 +711,3 @@ onUnmounted(() =>
 	logger.info('UserPanel unmounted')
 })
 </script>
-
-<style scoped>
-.user-panel {
-	max-width: var(--container-lg);
-	width: 100%;
-	margin: 0 auto;
-}
-
-.user-panel__progress-bar {
-	display: flex;
-	align-items: center;
-	gap: var(--space-2);
-	flex-wrap: wrap;
-	padding-bottom: var(--space-4);
-}
-
-.user-panel__progress-item {
-	display: flex;
-	align-items: center;
-}
-</style>
