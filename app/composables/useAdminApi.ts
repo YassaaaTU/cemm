@@ -31,7 +31,7 @@ export function useAdminApi()
    */
 	async function loadInstance(
 		setStatus: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void
-	): Promise<{ success: boolean, manifest?: Manifest }>
+	): Promise<{ success: boolean, manifest?: Manifest, instanceDir?: string }>
 	{
 		const filePath = await selectFile()
 		if (filePath == null || filePath.length === 0)
@@ -69,7 +69,14 @@ export function useAdminApi()
 				manifestStore.setUpdateInfo(null)
 			}
 
-			return { success: true, manifest: parsed }
+			// The folder holding minecraftinstance.json identifies the pack. Returned
+			// rather than written to the shared store, because appStore.modpackPath is
+			// the player's install target and must not be clobbered by a publish.
+			// Strip the trailing path segment on either separator, so this works
+			// for Windows paths as well as POSIX ones.
+			const instanceDir = filePath.replace(/[\\/][^\\/]*$/, '')
+
+			return { success: true, manifest: parsed, instanceDir }
 		}
 		catch (error)
 		{

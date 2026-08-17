@@ -1,239 +1,403 @@
 <template>
-  <div
-    class="admin-panel"
-    role="region"
-    aria-labelledby="admin-mode-title"
+  <WorkspacePage
+    heading="Publish update"
+    :fill-content="manifest !== null"
   >
-    <h1
-      id="admin-mode-title"
-      class="sr-only"
-    >
-      Admin Mode
-    </h1>
+    <template #lede>
+      <template v-if="manifest === null">
+        Load the modpack you have been modifying, then choose what your players receive.
+      </template>
+      <template v-else>
+        Everything ships unless you switch it off.
+      </template>
+    </template>
 
-    <!-- Zone 1: Command Bar -->
-    <CommandBar
-      :custom-modpack-name="customModpackName"
-      :manifest-loaded="manifest != null"
-      :uploading="uploading"
-      :config-files-count="selectedConfigFiles.length"
-      :excluded-count="excludedCount"
-      @update:custom-modpack-name="customModpackName = $event"
-      @load-instance="handleLoadInstance"
-      @save-manifest="handleSaveManifest"
-      @upload-to-github="handleUploadToGithub"
-      @clear-exclusions="clearAllExclusions"
-    />
-
-    <!-- Progress Bar -->
-    <div
-      v-if="uploading || progress > 0"
-      class="admin-panel__progress"
+    <!-- Instance context. Loading is an empty state, not a step, so once an
+         instance is loaded its identity lives here permanently. -->
+    <template
+      v-if="manifest !== null"
+      #context
     >
-      <ProgressBar
-        :progress="progress"
-        :label="uploading ? 'Uploading to GitHub...' : ''"
-        :color="uploading ? 'primary' : 'success'"
-        :show-percentage="uploading"
-      />
-    </div>
-
-    <!-- Status Alert -->
-    <div
-      v-if="statusMessage"
-      class="alert"
-      :class="`alert-${statusType}`"
-      role="alert"
-    >
-      <Icon
-        :name="alertIcon"
-        size="1.4rem"
-        class="shrink-0"
-      />
-      <span>{{ statusMessage }}</span>
-      <button
-        class="btn btn-sm btn-ghost"
-        aria-label="Dismiss status message"
-        @click="clearStatus"
-      >
-        <Icon
-          name="mdi:close"
-          size="1.2rem"
-        />
-      </button>
-    </div>
-
-    <!-- Update Reference (after upload) -->
-    <div
-      v-if="latestUpdateReference.length > 0"
-      class="card bg-base-200 shadow-md border border-base-300 admin-panel__ref-card"
-    >
-      <div class="card-body">
-        <div class="admin-panel__ref">
-          <div class="admin-panel__ref-info">
+      <div class="rounded-box border border-base-300 bg-base-200 px-3.5 py-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="flex min-w-0 flex-1 items-center gap-2.5">
             <Icon
-              name="mdi:check-circle"
-              size="1.2rem"
-              class="admin-panel__ref-icon"
+              name="mdi:folder-open-outline"
+              size="1.05rem"
+              class="shrink-0 text-primary"
+              aria-hidden="true"
             />
-            <div>
-              <p class="admin-panel__ref-label">
-                Update published successfully
-              </p>
-              <p class="admin-panel__ref-value">
-                Share this update ID with users:
-              </p>
-              <code class="admin-panel__ref-code">{{ latestUpdateReference }}</code>
-            </div>
-          </div>
+            <span class="min-w-0">
+              <span class="block truncate text-sm font-semibold">{{ instanceLabel }}</span>
+              <span class="block truncate font-mono text-[0.6875rem] text-base-content/50">
+                {{ totalAddons }} addons · {{ selectedConfigFiles.length }} config files
+              </span>
+            </span>
+          </span>
+
           <button
-            class="btn btn-outline btn-sm"
+            type="button"
+            class="btn btn-sm"
+            @click="handleLoadInstance"
+          >
+            Reload
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            @click="handleSaveManifest"
+          >
+            Save manifest
+          </button>
+        </div>
+
+        <div class="mt-2.5 flex flex-wrap items-center gap-2 text-xs text-base-content/60">
+          <span>Published as</span>
+          <span class="inline-flex items-center gap-1.5 rounded-full border border-base-300 bg-base-100 px-2.5 py-1 font-mono text-[0.6875rem]">
+            {{ customModpackName.trim().length > 0 ? customModpackName.trim() : 'no name set' }}
+          </span>
+          <button
+            type="button"
+            class="link link-hover text-[0.6875rem] font-medium text-primary"
+            :aria-expanded="editingName"
+            @click="editingName = !editingName"
+          >
+            {{ editingName ? 'done' : 'rename' }}
+          </button>
+          <span class="text-base-content/40">— becomes the first half of the update code</span>
+        </div>
+
+        <div
+          v-if="editingName"
+          class="mt-3 border-t border-base-300 pt-3"
+        >
+          <label class="input input-sm w-full max-w-sm border-base-300 bg-base-100 font-mono text-xs">
+            <Icon
+              name="mdi:package-variant-closed"
+              size="0.9375rem"
+              class="shrink-0 text-base-content/40"
+              aria-hidden="true"
+            />
+            <input
+              id="admin-modpack-name"
+              v-model="customModpackName"
+              type="text"
+              class="grow"
+              placeholder="chillecke"
+              aria-label="Modpack name"
+              spellcheck="false"
+              autocomplete="off"
+            />
+          </label>
+        </div>
+      </div>
+    </template>
+
+    <Transition v-bind="paneTransition">
+      <!-- Resting state -->
+      <EmptyState
+        v-if="manifest === null"
+        icon="mdi:folder-search-outline"
+        title="No instance loaded"
+      >
+        Pick the modpack folder you have been modifying. CEMM reads its
+        <span class="font-mono text-xs">minecraftinstance.json</span> and builds the
+        list of addons you are running.
+        <template #action>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm gap-1.5"
+            @click="handleLoadInstance"
+          >
+            <Icon
+              name="mdi:folder-open-outline"
+              size="1rem"
+              aria-hidden="true"
+            />
+            Choose instance folder
+          </button>
+        </template>
+      </EmptyState>
+
+      <div
+        v-else
+        class="flex min-h-0 flex-1 flex-col gap-3"
+      >
+        <!-- Category pills, with config files as a peer rather than a panel
+           stranded below a 300-row table. -->
+        <div
+          class="flex shrink-0 flex-wrap gap-2"
+          role="group"
+          aria-label="Content category"
+        >
+          <button
+            v-for="pane in panes"
+            :key="pane.key"
+            type="button"
+            class="rounded-full border px-3 py-1 text-[0.8125rem] font-medium transition-colors duration-150 ease-[var(--ease-standard)]"
+            :class="activePane === pane.key
+              ? 'border-primary bg-primary/15 text-primary'
+              : 'border-base-300 bg-base-200 text-base-content/60 hover:text-base-content'"
+            :aria-pressed="activePane === pane.key"
+            @click="activePane = pane.key"
+          >
+            {{ pane.label }}
+            <span class="ml-1 font-mono tabular-nums opacity-60">{{ pane.count }}</span>
+          </button>
+        </div>
+
+        <ConfigFilesSection
+          v-if="activePane === 'config'"
+          v-model="selectedConfigFiles"
+          @status="handleStatus"
+        />
+
+        <AddonTable
+          v-else
+          :id="`admin-${activePane}`"
+          :title="activeCategory.label"
+          variant="manage"
+          :rows="activeCategory.rows"
+          :noun="activeCategory.label.toLowerCase()"
+          :empty-label="`No ${activeCategory.label.toLowerCase()} in this instance.`"
+          show-actions
+          actions-label="Ships"
+          fill
+        >
+          <template #actions>
+            <button
+              v-if="excludedCount > 0"
+              type="button"
+              class="btn btn-ghost btn-xs gap-1.5"
+              @click="manifestStore.clearExclusions()"
+            >
+              <Icon
+                name="mdi:restore"
+                size="0.875rem"
+                aria-hidden="true"
+              />
+              Include all
+            </button>
+          </template>
+
+          <template #row-action="{ row }">
+            <!-- A toggle, matching how CurseForge and Modrinth enable/disable a
+               mod. Off means the addon stays on this machine and is left out of
+               the upload. The wrapping label names the control per row. -->
+            <label class="flex cursor-pointer items-center">
+              <span class="sr-only">Include {{ row.name }} in the upload</span>
+              <input
+                type="checkbox"
+                class="toggle toggle-sm toggle-primary rounded-full"
+                :checked="!manifestStore.isExcluded(row.name)"
+                @change="manifestStore.toggleExclusion(row.name)"
+              />
+            </label>
+          </template>
+        </AddonTable>
+
+        <p class="shrink-0 text-[0.8125rem] leading-relaxed text-base-content/55">
+          Excluded addons stay installed on your machine — they are simply left out
+          of what you publish. Use this for server-side or private mods.
+        </p>
+      </div>
+    </Transition>
+
+    <!-- Publishing is the action bar, and the resulting code lands here in
+         place rather than on a separate screen. -->
+    <template
+      v-if="manifest !== null || selectedConfigFiles.length > 0"
+      #actions
+    >
+      <template v-if="latestUpdateReference.length > 0">
+        <span class="flex min-w-0 flex-1 items-center gap-2">
+          <Icon
+            name="mdi:check-circle-outline"
+            size="1.05rem"
+            class="shrink-0 text-success"
+            aria-hidden="true"
+          />
+          <code class="min-w-0 flex-1 truncate rounded-field border border-base-300 bg-base-100 px-2.5 py-1.5 font-mono text-xs [user-select:all]">
+            {{ latestUpdateReference }}
+          </code>
+          <button
+            type="button"
+            class="btn btn-sm shrink-0 gap-1.5"
             @click="copyUpdateReference"
           >
             <Icon
-              name="mdi:content-copy"
-              size="1.1rem"
+              :name="copied ? 'mdi:check' : 'mdi:content-copy'"
+              size="1rem"
+              aria-hidden="true"
             />
-            Copy ID
+            {{ copied ? 'Copied' : 'Copy code' }}
           </button>
-        </div>
-      </div>
-    </div>
+        </span>
+        <span
+          class="sr-only"
+          role="status"
+        >{{ copyStatus }}</span>
+      </template>
 
-    <!-- Zone 2: Manifest Display -->
-    <div
-      v-if="manifest"
-      class="admin-panel__manifest"
-    >
-      <AddonList
-        :addons="manifest.mods"
-        :update-info="manifestStore.updateInfo"
-        :excluded-addons="manifestStore.excludedAddons"
-        :show-exclusion="true"
-        :show-selection="true"
-        title="Mods"
-        category="mods"
-        class="admin-panel__addon-section"
-        @toggle-exclusion="handleToggleExclusion"
-        @bulk-actions="handleBulkAction"
-      />
-      <AddonList
-        v-if="manifest.resourcepacks.length > 0"
-        :addons="manifest.resourcepacks"
-        :update-info="manifestStore.updateInfo"
-        :excluded-addons="manifestStore.excludedAddons"
-        :show-exclusion="true"
-        :show-selection="true"
-        title="Resource Packs"
-        category="resourcepacks"
-        class="admin-panel__addon-section"
-        @toggle-exclusion="handleToggleExclusion"
-        @bulk-actions="handleBulkAction"
-      />
-      <AddonList
-        v-if="manifest.shaderpacks.length > 0"
-        :addons="manifest.shaderpacks"
-        :update-info="manifestStore.updateInfo"
-        :excluded-addons="manifestStore.excludedAddons"
-        :show-exclusion="true"
-        :show-selection="true"
-        title="Shader Packs"
-        category="shaderpacks"
-        class="admin-panel__addon-section"
-        @toggle-exclusion="handleToggleExclusion"
-        @bulk-actions="handleBulkAction"
-      />
-      <AddonList
-        v-if="manifest.datapacks.length > 0"
-        :addons="manifest.datapacks"
-        :update-info="manifestStore.updateInfo"
-        :excluded-addons="manifestStore.excludedAddons"
-        :show-exclusion="true"
-        :show-selection="true"
-        title="Data Packs"
-        category="datapacks"
-        class="admin-panel__addon-section"
-        @toggle-exclusion="handleToggleExclusion"
-        @bulk-actions="handleBulkAction"
-      />
-    </div>
+      <template v-else-if="uploading">
+        <span class="min-w-0 flex-1">
+          <span class="mb-1 flex items-baseline justify-between gap-3 text-xs">
+            <span class="font-medium">Uploading to GitHub…</span>
+            <span class="font-mono tabular-nums text-base-content/60">{{ Math.round(smoothProgress) }}%</span>
+          </span>
+          <progress
+            class="progress w-full"
+            :value="smoothProgress"
+            max="100"
+            aria-label="Upload progress"
+          />
+        </span>
+      </template>
 
-    <!-- Empty State -->
-    <div
-      v-else
-      class="admin-panel__empty"
-    >
-      <Icon
-        name="mdi:folder-search"
-        size="3rem"
-        class="admin-panel__empty-icon"
-      />
-      <h3 class="admin-panel__empty-title">
-        No Instance Loaded
-      </h3>
-      <p class="admin-panel__empty-desc">
-        Load a Minecraft instance to preview your mods, resource packs, and shader packs.
-      </p>
-      <button
-        class="btn btn-primary"
-        @click="handleLoadInstance"
+      <p
+        v-else
+        class="text-sm text-base-content/60"
       >
-        <Icon
-          name="mdi:folder-open"
-          size="1.1rem"
-        />
-        Browse for Instance
-      </button>
-    </div>
+        {{ shippingCount }} of {{ totalAddons }} addons ship<template v-if="excludedCount > 0">
+          · {{ excludedCount }} excluded
+        </template><template v-if="selectedConfigFiles.length > 0">
+          · {{ selectedConfigFiles.length }} config files
+        </template>
+      </p>
 
-    <!-- Zone 3: Config Files -->
-    <ConfigFilesSection
-      v-model="selectedConfigFiles"
-      class="admin-panel__config"
-      @status="handleStatus"
-    />
-  </div>
+      <div class="flex-1" />
+
+      <button
+        type="button"
+        class="btn btn-primary btn-sm gap-1.5"
+        :disabled="!canPublish"
+        @click="handleUploadToGithub"
+      >
+        <span
+          v-if="uploading"
+          class="loading loading-spinner loading-xs"
+          aria-hidden="true"
+        />
+        {{ latestUpdateReference.length > 0 ? 'Publish again' : 'Publish update' }}
+      </button>
+    </template>
+  </WorkspacePage>
 </template>
 
 <script setup lang="ts">
-import type { ConfigFileWithContent } from '~/types'
+import type { AddonRow } from '~/components/domains/addons/AddonTable.vue'
+import type { Addon, ConfigFileWithContent } from '~/types'
 
 const { loadInstance, saveManifest, uploadToGithub } = useAdminApi()
+const { notify } = useNotify()
+const { paneTransition } = useMotion()
 const manifestStore = useManifestStore()
 const { $logger: logger } = useNuxtApp()
 
 const uploading = ref(false)
 const progress = ref(0)
-const statusMessage = ref('')
-const statusType = ref<'success' | 'error' | 'info' | 'warning'>('info')
+/** Eased for display so event-driven jumps do not read as a broken bar. */
+const { displayed: smoothProgress } = useSmoothProgress(progress)
+/** Running commentary while uploading. Not a toast: the upload path emits this
+ *  repeatedly and would spam the corner. */
+const progressMessage = ref('')
 const selectedConfigFiles = ref<ConfigFileWithContent[]>([])
 const customModpackName = ref('')
 const latestUpdateReference = ref('')
+const copied = ref(false)
+const copyStatus = ref('')
+const editingName = ref(false)
+const instanceDir = ref('')
+
+const activePane = ref('mods')
 
 const manifest = computed(() => manifestStore.manifest)
 const excludedCount = computed(() => manifestStore.excludedAddons.length)
 
-const alertIcon = computed(() =>
+const instanceLabel = computed(() =>
 {
-	const icons: Record<string, string> = {
-		success: 'mdi:check-circle',
-		error: 'mdi:alert-circle',
-		warning: 'mdi:alert',
-		info: 'mdi:information'
+	const name = customModpackName.value.trim()
+	if (name.length > 0) return name
+	// Fall back to the folder the instance was loaded from, so the header can
+	// actually identify which pack is about to be published.
+	if (instanceDir.value.length > 0)
+	{
+		const parts = instanceDir.value.split(/[\\/]/).filter((part) => part.length > 0)
+		if (parts.length > 0) return parts[parts.length - 1] as string
 	}
-	return icons[statusType.value] ?? 'mdi:information'
+	return 'Loaded instance'
 })
+
+const toRows = (addons: Addon[]): AddonRow[] =>
+	addons.map((addon) =>
+	{
+		const excluded = manifestStore.excludedAddons.includes(addon.addon_name)
+		return {
+			key: `${addon.addon_project_id}-${addon.version}`,
+			name: addon.addon_name,
+			subtitle: excluded ? 'Excluded — stays on your machine' : addon.fileNameOnDisk,
+			version: addon.version,
+			// Deliberately empty: the filename already sits under the project name,
+			// and repeating it here made the version column carry no information.
+			versionNote: '',
+			tone: excluded ? 'excluded' as const : 'shipping' as const,
+			label: excluded ? 'Excluded' : 'Ships',
+			struck: excluded,
+			dimmed: excluded,
+			thumbnailUrl: addon.thumbnailUrl
+		}
+	})
+
+const categories = computed(() => [
+	{ key: 'mods', label: 'Mods', rows: toRows(manifest.value?.mods ?? []) },
+	{ key: 'resourcepacks', label: 'Resource packs', rows: toRows(manifest.value?.resourcepacks ?? []) },
+	{ key: 'shaderpacks', label: 'Shaders', rows: toRows(manifest.value?.shaderpacks ?? []) },
+	{ key: 'datapacks', label: 'Data packs', rows: toRows(manifest.value?.datapacks ?? []) }
+])
+
+const EMPTY_CATEGORY = { key: 'mods', label: 'Mods', rows: [] as AddonRow[] }
+
+const activeCategory = computed(
+	() => categories.value.find((category) => category.key === activePane.value) ?? EMPTY_CATEGORY
+)
+
+/** Categories plus config files, which is a peer choice rather than a section. */
+const panes = computed(() => [
+	...categories.value.map((category) => ({
+		key: category.key,
+		label: category.label,
+		count: category.rows.length
+	})),
+	{ key: 'config', label: 'Config files', count: selectedConfigFiles.value.length }
+])
+
+const totalAddons = computed(() =>
+	categories.value.reduce((sum, category) => sum + category.rows.length, 0)
+)
+
+const shippingCount = computed(() => totalAddons.value - excludedCount.value)
+
+const canPublish = computed(() =>
+	!uploading.value && (manifest.value !== null || selectedConfigFiles.value.length > 0)
+)
 
 const clearStatus = () =>
 {
-	statusMessage.value = ''
-	statusType.value = 'info'
+	progressMessage.value = ''
 }
 
+/**
+ * In-flight informational messages stay inline beside the upload progress bar;
+ * everything else is an outcome and becomes a toast.
+ */
 const setStatus = (message: string, type: 'success' | 'error' | 'info' | 'warning') =>
 {
-	statusMessage.value = message
-	statusType.value = type
+	if (type === 'info' && uploading.value)
+	{
+		progressMessage.value = message
+		return
+	}
+	notify(message, type)
 }
 
 const handleStatus = (message: string, type: 'success' | 'error' | 'info' | 'warning') =>
@@ -241,31 +405,20 @@ const handleStatus = (message: string, type: 'success' | 'error' | 'info' | 'war
 	setStatus(message, type)
 }
 
-function handleToggleExclusion(addonName: string)
-{
-	manifestStore.toggleExclusion(addonName)
-}
-
-function handleBulkAction(_action: 'exclude', addonNames: string[])
-{
-	for (const addonName of addonNames)
-	{
-		if (!manifestStore.isExcluded(addonName))
-		{
-			manifestStore.toggleExclusion(addonName)
-		}
-	}
-}
-
-function clearAllExclusions()
-{
-	manifestStore.clearExclusions()
-}
-
 async function handleLoadInstance()
 {
 	clearStatus()
-	await loadInstance(setStatus)
+	const result = await loadInstance(setStatus)
+	if (typeof result.instanceDir === 'string')
+	{
+		instanceDir.value = result.instanceDir
+	}
+	if (manifest.value !== null)
+	{
+		// A freshly loaded instance invalidates the previous publish.
+		latestUpdateReference.value = ''
+		activePane.value = 'mods'
+	}
 }
 
 async function handleSaveManifest()
@@ -279,7 +432,7 @@ async function handleSaveManifest()
 
 async function handleUploadToGithub()
 {
-	if (manifest.value == null && selectedConfigFiles.value.length === 0)
+	if (manifest.value === null && selectedConfigFiles.value.length === 0)
 	{
 		return
 	}
@@ -295,10 +448,10 @@ async function handleUploadToGithub()
 			manifest.value,
 			selectedConfigFiles.value,
 			customModpackName.value,
-			(p: number, msg?: string) =>
+			(value: number, message?: string) =>
 			{
-				progress.value = p
-				if (msg !== undefined) setStatus(msg, 'info')
+				progress.value = value
+				if (message !== undefined) setStatus(message, 'info')
 			},
 			setStatus
 		)
@@ -314,44 +467,31 @@ async function handleUploadToGithub()
 	}
 }
 
+let copyTimer: ReturnType<typeof setTimeout> | null = null
+
 async function copyUpdateReference()
 {
-	if (latestUpdateReference.value.length === 0)
-	{
-		return
-	}
+	if (latestUpdateReference.value.length === 0) return
 
 	try
 	{
 		await navigator.clipboard.writeText(latestUpdateReference.value)
-		setStatus('Update ID copied to clipboard.', 'success')
+		copied.value = true
+		copyStatus.value = 'Update code copied to clipboard.'
 	}
-	catch
+	catch (error)
 	{
-		setStatus('Failed to copy update id. Please copy it manually.', 'warning')
+		logger.error({ error }, 'Clipboard write failed')
+		// The code is select-all, so a clipboard failure is recoverable by hand.
+		copyStatus.value = 'Could not copy automatically. Select the code and copy it manually.'
 	}
-}
 
-const route = useRoute()
-
-const resetComponentState = () =>
-{
-	uploading.value = false
-	progress.value = 0
-	statusMessage.value = ''
-	statusType.value = 'info'
-	latestUpdateReference.value = ''
-	logger.info('AdminPanel state reset after navigation')
-}
-
-watch(() => route.name, (newRouteName, oldRouteName) =>
-{
-	if (oldRouteName === 'settings' && newRouteName === 'dashboard')
+	if (copyTimer !== null) clearTimeout(copyTimer)
+	copyTimer = setTimeout(() =>
 	{
-		resetComponentState()
-		logger.info('Detected navigation from settings to dashboard, AdminPanel state reset')
-	}
-})
+		copied.value = false
+	}, 2000)
+}
 
 onMounted(() =>
 {
@@ -360,111 +500,7 @@ onMounted(() =>
 
 onUnmounted(() =>
 {
+	if (copyTimer !== null) clearTimeout(copyTimer)
 	logger.info('AdminPanel unmounted')
 })
 </script>
-
-<style scoped>
-.admin-panel {
-  max-width: var(--container-lg);
-  width: 100%;
-  margin: 0 auto;
-}
-
-.admin-panel__progress {
-  margin-bottom: var(--space-4);
-}
-
-.admin-panel__ref-card {
-  margin-bottom: var(--space-6);
-}
-
-.admin-panel__ref {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.admin-panel__ref-info {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-}
-
-.admin-panel__ref-icon {
-  color: var(--color-status-success);
-}
-
-.admin-panel__ref-label {
-  font-weight: 600;
-  font-size: var(--text-body-md-size);
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.admin-panel__ref-value {
-  font-size: var(--text-body-sm-size);
-  color: var(--color-text-secondary);
-  margin: var(--space-1) 0 0;
-}
-
-.admin-panel__ref-code {
-  display: inline-block;
-  margin-top: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  background: var(--color-surface-overlay);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: var(--text-body-sm-size);
-  color: var(--color-accent-primary);
-  word-break: break-all;
-}
-
-.admin-panel__manifest {
-  margin-bottom: var(--space-6);
-}
-
-.admin-panel__addon-section {
-  margin-bottom: var(--space-6);
-}
-
-.admin-panel__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-16) var(--space-8);
-  text-align: center;
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  margin-bottom: var(--space-6);
-}
-
-.admin-panel__empty-icon {
-  color: var(--color-text-tertiary);
-  margin-bottom: var(--space-4);
-}
-
-.admin-panel__empty-title {
-  font-family: var(--font-heading);
-  font-size: var(--text-heading-md-size);
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin: 0 0 var(--space-2);
-}
-
-.admin-panel__empty-desc {
-  font-size: var(--text-body-md-size);
-  color: var(--color-text-secondary);
-  margin: 0 0 var(--space-6);
-  max-width: 400px;
-}
-
-.admin-panel__config {
-  margin-top: var(--space-6);
-}
-</style>

@@ -1,152 +1,109 @@
 <template>
-  <div class="card bg-base-200 shadow-md border border-base-300 config-files">
-    <div class="card-body border-b border-base-300 pb-3">
-      <div class="config-files__header">
-        <h3 class="config-files__title">
-          Config Files (Optional)
-        </h3>
-        <div
-          class="tooltip tooltip-top"
-          data-tip="Configuration files will be applied to the user's modpack directory during installation"
-        >
-          <Icon
-            name="mdi:help-circle-outline"
-            size="1rem"
-            class="config-files__help"
-          />
-        </div>
-      </div>
-    </div>
-
-    <div class="card-body">
-      <p class="config-files__desc">
-        Select configuration files to include with your modpack update.
-      </p>
-
-      <div class="config-files__actions">
-        <button
-          class="btn btn-outline btn-sm"
-          @click="handleSelectFiles"
-        >
-          <Icon
-            name="mdi:file-plus"
-            size="1.1rem"
-          />
-          Add Config Files
-        </button>
-        <button
-          class="btn btn-outline btn-sm"
-          @click="showDirectorySelector = true"
-        >
-          <Icon
-            name="mdi:folder-plus"
-            size="1.1rem"
-          />
-          Add From Directory
-        </button>
-        <button
-          v-if="modelValue.length > 0"
-          class="btn btn-error btn-sm"
-          @click="clearFiles"
-        >
-          <Icon
-            name="mdi:trash-can"
-            size="1.1rem"
-          />
-          Clear All
-        </button>
-      </div>
-
-      <div
-        v-if="modelValue.length > 0"
-        class="config-files__list"
+  <div class="overflow-hidden rounded-box border border-base-300 bg-base-200">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-base-300 px-3 py-2.5">
+      <h3
+        id="config-files-title"
+        class="text-sm font-semibold"
       >
-        <div class="config-files__list-header">
-          Selected Files ({{ modelValue.length }}):
-        </div>
-        <div
-          v-for="(configFile, index) in modelValue"
-          :key="index"
-          class="config-files__item"
-        >
-          <div class="config-files__item-info">
-            <span
-              class="config-files__badge"
-              :class="configFile.is_binary ? 'config-files__badge--binary' : 'config-files__badge--config'"
-            >
-              {{ configFile.is_binary ? 'BIN' : 'CFG' }}
-            </span>
-            <span class="config-files__path">{{ configFile.relative_path }}</span>
-            <span class="config-files__size">
-              <template v-if="configFile.is_binary">
-                {{ configFile.filename.split('.').pop()?.toUpperCase() || 'BINARY' }}
-              </template>
-              <template v-else>
-                {{ Math.round(configFile.content.length / 1024 * 100) / 100 }} KB
-              </template>
-            </span>
-          </div>
-          <button
-            class="config-files__remove"
-            aria-label="Remove file"
-            @click="removeFile(configFile)"
-          >
-            <Icon
-              name="mdi:close"
-              size="1rem"
-            />
-          </button>
-        </div>
-      </div>
+        Config files
+      </h3>
 
-      <div
-        v-else
-        class="config-files__empty"
+      <span class="font-mono text-xs tabular-nums text-base-content/50">{{ modelValue.length }}</span>
+
+      <span class="flex-1" />
+
+      <button
+        type="button"
+        class="btn btn-xs gap-1.5 border-base-300"
+        :disabled="busy"
+        @click="handleSelectFiles"
       >
         <Icon
-          name="mdi:file-document-outline"
-          size="2.5rem"
-          class="config-files__empty-icon"
+          name="mdi:file-plus-outline"
+          size="0.875rem"
+          aria-hidden="true"
         />
-        <p class="config-files__empty-text">
-          No config files selected
-        </p>
-        <p class="config-files__empty-hint">
-          Config files will be applied to the user's modpack directory
-        </p>
-      </div>
-    </div>
-  </div>
+        Add files
+      </button>
 
-  <BaseModal
-    v-model="showDirectorySelector"
-    labelled-by="select-config-directory-title"
-    box-class="max-w-lg"
-  >
-    <h3
-      id="select-config-directory-title"
-      class="text-lg font-bold"
-    >
-      Select Config Directory
-    </h3>
-    <p class="py-1 text-sm opacity-70">
-      Choose a directory to scan for config files
-    </p>
-    <PathSelector
-      type="directory"
-      title="Select Config Directory"
-      @selected="handleDirectorySelected"
-      @error="handleDirectoryError"
-    />
-    <div class="modal-action">
+      <!-- Scanning a folder used to go through a modal wrapping a path field.
+           The native directory dialog is the same decision in one click. -->
       <button
-        class="btn btn-ghost"
-        @click="showDirectorySelector = false"
+        type="button"
+        class="btn btn-xs gap-1.5 border-base-300"
+        :disabled="busy"
+        @click="handleScanDirectory"
       >
-        Cancel
+        <span
+          v-if="busy"
+          class="loading loading-spinner loading-xs"
+          aria-hidden="true"
+        />
+        <Icon
+          v-else
+          name="mdi:folder-search-outline"
+          size="0.875rem"
+          aria-hidden="true"
+        />
+        Scan a folder
+      </button>
+
+      <button
+        v-if="modelValue.length > 0"
+        type="button"
+        class="btn btn-ghost btn-xs gap-1.5 text-error"
+        @click="clearFiles"
+      >
+        <Icon
+          name="mdi:close"
+          size="0.875rem"
+          aria-hidden="true"
+        />
+        Clear
       </button>
     </div>
-  </BaseModal>
+
+    <p
+      v-if="modelValue.length === 0"
+      class="px-3 py-5 text-center text-sm text-base-content/50"
+    >
+      No config files attached. Anything you add here is copied into every
+      player's modpack, overwriting their version of that file.
+    </p>
+
+    <ul
+      v-else
+      class="max-h-52 overflow-y-auto"
+      aria-labelledby="config-files-title"
+    >
+      <li
+        v-for="file in modelValue"
+        :key="file.relative_path"
+        class="flex items-center gap-2 border-b border-base-300/40 px-3 py-1.5 last:border-b-0"
+      >
+        <StatusChip
+          tone="unchanged"
+          :label="file.is_binary === true ? 'BIN' : 'CFG'"
+        />
+        <span
+          class="min-w-0 flex-1 truncate font-mono text-xs text-base-content/80"
+          :title="file.relative_path"
+        >{{ file.relative_path }}</span>
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs px-1 text-base-content/50 hover:text-error"
+          :aria-label="`Remove ${file.relative_path}`"
+          @click="removeFile(file)"
+        >
+          <Icon
+            name="mdi:close"
+            size="0.875rem"
+            aria-hidden="true"
+          />
+        </button>
+      </li>
+    </ul>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -161,60 +118,73 @@ const emit = defineEmits<{
 	'status': [message: string, type: 'success' | 'error' | 'info' | 'warning']
 }>()
 
-const showDirectorySelector = ref(false)
+const busy = ref(false)
 
-// Escape, scroll lock, and focus trapping now live in BaseModal.
+const reportStatus = (message: string, type: 'success' | 'error' | 'info' | 'warning') =>
+{
+	emit('status', message, type)
+}
+
+/**
+ * Config files are keyed by relative_path on the Rust side, so adding the same
+ * path twice would ship a duplicate entry. Merging on that key keeps repeated
+ * scans of overlapping folders idempotent.
+ */
+const mergeFiles = (incoming: ConfigFileWithContent[]) =>
+{
+	if (incoming.length === 0) return
+
+	const byPath = new Map(props.modelValue.map((file) => [file.relative_path, file]))
+	for (const file of incoming)
+	{
+		byPath.set(file.relative_path, file)
+	}
+	emit('update:modelValue', [...byPath.values()])
+}
 
 async function handleSelectFiles()
 {
-	const { selectConfigFiles } = useAdminApi()
-	const newFiles = await selectConfigFiles((message: string, type: 'success' | 'error' | 'info' | 'warning') =>
+	busy.value = true
+	try
 	{
-		emit('status', message, type)
-	})
-	if (newFiles.length > 0)
+		const { selectConfigFiles } = useAdminApi()
+		mergeFiles(await selectConfigFiles(reportStatus))
+	}
+	finally
 	{
-		emit('update:modelValue', [...props.modelValue, ...newFiles])
+		busy.value = false
 	}
 }
 
-async function handleDirectorySelected(dirPath: string | string[])
+async function handleScanDirectory()
 {
-	showDirectorySelector.value = false
-	const pathToUse = Array.isArray(dirPath) ? dirPath[0] : dirPath
-
-	if (pathToUse === undefined || pathToUse.trim().length === 0)
+	busy.value = true
+	try
 	{
-		emit('status', 'No directory selected.', 'warning')
-		return
+		const { selectDirectory } = useTauri()
+		const directory = await selectDirectory()
+
+		if (directory === null || directory.trim().length === 0)
+		{
+			return
+		}
+
+		const { scanDirectoryForConfigFiles } = useAdminApi()
+		mergeFiles(await scanDirectoryForConfigFiles(directory, reportStatus))
 	}
-
-	const { scanDirectoryForConfigFiles } = useAdminApi()
-	const newFiles = await scanDirectoryForConfigFiles(pathToUse, (message: string, type: 'success' | 'error' | 'info' | 'warning') =>
+	finally
 	{
-		emit('status', message, type)
-	})
-	if (newFiles.length > 0)
-	{
-		emit('update:modelValue', [...props.modelValue, ...newFiles])
+		busy.value = false
 	}
-}
-
-function handleDirectoryError(error: string)
-{
-	showDirectorySelector.value = false
-	emit('status', `Directory selection error: ${error}`, 'error')
 }
 
 function removeFile(configFile: ConfigFileWithContent)
 {
-	const index = props.modelValue.findIndex((cf) => cf.relative_path === configFile.relative_path)
-	if (index !== -1)
+	const next = props.modelValue.filter((file) => file.relative_path !== configFile.relative_path)
+	if (next.length !== props.modelValue.length)
 	{
-		const newValue = [...props.modelValue]
-		newValue.splice(index, 1)
-		emit('update:modelValue', newValue)
-		emit('status', `Removed config file: ${configFile.relative_path}`, 'info')
+		emit('update:modelValue', next)
+		emit('status', `Removed ${configFile.relative_path}`, 'info')
 	}
 }
 
@@ -224,144 +194,3 @@ function clearFiles()
 	emit('status', 'Cleared all config files.', 'info')
 }
 </script>
-
-<style scoped>
-.config-files__header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.config-files__title {
-  font-size: var(--text-heading-sm-size);
-  font-weight: 600;
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.config-files__help {
-  color: var(--color-text-tertiary);
-  cursor: help;
-}
-
-.config-files__desc {
-  font-size: var(--text-body-sm-size);
-  color: var(--color-text-secondary);
-  margin: 0 0 var(--space-4);
-}
-
-.config-files__actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.config-files__list-header {
-  font-size: var(--text-body-sm-size);
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  margin-bottom: var(--space-2);
-}
-
-.config-files__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.config-files__item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
-  background: var(--color-surface-base);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border-subtle);
-}
-
-.config-files__item-info {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  flex: 1;
-}
-
-.config-files__badge {
-  display: inline-flex;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-body-xs-size);
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  flex-shrink: 0;
-}
-.config-files__badge--binary {
-  background: var(--color-accent-secondary-muted);
-  color: var(--color-accent-secondary);
-}
-.config-files__badge--config {
-  background: var(--color-accent-primary-muted);
-  color: var(--color-accent-primary);
-}
-
-.config-files__path {
-  font-family: var(--font-mono);
-  font-size: var(--text-body-sm-size);
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.config-files__size {
-  font-size: var(--text-body-xs-size);
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-}
-
-.config-files__remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  color: var(--color-status-error);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--duration-instant);
-  flex-shrink: 0;
-}
-.config-files__remove:hover {
-  background: var(--color-status-error-muted);
-}
-.config-files__remove:focus-visible {
-  box-shadow: var(--focus-ring-offset);
-  outline: none;
-}
-
-.config-files__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: var(--space-6);
-  text-align: center;
-}
-.config-files__empty-icon {
-  color: var(--color-text-tertiary);
-  margin-bottom: var(--space-2);
-}
-.config-files__empty-text {
-  font-size: var(--text-body-sm-size);
-  color: var(--color-text-secondary);
-  margin: 0;
-}
-.config-files__empty-hint {
-  font-size: var(--text-body-xs-size);
-  color: var(--color-text-tertiary);
-  margin: var(--space-1) 0 0;
-}
-</style>
