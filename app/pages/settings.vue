@@ -1,305 +1,234 @@
 <template>
-  <div class="settings-page">
-    <h1 class="settings-page__title">
-      Settings
-    </h1>
+  <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+    <header class="mb-4">
+      <p class="text-xs text-base-content/50">
+        Preferences
+      </p>
+      <h1 class="mt-1 text-2xl font-bold tracking-tight">
+        Settings
+      </h1>
+    </header>
 
-    <div
-      class="settings-page__tabs"
-      role="tablist"
-      aria-label="Settings sections"
-    >
-      <button
-        v-for="tab in tabs"
-        :id="`tab-${tab.key}`"
-        :key="tab.key"
-        ref="tabRefs"
-        class="settings-page__tab"
-        :class="{ 'settings-page__tab--active': activeTab === tab.key }"
-        role="tab"
-        :aria-selected="activeTab === tab.key"
-        :aria-controls="`tabpanel-${tab.key}`"
-        :tabindex="activeTab === tab.key ? 0 : -1"
-        @click="activeTab = tab.key"
-        @keydown="handleTabKeydown"
-      >
-        <Icon
-          :name="tab.icon"
-          size="1.1rem"
+    <!--
+      Radio tabs. The previous build hand-rolled the WAI-ARIA tabs pattern with
+      a keydown handler managing arrow/Home/End focus (F-P2-14). A radio group
+      gets that keyboard behaviour from the platform, so the same accessibility
+      guarantee now costs no code and cannot drift.
+    -->
+    <div class="tabs tabs-lift">
+      <label class="tab gap-1.5 text-sm font-medium">
+        <input
+          type="radio"
+          name="settings-section"
+          checked
         />
-        <span>{{ tab.label }}</span>
-      </button>
-    </div>
+        <Icon
+          name="mdi:github"
+          size="0.9375rem"
+          aria-hidden="true"
+        />
+        Repository
+      </label>
+      <div class="tab-content border-base-300 bg-base-100 p-4">
+        <GitHubSettings />
+      </div>
 
-    <div class="settings-page__content">
-      <section
-        v-if="activeTab === 'github'"
-        id="tabpanel-github"
-        class="settings-page__section animate-fade-in-up"
-        role="tabpanel"
-        aria-labelledby="tab-github"
-        tabindex="0"
-      >
-        <div class="card bg-base-200 shadow-md border border-base-300">
-          <div class="card-body">
-            <div class="settings-page__section-content">
-              <h2 class="settings-page__section-title">
-                Modpack Updates Repository
-              </h2>
-              <p class="settings-page__section-desc">
-                Configure the GitHub repository where your modpack updates are stored (e.g., YassaaaTU/cemm-updates).
-              </p>
-              <GitHubSettings />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section
-        v-if="activeTab === 'appearance'"
-        id="tabpanel-appearance"
-        class="settings-page__section animate-fade-in-up"
-        role="tabpanel"
-        aria-labelledby="tab-appearance"
-        tabindex="0"
-      >
-        <div class="card bg-base-200 shadow-md border border-base-300">
-          <div class="card-body">
-            <div class="settings-page__section-content">
-              <h2 class="settings-page__section-title">
-                Appearance
-              </h2>
-              <p class="settings-page__section-desc">
-                Customize the look and feel of the application.
-              </p>
-
-              <div class="settings-page__field">
-                <label class="settings-page__field-label">Theme</label>
-                <div class="join">
-                  <button
-                    v-for="opt in themeOptions"
-                    :key="opt.value"
-                    class="btn join-item"
-                    :class="{ 'btn-primary': currentTheme === opt.value }"
-                    @click="setTheme(opt.value as 'nord' | 'dracula')"
-                  >
-                    <Icon
-                      v-if="opt.icon"
-                      :name="opt.icon"
-                      size="1.1rem"
-                    />
-                    {{ opt.label }}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section
-        v-if="activeTab === 'updates'"
-        id="tabpanel-updates"
-        class="settings-page__section animate-fade-in-up"
-        role="tabpanel"
-        aria-labelledby="tab-updates"
-        tabindex="0"
-      >
-        <div class="card bg-base-200 shadow-md border border-base-300">
-          <div class="card-body">
-            <div class="settings-page__section-content">
-              <h2 class="settings-page__section-title">
-                Application Updates
-              </h2>
-              <p class="settings-page__section-desc">
-                Check for the latest version of CEMM from the app repository (YassaaaTU/cemm).
-              </p>
-
-              <div class="settings-page__update-row">
-                <button
-                  class="btn btn-primary"
-                  :disabled="updater.isChecking.value"
-                  @click="handleCheckForUpdates"
-                >
-                  <span
-                    v-if="updater.isChecking.value"
-                    class="loading loading-spinner loading-xs"
-                  />
-                  <Icon
-                    v-else
-                    name="mdi:update"
-                    size="1.1rem"
-                  />
-                  <span>{{ updater.isChecking.value ? 'Checking...' : 'Check for Updates' }}</span>
-                </button>
-                <span
-                  v-if="lastUpdateCheck"
-                  class="settings-page__update-timestamp"
-                >
-                  Last checked: {{ lastUpdateCheck }}
-                </span>
-              </div>
-
-              <div
-                v-if="updateStatus"
-                class="alert settings-page__update-status"
-                :class="`alert-${updateStatus.type}`"
-                role="alert"
+      <label class="tab gap-1.5 text-sm font-medium">
+        <input
+          type="radio"
+          name="settings-section"
+        />
+        <Icon
+          name="mdi:palette-outline"
+          size="0.9375rem"
+          aria-hidden="true"
+        />
+        Appearance
+      </label>
+      <div class="tab-content border-base-300 bg-base-100 p-4">
+        <div class="space-y-5">
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend px-0 text-xs font-semibold text-base-content/70">
+              Theme
+            </legend>
+            <p class="mb-2 text-xs text-base-content/60">
+              Matching the system is the default, and follows your desktop the
+              moment you change it there.
+            </p>
+            <div class="join">
+              <button
+                v-for="option in themeOptions"
+                :key="option.value"
+                type="button"
+                class="btn join-item btn-sm gap-1.5 border-base-300"
+                :class="themeStore.preference === option.value ? 'btn-primary' : ''"
+                :aria-pressed="themeStore.preference === option.value"
+                @click="themeStore.setPreference(option.value)"
               >
-                <Icon :name="updateStatus.type === 'success' ? 'mdi:check-circle' : updateStatus.type === 'error' ? 'mdi:alert-circle' : 'mdi:information'" />
-                <span>{{ updateStatus.message }}</span>
-              </div>
+                <Icon
+                  :name="option.icon"
+                  size="1rem"
+                  aria-hidden="true"
+                />
+                {{ option.label }}
+              </button>
             </div>
-          </div>
-        </div>
-      </section>
+            <p
+              v-if="themeStore.preference === 'system'"
+              class="label mt-1 text-xs"
+            >
+              Currently showing {{ themeStore.isDark ? 'dark' : 'light' }}.
+            </p>
+          </fieldset>
 
-      <section
-        v-if="activeTab === 'about'"
-        id="tabpanel-about"
-        class="settings-page__section animate-fade-in-up"
-        role="tabpanel"
-        aria-labelledby="tab-about"
-        tabindex="0"
-      >
-        <div class="card bg-base-200 shadow-md border border-base-300">
-          <div class="card-body">
-            <div class="settings-page__section-content">
-              <h2 class="settings-page__section-title">
-                About CEMM
-              </h2>
-              <p class="settings-page__section-desc">
-                Custom Edition Modpack Manager. A tool for managing and distributing Minecraft modpack updates.
+          <fieldset class="fieldset border-t border-base-300 pt-4">
+            <legend class="fieldset-legend px-0 text-xs font-semibold text-base-content/70">
+              Motion
+            </legend>
+            <label class="label cursor-pointer justify-start gap-3">
+              <input
+                type="checkbox"
+                class="toggle toggle-sm"
+                :checked="themeStore.motion === 'reduced'"
+                @change="themeStore.toggleMotion()"
+              />
+              <span class="text-sm">Reduce animation</span>
+            </label>
+            <p class="label text-xs">
+              Turns off panel transitions and staggered list reveals. If your system
+              already asks for reduced motion, that is honoured regardless of
+              this switch.
+            </p>
+          </fieldset>
+        </div>
+      </div>
+
+      <label class="tab gap-1.5 text-sm font-medium">
+        <input
+          type="radio"
+          name="settings-section"
+        />
+        <Icon
+          name="mdi:update"
+          size="0.9375rem"
+          aria-hidden="true"
+        />
+        Updates
+      </label>
+      <div class="tab-content border-base-300 bg-base-100 p-4">
+        <div class="space-y-4">
+          <div class="flex flex-wrap items-center gap-3">
+            <div>
+              <p class="text-sm font-semibold">
+                CEMM {{ appVersion !== null ? `v${appVersion}` : `v${packageVersion}` }}
               </p>
-
-              <div class="settings-page__about-info">
-                <div class="settings-page__about-row">
-                  <Icon
-                    name="mdi:tag"
-                    size="1.1rem"
-                  />
-                  <span class="settings-page__about-label">Version</span>
-                  <span class="settings-page__about-value">{{ appVersion ?? 'Unavailable' }}</span>
-                </div>
-                <div class="settings-page__about-row">
-                  <Icon
-                    name="mdi:github"
-                    size="1.1rem"
-                  />
-                  <span class="settings-page__about-label">Repository</span>
-                  <a
-                    href="https://github.com/YassaaaTU/cemm"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="settings-page__about-link"
-                  >
-                    GitHub Repository
-                  </a>
-                </div>
-                <div class="settings-page__about-row">
-                  <Icon
-                    name="mdi:file-document"
-                    size="1.1rem"
-                  />
-                  <span class="settings-page__about-label">License</span>
-                  <a
-                    href="https://github.com/YassaaaTU/cemm/blob/main/LICENSE"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="settings-page__about-link"
-                  >
-                    MIT License
-                  </a>
-                </div>
-              </div>
-
-              <div class="settings-page__about-tech">
-                <p class="settings-page__about-tech-label">
-                  Built with
-                </p>
-                <div class="settings-page__about-tech-list">
-                  <span class="settings-page__about-tech-item">Tauri</span>
-                  <span class="settings-page__about-tech-item">Vue</span>
-                  <span class="settings-page__about-tech-item">Nuxt</span>
-                  <span class="settings-page__about-tech-item">Tailwind CSS</span>
-                </div>
-              </div>
+              <p
+                v-if="lastUpdateCheck.length > 0"
+                class="text-xs text-base-content/60"
+              >
+                Last checked {{ lastUpdateCheck }}
+              </p>
             </div>
+            <span class="flex-1" />
+            <button
+              type="button"
+              class="btn btn-sm gap-1.5 border-base-300"
+              :disabled="checking"
+              @click="handleCheckForUpdates"
+            >
+              <span
+                v-if="checking"
+                class="loading loading-spinner loading-xs"
+                aria-hidden="true"
+              />
+              <Icon
+                v-else
+                name="mdi:refresh"
+                size="1rem"
+                aria-hidden="true"
+              />
+              Check for updates
+            </button>
           </div>
         </div>
-      </section>
+      </div>
+
+      <label class="tab gap-1.5 text-sm font-medium">
+        <input
+          type="radio"
+          name="settings-section"
+        />
+        <Icon
+          name="mdi:information-outline"
+          size="0.9375rem"
+          aria-hidden="true"
+        />
+        About
+      </label>
+      <div class="tab-content border-base-300 bg-base-100 p-4">
+        <div class="flex items-start gap-4">
+          <BrandMark class="mt-1 size-10 shrink-0 text-primary" />
+          <div class="space-y-2">
+            <p class="text-lg font-bold">
+              CEMM
+            </p>
+            <p class="text-sm text-base-content/70">
+              ChillEcke Modpack Manager. Distributes modifications to an existing
+              CurseForge modpack among a group, without republishing the whole pack.
+            </p>
+            <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 pt-1 text-xs">
+              <dt class="text-base-content/55">
+                Version
+              </dt>
+              <dd class="font-mono tabular-nums text-accent">
+                {{ appVersion ?? packageVersion }}
+              </dd>
+              <dt class="text-base-content/55">
+                Licence
+              </dt>
+              <dd>MIT</dd>
+              <dt class="text-base-content/55">
+                Author
+              </dt>
+              <dd>YassaaaTU</dd>
+            </dl>
+            <a
+              href="https://github.com/YassaaaTU/cemm"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="link link-hover inline-flex items-center gap-1.5 pt-1 text-sm text-primary"
+            >
+              <Icon
+                name="mdi:github"
+                size="1rem"
+                aria-hidden="true"
+              />
+              Source on GitHub
+            </a>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useThemeStore } from '~/stores/theme'
+import type { ThemePreference } from '~/stores/theme'
+import pkg from '~~/package.json'
 
 const updater = useUpdater()
 const themeStore = useThemeStore()
+const { notify } = useNotify()
 
-const activeTab = ref<'github' | 'appearance' | 'updates' | 'about'>('github')
-const lastUpdateCheck = ref<string>('')
-const updateStatus = ref<{ type: 'success' | 'error' | 'info', message: string } | null>(null)
+const packageVersion = pkg.version
+const lastUpdateCheck = ref('')
+const checking = ref(false)
 const appVersion = ref<string | null>(null)
 
-const tabs = [
-	{ key: 'github', label: 'GitHub', icon: 'mdi:github' },
-	{ key: 'appearance', label: 'Appearance', icon: 'mdi:palette' },
-	{ key: 'updates', label: 'Updates', icon: 'mdi:update' },
-	{ key: 'about', label: 'About', icon: 'mdi:information' }
-] as const
-
-// WAI-ARIA tabs pattern: only the active tab sits in the normal tab order
-// (:tabindex on each button above), and arrow keys move both focus and
-// selection between tabs — previously there was no tabpanel/aria-controls
-// pairing and no keyboard way to move between tabs at all (F-P2-14).
-const tabRefs = ref<HTMLButtonElement[]>([])
-
-function handleTabKeydown(e: KeyboardEvent)
-{
-	const currentIndex = tabs.findIndex((t) => t.key === activeTab.value)
-	let nextIndex: number
-
-	switch (e.key)
-	{
-		case 'ArrowRight':
-		case 'ArrowDown':
-			nextIndex = (currentIndex + 1) % tabs.length
-			break
-		case 'ArrowLeft':
-		case 'ArrowUp':
-			nextIndex = (currentIndex - 1 + tabs.length) % tabs.length
-			break
-		case 'Home':
-			nextIndex = 0
-			break
-		case 'End':
-			nextIndex = tabs.length - 1
-			break
-		default:
-			return
-	}
-
-	e.preventDefault()
-	const nextTab = tabs[nextIndex]
-	if (nextTab === undefined) return
-
-	activeTab.value = nextTab.key
-	nextTick(() =>
-	{
-		tabRefs.value[nextIndex]?.focus()
-	})
-}
-
-const currentTheme = computed(() => themeStore.current)
-const setTheme = (theme: 'nord' | 'dracula') =>
-{
-	themeStore.setTheme(theme)
-}
-const themeOptions = [
-	{ value: 'nord', label: 'Light', icon: 'mdi:white-balance-sunny' },
-	{ value: 'dracula', label: 'Dark', icon: 'mdi:moon-waning-crescent' }
+const themeOptions: Array<{ value: ThemePreference, label: string, icon: string }> = [
+	{ value: 'system', label: 'Match system', icon: 'mdi:monitor' },
+	{ value: 'cemm-light', label: 'Light', icon: 'mdi:white-balance-sunny' },
+	{ value: 'cemm-dark', label: 'Dark', icon: 'mdi:weather-night' }
 ]
 
 onMounted(async () =>
@@ -312,226 +241,38 @@ onMounted(async () =>
 			appVersion.value = await getVersion()
 		}
 		catch
-		{ /* fallback */ }
+		{
+			// Running outside Tauri (browser dev): package.json version stands in.
+		}
 	}
 })
 
 const handleCheckForUpdates = async () =>
 {
-	updateStatus.value = null
+	checking.value = true
+
 	try
 	{
 		const result = await updater.checkForUpdates()
 		lastUpdateCheck.value = new Date().toLocaleString()
-		updateStatus.value = result !== null
-			? { type: 'info', message: `Update available: v${result.version}. The update dialog will appear automatically.` }
-			: { type: 'success', message: `You're running the latest version (v${appVersion.value ?? ''}).` }
+		if (result !== null)
+		{
+			notify(`Version ${result.version} is available.`, 'info', 'The update dialog will open automatically.')
+		}
+		else
+		{
+			notify(`You are on the latest version (${appVersion.value ?? packageVersion}).`, 'success')
+		}
 	}
 	catch (error)
 	{
-		updateStatus.value = { type: 'error', message: `Failed to check for updates: ${error}` }
+		notify('Could not check for updates.', 'error', error instanceof Error ? error.message : String(error))
+	}
+	finally
+	{
+		checking.value = false
 	}
 }
 
 definePageMeta({ layout: 'default' })
 </script>
-
-<style scoped>
-.settings-page {
-  max-width: var(--container-md);
-  width: 100%;
-  margin: 0 auto;
-}
-
-.settings-page__title {
-  font-family: var(--font-heading);
-  font-size: var(--text-heading-xl-size);
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin: 0 0 var(--space-6);
-  letter-spacing: var(--text-heading-xl-letter-spacing);
-}
-
-.settings-page__tabs {
-  display: flex;
-  gap: var(--space-1);
-  border-bottom: 2px solid var(--color-border-subtle);
-  margin-bottom: var(--space-6);
-  overflow-x: auto;
-}
-
-.settings-page__tab {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border: none;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-family: var(--font-sans);
-  font-size: var(--text-body-md-size);
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
-  transition: all var(--duration-fast) var(--ease-standard);
-  white-space: nowrap;
-  position: relative;
-}
-
-.settings-page__tab:hover {
-  color: var(--color-text-primary);
-  background: var(--color-surface-hover);
-}
-
-.settings-page__tab--active {
-  color: var(--color-accent-primary);
-  font-weight: 600;
-}
-
-.settings-page__tab--active::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--color-accent-primary);
-}
-
-.settings-page__tab:focus-visible {
-  box-shadow: var(--focus-ring-offset);
-  outline: none;
-}
-
-.settings-page__content {
-  min-height: 400px;
-}
-
-.settings-page__section {
-  animation: fadeInUp var(--duration-smooth) var(--ease-out);
-}
-
-.settings-page__section-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.settings-page__section-title {
-  font-family: var(--font-heading);
-  font-size: var(--text-heading-sm-size);
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.settings-page__section-desc {
-  font-size: var(--text-body-sm-size);
-  color: var(--color-text-secondary);
-  margin: 0;
-}
-
-.settings-page__field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.settings-page__field-label {
-  font-size: var(--text-body-sm-size);
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.settings-page__update-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.settings-page__update-timestamp {
-  font-size: var(--text-body-sm-size);
-  color: var(--color-text-tertiary);
-}
-
-.settings-page__update-status {
-  margin-top: var(--space-2);
-}
-
-.settings-page__about-info {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.settings-page__about-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--color-text-secondary);
-}
-
-.settings-page__about-label {
-  font-size: var(--text-body-sm-size);
-  font-weight: 600;
-  color: var(--color-text-primary);
-  min-width: 80px;
-}
-
-.settings-page__about-value {
-  font-size: var(--text-body-sm-size);
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-secondary);
-}
-
-.settings-page__about-link {
-  font-size: var(--text-body-sm-size);
-  color: var(--color-accent-primary);
-  text-decoration: none;
-  transition: color var(--duration-fast);
-}
-.settings-page__about-link:hover {
-  text-decoration: underline;
-}
-
-.settings-page__about-tech {
-  margin-top: var(--space-4);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border-divider);
-}
-
-.settings-page__about-tech-label {
-  font-size: var(--text-body-xs-size);
-  color: var(--color-text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin: 0 0 var(--space-2);
-}
-
-.settings-page__about-tech-list {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.settings-page__about-tech-item {
-  padding: var(--space-1) var(--space-3);
-  background: var(--color-surface-overlay);
-  border-radius: var(--radius-full);
-  font-size: var(--text-body-xs-size);
-  color: var(--color-text-secondary);
-  font-weight: 500;
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-</style>

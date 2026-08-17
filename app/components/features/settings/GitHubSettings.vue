@@ -1,120 +1,141 @@
 <template>
-  <div class="github-settings">
+  <div>
     <div
       v-if="loading"
-      class="github-settings__loading"
+      class="flex items-center gap-2 py-4 text-sm text-base-content/60"
     >
-      <span class="loading loading-spinner loading-sm" />
-      <span>Loading settings...</span>
+      <span
+        class="loading loading-spinner loading-sm"
+        aria-hidden="true"
+      />
+      Loading settings…
     </div>
 
     <form
       v-else
-      class="github-settings__form"
+      class="space-y-5"
       @submit.prevent="saveSettings"
     >
-      <div class="github-settings__field">
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend px-0 text-[0.6875rem] font-bold uppercase tracking-[0.16em] text-base-content/70">
+          Repository
+        </legend>
+
         <label
           class="label"
-          for="github-repo"
+          for="settings-github-repo"
         >
-          <span class="label-text">Modpack Updates Repository</span>
+          Where updates are published
         </label>
-        <input
-          id="github-repo"
-          v-model="githubRepo"
-          type="text"
-          class="input input-bordered w-full"
-          :class="{ 'input-error': !!fieldErrors.repo }"
-          placeholder="user/repo (e.g., john/my-modpack-updates)"
-          autocomplete="off"
-        />
-        <div class="label">
-          <span
-            v-if="fieldErrors.repo"
-            class="label-text-alt text-error"
-          >{{ fieldErrors.repo }}</span>
-          <span
-            v-else
-            class="label-text-alt"
-          >Required: The GitHub repository where modpack updates will be stored (not the app repository)</span>
-        </div>
-      </div>
+        <label
+          class="input input-sm w-full max-w-md border-base-300 bg-base-100 font-mono text-xs"
+          :class="fieldErrors.repo !== undefined ? 'border-error' : ''"
+        >
+          <Icon
+            name="mdi:github"
+            size="0.9375rem"
+            class="shrink-0 text-base-content/40"
+            aria-hidden="true"
+          />
+          <input
+            id="settings-github-repo"
+            v-model="githubRepo"
+            type="text"
+            class="grow text-accent"
+            placeholder="owner/repository"
+            spellcheck="false"
+            autocomplete="off"
+            :aria-invalid="fieldErrors.repo !== undefined"
+            :aria-describedby="fieldErrors.repo !== undefined ? 'settings-github-repo-error' : undefined"
+          />
+        </label>
+        <p
+          v-if="fieldErrors.repo !== undefined"
+          id="settings-github-repo-error"
+          class="label text-xs text-error"
+        >
+          {{ fieldErrors.repo }}
+        </p>
+        <p
+          v-else
+          class="label text-xs"
+        >
+          Everyone in your group uses the same repository, for example
+          <span class="font-mono text-accent">YassaaaTU/cemm-updates</span>.
+        </p>
+      </fieldset>
 
-      <div class="github-settings__field">
+      <fieldset class="fieldset border-t border-base-300 pt-4">
+        <legend class="fieldset-legend px-0 text-[0.6875rem] font-bold uppercase tracking-[0.16em] text-base-content/70">
+          Access token
+        </legend>
+
         <label
           class="label"
-          for="github-token"
+          for="settings-github-token"
         >
-          <span class="label-text">GitHub Token (Optional)</span>
+          Personal access token
+          <span class="ml-1 font-normal text-base-content/50">— only needed to publish</span>
         </label>
-        <input
-          id="github-token"
-          v-model="githubToken"
-          type="password"
-          class="input input-bordered w-full"
-          placeholder="Personal Access Token (optional for public repos)"
-          autocomplete="off"
-        />
-        <div class="label">
-          <span class="label-text-alt">Optional: Required only for private repositories or enhanced rate limits</span>
-        </div>
-      </div>
+        <label class="input input-sm w-full max-w-md border-base-300 bg-base-100 font-mono text-xs">
+          <Icon
+            name="mdi:key-variant"
+            size="0.9375rem"
+            class="shrink-0 text-base-content/40"
+            aria-hidden="true"
+          />
+          <input
+            id="settings-github-token"
+            v-model="githubToken"
+            :type="tokenVisible ? 'text' : 'password'"
+            class="grow text-accent"
+            placeholder="ghp_…"
+            spellcheck="false"
+            autocomplete="off"
+          />
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs shrink-0 px-1"
+            :aria-label="tokenVisible ? 'Hide token' : 'Show token'"
+            @click="tokenVisible = !tokenVisible"
+          >
+            <Icon
+              :name="tokenVisible ? 'mdi:eye-off-outline' : 'mdi:eye-outline'"
+              size="0.9375rem"
+              aria-hidden="true"
+            />
+          </button>
+        </label>
 
-      <div class="github-settings__actions">
+        <p class="label text-xs">
+          <template v-if="tokenSaved">
+            <Icon
+              name="mdi:lock-check-outline"
+              size="0.875rem"
+              class="text-success"
+              aria-hidden="true"
+            />
+            Stored in your operating system's keyring, not in this app's files.
+            Clear the field and save to delete it.
+          </template>
+          <template v-else>
+            If you only install updates, leave this empty — you do not need a token.
+          </template>
+        </p>
+      </fieldset>
+
+      <div class="flex items-center gap-3 border-t border-base-300 pt-4">
         <button
           type="submit"
-          class="btn btn-primary w-full"
-          :disabled="loading || !githubRepo.trim()"
-        >
-          <span
-            v-if="loading"
-            class="loading loading-spinner loading-xs"
-          />
-          <Icon
-            v-else
-            name="mdi:content-save"
-            size="1.1rem"
-          />
-          <span>{{ loading ? 'Saving...' : 'Save Settings' }}</span>
-        </button>
-      </div>
-
-      <div
-        v-if="error"
-        class="alert alert-error github-settings__alert"
-        role="alert"
-      >
-        <Icon name="mdi:alert-circle" />
-        <span>{{ error }}</span>
-        <button
-          class="btn btn-sm btn-ghost"
-          aria-label="Dismiss error message"
-          @click="error = ''"
+          class="btn btn-primary btn-sm gap-1.5"
+          :disabled="loading"
         >
           <Icon
-            name="mdi:close"
-            size="1.2rem"
+            name="mdi:content-save-outline"
+            size="1rem"
+            aria-hidden="true"
           />
-        </button>
-      </div>
-
-      <div
-        v-else-if="successMessage"
-        class="alert alert-success github-settings__alert"
-        role="alert"
-      >
-        <Icon name="mdi:check-circle" />
-        <span>{{ successMessage }}</span>
-        <button
-          class="btn btn-sm btn-ghost"
-          aria-label="Dismiss success message"
-          @click="successMessage = ''"
-        >
-          <Icon
-            name="mdi:close"
-            size="1.2rem"
-          />
+          Save
         </button>
       </div>
     </form>
@@ -127,6 +148,7 @@ import { isValidGithubRepo } from '~/utils/githubRepo'
 const appStore = useAppStore()
 const { setSecure, getSecure, removeSecure } = useSecureStorage()
 const { $logger: logger } = useNuxtApp()
+const { notify } = useNotify()
 
 const githubRepo = computed({
 	get: () => appStore.githubRepo,
@@ -136,21 +158,18 @@ const githubRepo = computed({
 	}
 })
 const githubToken = ref('')
+const tokenVisible = ref(false)
 const tokenSaved = ref(false)
 const loading = ref(false)
-const error = ref('')
-const successMessage = ref('')
 const fieldErrors = ref<{ repo?: string }>({})
 
 onMounted(async () =>
 {
 	loading.value = true
-	error.value = ''
 	const t0 = performance.now()
 	try
 	{
 		logger.info('Loading GitHub settings...')
-		logger.info({ repo: appStore.githubRepo }, 'Current store githubRepo value')
 
 		const token = await getSecure('cemm_github_token')
 		githubToken.value = token ?? ''
@@ -158,15 +177,14 @@ onMounted(async () =>
 
 		logger.info({
 			hasToken: tokenSaved.value,
-			hasRepo: githubRepo.value.length > 0,
-			repoValue: githubRepo.value
+			hasRepo: githubRepo.value.length > 0
 		}, 'GitHub settings loaded')
 	}
 	catch (err)
 	{
 		logger.error('Failed to load GitHub settings')
 		logger.error(err)
-		error.value = 'Failed to load settings'
+		notify('Could not load your saved settings.', 'error')
 	}
 	finally
 	{
@@ -179,33 +197,25 @@ onMounted(async () =>
 const saveSettings = async () =>
 {
 	loading.value = true
-	error.value = ''
-	successMessage.value = ''
 	fieldErrors.value = {}
 	const t0 = performance.now()
 	try
 	{
 		logger.info('Saving GitHub settings...')
-		logger.info({ repo: githubRepo.value }, 'Before save - githubRepo value')
 
 		if (!githubRepo.value.trim())
 		{
-			fieldErrors.value.repo = 'GitHub repository is required'
+			fieldErrors.value.repo = 'Enter the repository your group uses.'
 			throw new Error('GitHub repository is required')
 		}
 
 		if (!isValidGithubRepo(githubRepo.value))
 		{
-			fieldErrors.value.repo = 'Invalid format. Use "owner/repo" (e.g., YassaaaTU/cemm-updates)'
+			fieldErrors.value.repo = 'Use the owner/repository form, for example YassaaaTU/cemm-updates.'
 			throw new Error('Invalid repository format')
 		}
 
 		appStore.githubRepo = githubRepo.value.trim()
-
-		logger.info({
-			repo: appStore.githubRepo,
-			computedRepo: githubRepo.value
-		}, 'After save - store githubRepo value')
 
 		if (githubToken.value.trim())
 		{
@@ -228,21 +238,20 @@ const saveSettings = async () =>
 			}
 			tokenSaved.value = false
 		}
-		successMessage.value = 'Settings saved successfully!'
+		notify('Settings saved.', 'success')
 
 		logger.info('GitHub settings saved successfully')
-
-		setTimeout(() =>
-		{
-			successMessage.value = ''
-		}, 3000)
 	}
 	catch (err)
 	{
-		const errorMsg = err instanceof Error ? err.message : 'Failed to save settings'
+		const errorMsg = err instanceof Error ? err.message : 'Could not save your settings.'
 		logger.error('Failed to save GitHub settings')
 		logger.error(err)
-		error.value = errorMsg
+		// Field-level problems are already shown next to the field itself, so
+		// repeating them in the banner would say the same thing twice.
+		// Field-level problems are already shown next to the field itself, so only
+		// a non-field failure is worth a toast.
+		if (Object.keys(fieldErrors.value).length === 0) notify(errorMsg, 'error')
 	}
 	finally
 	{
@@ -252,34 +261,3 @@ const saveSettings = async () =>
 	}
 }
 </script>
-
-<style scoped>
-.github-settings__loading {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--color-text-secondary);
-  font-size: var(--text-body-md-size);
-  padding: var(--space-4) 0;
-}
-
-.github-settings__form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.github-settings__field {
-  display: flex;
-  flex-direction: column;
-}
-
-.github-settings__actions {
-  display: flex;
-  gap: var(--space-3);
-}
-
-.github-settings__alert {
-  margin-top: var(--space-2);
-}
-</style>
