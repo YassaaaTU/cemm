@@ -1,180 +1,165 @@
-@import "./design-tokens.css";
 @import "tailwindcss";
+
 @plugin "daisyui" {
-  themes: dracula --default, nord;
+  themes: false;
 }
 
-body {
-  @apply antialiased;
-  font-family: var(--font-sans);
-  color: var(--color-text-primary);
-  background: var(--color-surface-base);
+/* ============================================================================
+   CEMM — modpack client
+   Craft bar: CurseForge, Modrinth, Steam. Dark-first, dense, content-forward.
+
+   Colour strategy: violet is CEMM's own accent, deliberately neither Modrinth's
+   green nor CurseForge's orange — copying either would read as a clone rather
+   than a peer. It also keeps green / blue / red free to mean ONLY added /
+   updated / deleted in the diff, so the brand colour never competes with the
+   status colours on the screen where deletion has to be unmistakable.
+
+   Theme selection: no `data-theme` attribute means "follow the OS", resolved in
+   pure CSS by `prefersdark` with no flash and no JavaScript. The theme store
+   sets `data-theme` only for an explicit user override.
+   ========================================================================= */
+
+@plugin "daisyui/theme" {
+  name: "cemm-dark";
+  default: false;
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-base-100: oklch(19.6% 0.008 274.5);   /* app ground   #141519 */
+  --color-base-200: oklch(23.1% 0.012 270.9);   /* panels       #1B1D23 */
+  --color-base-300: oklch(26.5% 0.016 269.1);   /* raised/rules #22252D */
+  --color-base-content: oklch(94.9% 0.007 268.5);
+
+  --color-primary: oklch(61.8% 0.199 284.2);    /* violet       #7C6CF6 */
+  --color-primary-content: oklch(100.0% 0.000 89.9);
+  --color-secondary: oklch(74.0% 0.142 287.9);
+  --color-secondary-content: oklch(22.0% 0.057 288.5);
+  --color-accent: oklch(52.2% 0.216 280.7);
+  --color-accent-content: oklch(100.0% 0.000 89.9);
+  --color-neutral: oklch(30.1% 0.019 268.1);
+  --color-neutral-content: oklch(94.9% 0.007 268.5);
+
+  --color-info: oklch(69.1% 0.165 254.8);       /* UPDATED  #4C9DFF */
+  --color-info-content: oklch(17.8% 0.032 250.8);
+  --color-success: oklch(77.9% 0.165 157.3);    /* ADDED    #3DD68C */
+  --color-success-content: oklch(18.8% 0.034 160.1);
+  --color-warning: oklch(78.2% 0.158 72.3);
+  --color-warning-content: oklch(18.8% 0.033 74.2);
+  --color-error: oklch(69.2% 0.198 21.5);       /* DELETED  #FF5C63 */
+  --color-error-content: oklch(15.7% 0.045 14.0);
+
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
 }
 
-.page-enter-active,
-.page-leave-active {
-  transition: opacity var(--duration-smooth) var(--ease-out),
-              transform var(--duration-smooth) var(--ease-out);
-}
-.page-enter-from,
-.page-leave-to {
-  opacity: 0;
-  transform: translateY(8px);
+@plugin "daisyui/theme" {
+  name: "cemm-light";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+
+  --color-base-100: oklch(100.0% 0.000 89.9);
+  --color-base-200: oklch(97.3% 0.003 264.5);
+  --color-base-300: oklch(92.2% 0.007 268.5);
+  --color-base-content: oklch(20.0% 0.010 268.2);
+
+  --color-primary: oklch(52.2% 0.216 280.7);
+  --color-primary-content: oklch(100.0% 0.000 89.9);
+  --color-secondary: oklch(61.8% 0.199 284.2);
+  --color-secondary-content: oklch(100.0% 0.000 89.9);
+  --color-accent: oklch(46.0% 0.203 279.8);
+  --color-accent-content: oklch(100.0% 0.000 89.9);
+  --color-neutral: oklch(30.1% 0.019 268.1);
+  --color-neutral-content: oklch(97.3% 0.003 264.5);
+
+  /* Light-theme status colours are darkened to hold WCAG AA against white
+     surfaces; the dark theme's brighter values would fail there. */
+  --color-info: oklch(55.1% 0.174 256.3);
+  --color-info-content: oklch(100.0% 0.000 89.9);
+  --color-success: oklch(52.9% 0.115 158.8);
+  --color-success-content: oklch(100.0% 0.000 89.9);
+  --color-warning: oklch(53.1% 0.119 65.1);
+  --color-warning-content: oklch(100.0% 0.000 89.9);
+  --color-error: oklch(53.8% 0.189 24.3);
+  --color-error-content: oklch(100.0% 0.000 89.9);
+
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
 }
 
-.layout-enter-active,
-.layout-leave-active {
-  transition: opacity var(--duration-smooth) var(--ease-standard);
-}
-.layout-enter-from,
-.layout-leave-to {
-  opacity: 0;
+/* ---------------------------------------------------------------------------
+   Typefaces — bundled, never fetched at runtime.
+
+   CEMM is an offline-capable Tauri app, so webfonts cannot come from a CDN: on
+   a cold offline launch the UI would render with no text at all until the
+   request timed out. Icons were localised for the same reason.
+
+   Archivo is one variable file carrying both a weight axis (100-900) and a
+   width axis (62-125%). JetBrains Mono covers version strings and update codes
+   — a contemporary technical mono rather than a typewriter face.
+   --------------------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url("/fonts/archivo-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-@layer base {
-  .landing-card {
-    @apply cursor-pointer flex-1 flex flex-col items-center justify-center
-           rounded-2xl p-8 transition-all duration-200;
-    background: var(--color-surface-raised);
-    border: 1px solid var(--color-border-subtle);
-    box-shadow: var(--elev-1);
-  }
-  .landing-card:hover {
-    background: var(--color-surface-hover);
-    box-shadow: var(--elev-2);
-    transform: translateY(-2px);
-  }
-  .landing-card .card-icon {
-    color: var(--color-text-secondary);
-    transition: color var(--duration-fast) var(--ease-out);
-  }
-  .landing-card:hover .card-icon--admin {
-    color: var(--color-accent-primary);
-  }
-  .landing-card:hover .card-icon--user {
-    color: var(--color-accent-tertiary);
-  }
-  .landing-card .card-title {
-    @apply text-2xl font-bold;
-    color: var(--color-text-primary);
-  }
-  .landing-card .card-desc {
-    @apply text-sm;
-    color: var(--color-text-secondary);
-  }
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url("/fonts/archivo-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-/* Keyframe Animations */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin.woff2") format("woff2");
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+/* ---------------------------------------------------------------------------
+   Design tokens
+   --------------------------------------------------------------------------- */
+
+@theme {
+  --font-sans: "Archivo", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", monospace;
+
+  /* One motion language: quick, confident, never bouncy.
+     Only the easing curves live here. Entrances are expressed as Vue
+     <Transition> classes built from Tailwind utilities, so this file stays
+     inside the token boundary and no keyframes are authored. */
+  --ease-out-quick: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(100%); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
-@keyframes slideOutLeft {
-  from { opacity: 1; transform: translateX(0); }
-  to { opacity: 0; transform: translateX(-100%); }
-}
-
-@keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-@keyframes pulse-ring {
-  0% { box-shadow: 0 0 0 0 rgba(232, 75, 187, 0.4); }
-  70% { box-shadow: 0 0 0 10px rgba(232, 75, 187, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(232, 75, 187, 0); }
-}
-
-@keyframes draw-check {
-  from { stroke-dashoffset: 24; }
-  to { stroke-dashoffset: 0; }
-}
-
-@keyframes progress-shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
-
-@layer utilities {
-  .animate-fade-in { animation: fadeIn var(--duration-smooth) var(--ease-out); }
-  .animate-fade-in-up { animation: fadeInUp var(--duration-smooth) var(--ease-out); }
-  .animate-slide-in-right { animation: slideInRight var(--duration-normal) var(--ease-out); }
-  .animate-slide-out-left { animation: slideOutLeft var(--duration-normal) var(--ease-in); }
-  .animate-scale-in { animation: scaleIn var(--duration-smooth) var(--ease-emphasized); }
-  .animate-pulse-ring { animation: pulse-ring 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-  .animate-shimmer {
-    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s linear infinite;
-  }
-
-  /* Focus ring utilities */
-  .focus-ring {
-    &:focus-visible {
-      outline: none;
-      box-shadow: var(--focus-ring-offset);
-    }
-  }
-
-  /* Scrollbar styling */
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: var(--color-border-strong) transparent;
-  }
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: var(--color-border-strong);
-    border-radius: var(--radius-full);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .animate-fade-in,
-  .animate-fade-in-up,
-  .animate-slide-in-right,
-  .animate-slide-out-left,
-  .animate-scale-in,
-  .animate-pulse-ring,
-  .animate-shimmer {
-    animation: none !important;
-  }
-  .landing-card:hover {
-    transform: none;
-  }
-}
-
-/* User-level motion control override */
-.motion-reduced .animate-fade-in,
-.motion-reduced .animate-fade-in-up,
-.motion-reduced .animate-slide-in-right,
-.motion-reduced .animate-slide-out-left,
-.motion-reduced .animate-scale-in,
-.motion-reduced .animate-pulse-ring,
-.motion-reduced .animate-shimmer {
-  animation: none !important;
-}
-.motion-reduced .landing-card:hover {
-  transform: none;
-}
+/* Motion gating lives in composables/useMotion.ts, not in a CSS variant: the
+   OS `prefers-reduced-motion` setting and the in-app switch are combined there
+   and components apply an animation class only when motion is welcome. That
+   keeps this file inside the token/theme boundary. */

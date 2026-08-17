@@ -63,27 +63,33 @@ export default defineNuxtConfig({
 				{ name: 'format-detection', content: 'no' }
 			],
 			htmlAttrs: {
-				'lang': 'en',
-				// Must match the theme store's default (stores/theme.ts) and the
-				// daisyUI `--default` theme in main.css — otherwise the page ships
-				// with a data-theme value the compiled CSS has no rules for at all,
-				// leaving every daisyUI color variable undefined until
-				// plugins/theme.client.ts runs post-hydration (F-P2-6).
-				'data-theme': 'dracula'
+				lang: 'en'
+				// Deliberately NO `data-theme` here. The daisyUI theme pair in main.css
+				// resolves light/dark from `prefers-color-scheme` on its own, so the
+				// first paint is already correct for the user's OS with no flash and no
+				// JavaScript. plugins/theme.client.ts sets `data-theme` only when the
+				// user has chosen an explicit override.
+				//
+				// This also retires the F-P2-6 hydration trap: there is no longer a
+				// hardcoded theme name that can drift out of sync with the store default
+				// and the daisyUI `--default` theme.
 			},
 			link: [
+				// Fonts are bundled under public/fonts and declared in main.css. A Tauri
+				// app must render text offline, so nothing here may touch the network.
 				{
-					rel: 'preconnect',
-					href: 'https://fonts.googleapis.com'
+					rel: 'preload',
+					as: 'font',
+					type: 'font/woff2',
+					href: '/fonts/archivo-latin.woff2',
+					crossorigin: 'anonymous'
 				},
 				{
-					rel: 'preconnect',
-					href: 'https://fonts.gstatic.com',
-					crossorigin: ''
-				},
-				{
-					rel: 'stylesheet',
-					href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap'
+					rel: 'preload',
+					as: 'font',
+					type: 'font/woff2',
+					href: '/fonts/jetbrains-mono-latin.woff2',
+					crossorigin: 'anonymous'
 				}
 			]
 		},
@@ -98,8 +104,22 @@ export default defineNuxtConfig({
 	},
 
 	css: [
-		'@/assets/css/main.css'
+		'@/assets/css/main.css',
+		// vue-sonner ships its own positioning, stacking and swipe-to-dismiss
+		// styles. Loaded after main.css so the theme tokens are already defined
+		// when its variables are overridden.
+		'vue-sonner/style.css'
 	],
+
+	vue: {
+		compilerOptions: {
+			// Vue drops template comments in production builds. The design
+			// direction contract at the top of app.vue has to survive into the
+			// shipped bundle so it can be audited against what actually rendered;
+			// without this it exists only in source.
+			comments: true
+		}
+	},
 
 	router: {
 		options: {
@@ -192,7 +212,11 @@ export default defineNuxtConfig({
 				'@vue/devtools-kit',
 				'@tauri-apps/plugin-process',
 				'@tauri-apps/plugin-updater',
-				'@tauri-apps/api/app'
+				'@tauri-apps/api/app',
+				// Must be prebundled as a single instance: toast() in the composable
+				// and <Toaster/> in the layout have to share vue-sonner's internal
+				// store, or toasts are pushed into a store nothing is rendering.
+				'vue-sonner'
 			]
 		}
 	}
