@@ -47,5 +47,5 @@ export const useMotion = () =>
 		enterToClass: anim('opacity-100 translate-x-0')
 	}))
 
-	return { motionOk, paneTransition }
+	return { motionOk, anim, paneTransition }
 }

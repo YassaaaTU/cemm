@@ -77,7 +77,7 @@ tracking. `tabular-nums` on every figure that sits in a column.
 ┌──────────────────────────────────────────────┐
 │ TitleBar   mark · theme · − □ ×               │ 36px, drag region
 ├────┬─────────────────────────────────────────┤
-│Rail│ heading / lede                           │ 54px icon rail
+│Rail│ heading / lede                           │ 54px rail, 200px expanded
 │    │ context bar — the per-use input          │
 │    │ ─────────────────────────────────────── │
 │    │ scrolling work area (or empty state)     │
@@ -131,6 +131,18 @@ Mode switching lives **only** in the icon rail. The title bar briefly carried a
 second segmented control doing the same job 40px away; one destination gets one
 control.
 
+### The rail has two widths
+
+Compact (54px, the default) is icon-only with tooltips and is why the rail
+exists at all — it costs 54px instead of the 200px a labelled sidebar takes from
+the diff. Expanded (200px) names every destination in place, for anyone who
+would rather read than recognise an icon. The choice persists.
+
+The icon box is a fixed 38px at the **start** of every row in both states, so
+widening the rail never moves an icon: the panel grows and the labels arrive
+beside them. Tooltips are dropped the moment the labels are visible, or each row
+would state its name twice.
+
 ### Settings is a list, not a filing cabinet
 
 Settings held four tabs (Repository, Appearance, Updates, About) covering **four
@@ -157,7 +169,7 @@ exactly that.
 | Component | Role |
 | --- | --- |
 | `TitleBar` | Frameless chrome: brand, theme menu, real window controls |
-| `IconRail` | 54px destination rail, sole owner of mode switching |
+| `IconRail` | Destination rail in two widths, sole owner of mode switching |
 | `WorkspacePage` | Heading / context / scroll / pinned actions frame |
 | `EmptyState` | Resting state carrying its own next action |
 | `SettingsGroup` | Titled panel of setting rows; `as` lets it be a `<form>` |
@@ -210,10 +222,14 @@ What moves, and why:
   because Tauri delivers it in discrete jumps that otherwise read as a broken bar.
 - **Excluded rows** transition background and opacity over 150ms.
 
+- **The rail** transitions its width over 220ms on `--ease-out-quick`. Labels
+  fade in on a 90ms delay so text never appears in a gap too narrow to hold it,
+  and leave immediately on collapse so it is never clipped mid-word. Icons hold
+  position throughout.
+
 What deliberately does **not** move: the diff tallies (data being read before a
-destructive action must never animate), the theme switch, the icon rail beyond a
-colour change, and addon rows (removed after review — a virtualised list of 300
-does not need a cascade).
+destructive action must never animate), the theme switch, and addon rows
+(removed after review — a virtualised list of 300 does not need a cascade).
 
 ## Notifications
 

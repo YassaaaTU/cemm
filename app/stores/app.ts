@@ -17,10 +17,28 @@ export const useAppStore = defineStore('app', () =>
 	const githubRepo = ref('') // For modpack updates (e.g., "YassaaaTU/cemm-updates")
 	const modpackPath = ref('')
 
+	/**
+	 * Shell navigation width. Compact is the default for the same reason the
+	 * rail exists at all — it costs 54px instead of 200px — but the labels are
+	 * one click away for anyone who would rather read the destination than
+	 * recognise its icon.
+	 */
+	const railExpanded = ref(false)
+
 	const setMode = (next: AppMode) =>
 	{
 		mode.value = next
 		modeChosen.value = true
+	}
+
+	const setRailExpanded = (next: boolean) =>
+	{
+		railExpanded.value = next
+	}
+
+	const toggleRail = () =>
+	{
+		railExpanded.value = !railExpanded.value
 	}
 
 	return {
@@ -28,7 +46,10 @@ export const useAppStore = defineStore('app', () =>
 		modeChosen,
 		githubRepo,
 		modpackPath,
-		setMode
+		railExpanded,
+		setMode,
+		setRailExpanded,
+		toggleRail
 	}
 }, {
 	persist: {

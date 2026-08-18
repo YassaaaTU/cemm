@@ -1,19 +1,33 @@
 <template>
-  <!-- The narrow icon rail both CurseForge and Modrinth use. Destinations are
-       icon-only with tooltips and accessible names, so the rail costs 54px
-       instead of the 200px the old fixed sidebar took from the content. -->
+  <!-- The destination rail both CurseForge and Modrinth use, in two widths.
+
+       Compact (54px) is the default and the reason the rail exists: it costs
+       54px instead of the 200px a fixed labelled sidebar takes from the diff.
+       Expanded (200px) names each destination for anyone who would rather read
+       than recognise an icon, and is remembered across launches.
+
+       The icon box is a fixed 38px at the start of every row in BOTH states, so
+       widening the rail never moves an icon — only the labels arrive beside
+       them. That is what keeps the transition readable rather than a slide. -->
   <nav
-    class="flex w-[54px] shrink-0 flex-col items-center gap-1.5 border-r border-base-300 bg-base-200 py-2"
+    class="flex shrink-0 flex-col gap-1.5 overflow-hidden border-r border-base-300 bg-base-200 px-2 py-2"
+    :class="[
+      appStore.railExpanded ? 'w-[200px]' : 'w-[54px]',
+      anim('transition-[width] duration-[220ms] ease-[var(--ease-out-quick)]'),
+    ]"
     aria-label="Main"
   >
     <NuxtLink
       v-for="item in destinations"
-      :key="item.to"
+      :key="item.label"
       :to="item.to"
-      class="tooltip tooltip-right relative grid size-[38px] place-items-center rounded-lg transition-colors duration-150 ease-[var(--ease-standard)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-      :class="isActive(item)
-        ? 'bg-primary/15 text-primary'
-        : 'text-base-content/50 hover:bg-base-300 hover:text-base-content'"
+      class="relative flex h-[38px] w-full items-center overflow-hidden rounded-lg transition-colors duration-150 ease-[var(--ease-standard)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      :class="[
+        tooltipClass,
+        isActive(item)
+          ? 'bg-primary/15 text-primary'
+          : 'text-base-content/50 hover:bg-base-300 hover:text-base-content',
+      ]"
       :data-tip="item.label"
       :aria-label="item.label"
       :aria-current="isActive(item) ? 'page' : undefined"
@@ -26,36 +40,86 @@
         class="absolute -left-2 top-2.5 bottom-2.5 w-[3px] rounded-r bg-primary"
         aria-hidden="true"
       />
-      <Icon
-        :name="item.icon"
-        size="1.1875rem"
+      <span class="grid size-[38px] shrink-0 place-items-center">
+        <Icon
+          :name="item.icon"
+          size="1.1875rem"
+          aria-hidden="true"
+        />
+      </span>
+      <!-- Decorative: the link is already named by aria-label, so the visible
+           text must not be announced a second time. -->
+      <span
+        class="min-w-0 whitespace-nowrap pr-2 text-[0.8125rem] font-medium"
+        :class="labelClass"
         aria-hidden="true"
-      />
+      >{{ item.label }}</span>
     </NuxtLink>
 
     <div class="flex-1" />
 
     <NuxtLink
       to="/settings"
-      class="tooltip tooltip-right relative grid size-[38px] place-items-center rounded-lg transition-colors duration-150 ease-[var(--ease-standard)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-      :class="route.path === '/settings'
-        ? 'bg-primary/15 text-primary'
-        : 'text-base-content/50 hover:bg-base-300 hover:text-base-content'"
+      class="relative flex h-[38px] w-full items-center overflow-hidden rounded-lg transition-colors duration-150 ease-[var(--ease-standard)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      :class="[
+        tooltipClass,
+        isSettings
+          ? 'bg-primary/15 text-primary'
+          : 'text-base-content/50 hover:bg-base-300 hover:text-base-content',
+      ]"
       data-tip="Settings"
       aria-label="Settings"
-      :aria-current="route.path === '/settings' ? 'page' : undefined"
+      :aria-current="isSettings ? 'page' : undefined"
     >
       <span
-        v-if="route.path === '/settings'"
+        v-if="isSettings"
         class="absolute -left-2 top-2.5 bottom-2.5 w-[3px] rounded-r bg-primary"
         aria-hidden="true"
       />
-      <Icon
-        name="mdi:cog-outline"
-        size="1.1875rem"
+      <span class="grid size-[38px] shrink-0 place-items-center">
+        <Icon
+          name="mdi:cog-outline"
+          size="1.1875rem"
+          aria-hidden="true"
+        />
+      </span>
+      <span
+        class="min-w-0 whitespace-nowrap pr-2 text-[0.8125rem] font-medium"
+        :class="labelClass"
         aria-hidden="true"
-      />
+      >Settings</span>
     </NuxtLink>
+
+    <!-- The width control sits at the foot of the rail it controls, on the same
+         38px grid as the destinations so the column reads as one stack. -->
+    <div class="mt-0.5 border-t border-base-300 pt-1.5">
+      <button
+        type="button"
+        class="relative flex h-[38px] w-full items-center overflow-hidden rounded-lg text-base-content/40 transition-colors duration-150 ease-[var(--ease-standard)] hover:bg-base-300 hover:text-base-content focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        :class="tooltipClass"
+        :data-tip="appStore.railExpanded ? 'Collapse sidebar' : 'Expand sidebar'"
+        :aria-label="appStore.railExpanded ? 'Collapse sidebar' : 'Expand sidebar'"
+        :aria-expanded="appStore.railExpanded"
+        @click="appStore.toggleRail()"
+      >
+        <span class="grid size-[38px] shrink-0 place-items-center">
+          <Icon
+            name="mdi:chevron-right"
+            size="1.1875rem"
+            :class="[
+              appStore.railExpanded ? 'rotate-180' : 'rotate-0',
+              anim('transition-transform duration-[220ms] ease-[var(--ease-out-quick)]'),
+            ]"
+            aria-hidden="true"
+          />
+        </span>
+        <span
+          class="min-w-0 whitespace-nowrap pr-2 text-[0.8125rem] font-medium"
+          :class="labelClass"
+          aria-hidden="true"
+        >Collapse</span>
+      </button>
+    </div>
   </nav>
 </template>
 
@@ -65,6 +129,7 @@ import type { AppMode } from '~/stores/app'
 const route = useRoute()
 const appStore = useAppStore()
 const manifestStore = useManifestStore()
+const { anim } = useMotion()
 
 interface Destination
 {
@@ -78,6 +143,37 @@ const destinations: Destination[] = [
 	{ label: 'Install update', to: '/dashboard', icon: 'mdi:tray-arrow-down', mode: 'user' },
 	{ label: 'Publish update', to: '/dashboard', icon: 'mdi:tray-arrow-up', mode: 'admin' }
 ]
+
+const isSettings = computed(() => route.path === '/settings')
+
+/**
+ * Tooltips are the compact rail's only way to name a destination, so they are
+ * dropped the moment the labels are on screen — otherwise every row would state
+ * its name twice, once permanently and once on hover.
+ */
+const tooltipClass = computed(() =>
+	appStore.railExpanded ? '' : 'tooltip tooltip-right'
+)
+
+/**
+ * Labels fade in slightly AFTER the rail has started widening and leave
+ * immediately when it closes. Waiting on the way in stops text appearing in a
+ * gap too narrow to hold it; leaving at once stops it being clipped mid-word.
+ */
+const labelClass = computed(() =>
+{
+	if (appStore.railExpanded)
+	{
+		return [
+			'translate-x-0 opacity-100',
+			anim('transition duration-150 delay-[90ms] ease-[var(--ease-standard)]')
+		]
+	}
+	return [
+		'-translate-x-1 opacity-0',
+		anim('transition duration-100 ease-[var(--ease-standard)]')
+	]
+})
 
 /**
  * Both counters live on /dashboard, so the active rail item is decided by the
