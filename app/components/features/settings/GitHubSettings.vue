@@ -1,8 +1,12 @@
 <template>
-  <div>
+  <SettingsGroup
+    title="Repository"
+    as="form"
+    @submit.prevent="saveSettings"
+  >
     <div
       v-if="loading"
-      class="flex items-center gap-2 py-4 text-sm text-base-content/60"
+      class="flex items-center gap-2 px-4 py-5 text-sm text-base-content/60"
     >
       <span
         class="loading loading-spinner loading-sm"
@@ -11,77 +15,69 @@
       Loading settings…
     </div>
 
-    <form
-      v-else
-      class="space-y-5"
-      @submit.prevent="saveSettings"
-    >
-      <fieldset class="fieldset">
-        <legend class="fieldset-legend px-0 text-[0.6875rem] font-bold uppercase tracking-[0.16em] text-base-content/70">
-          Repository
-        </legend>
+    <template v-else>
+      <SettingsRow
+        label="Repository"
+        label-for="settings-github-repo"
+      >
+        <template #description>
+          Where your group publishes and reads updates. Everyone in the group
+          uses the same one.
+        </template>
 
-        <label
-          class="label"
-          for="settings-github-repo"
-        >
-          Where updates are published
-        </label>
-        <label
-          class="input input-sm w-full max-w-md border-base-300 bg-base-100 font-mono text-xs"
-          :class="fieldErrors.repo !== undefined ? 'border-error' : ''"
-        >
+        <div class="flex flex-col items-stretch gap-1">
+          <label
+            class="input input-sm w-full border-base-300 bg-base-100 font-mono text-xs sm:w-64"
+            :class="fieldErrors.repo !== undefined ? 'border-error' : ''"
+          >
+            <Icon
+              name="mdi:github"
+              size="0.9375rem"
+              class="shrink-0 text-base-content/40"
+              aria-hidden="true"
+            />
+            <input
+              id="settings-github-repo"
+              v-model="githubRepo"
+              type="text"
+              class="grow text-accent"
+              placeholder="owner/repository"
+              spellcheck="false"
+              autocomplete="off"
+              :aria-invalid="fieldErrors.repo !== undefined"
+              :aria-describedby="fieldErrors.repo !== undefined ? 'settings-github-repo-error' : undefined"
+            />
+          </label>
+          <p
+            v-if="fieldErrors.repo !== undefined"
+            id="settings-github-repo-error"
+            class="text-xs text-error"
+          >
+            {{ fieldErrors.repo }}
+          </p>
+        </div>
+      </SettingsRow>
+
+      <SettingsRow
+        label="Access token"
+        label-for="settings-github-token"
+      >
+        <template #description>
+          <template v-if="tokenSaved">
+            Stored in your operating system's keyring, not in this app's files.
+            Clear the field and save to remove it.
+          </template>
+          <template v-else>
+            Only needed to publish updates. Leave it empty if you just install them.
+          </template>
+        </template>
+
+        <label class="input input-sm w-full border-base-300 bg-base-100 font-mono text-xs sm:w-64">
           <Icon
-            name="mdi:github"
+            :name="tokenSaved ? 'mdi:lock-check-outline' : 'mdi:key-variant'"
             size="0.9375rem"
-            class="shrink-0 text-base-content/40"
-            aria-hidden="true"
-          />
-          <input
-            id="settings-github-repo"
-            v-model="githubRepo"
-            type="text"
-            class="grow text-accent"
-            placeholder="owner/repository"
-            spellcheck="false"
-            autocomplete="off"
-            :aria-invalid="fieldErrors.repo !== undefined"
-            :aria-describedby="fieldErrors.repo !== undefined ? 'settings-github-repo-error' : undefined"
-          />
-        </label>
-        <p
-          v-if="fieldErrors.repo !== undefined"
-          id="settings-github-repo-error"
-          class="label text-xs text-error"
-        >
-          {{ fieldErrors.repo }}
-        </p>
-        <p
-          v-else
-          class="label text-xs"
-        >
-          Everyone in your group uses the same repository, for example
-          <span class="font-mono text-accent">YassaaaTU/cemm-updates</span>.
-        </p>
-      </fieldset>
-
-      <fieldset class="fieldset border-t border-base-300 pt-4">
-        <legend class="fieldset-legend px-0 text-[0.6875rem] font-bold uppercase tracking-[0.16em] text-base-content/70">
-          Access token
-        </legend>
-
-        <label
-          class="label"
-          for="settings-github-token"
-        >
-          Personal access token
-          <span class="ml-1 font-normal text-base-content/50">— only needed to publish</span>
-        </label>
-        <label class="input input-sm w-full max-w-md border-base-300 bg-base-100 font-mono text-xs">
-          <Icon
-            name="mdi:key-variant"
-            size="0.9375rem"
-            class="shrink-0 text-base-content/40"
+            class="shrink-0"
+            :class="tokenSaved ? 'text-success' : 'text-base-content/40'"
             aria-hidden="true"
           />
           <input
@@ -106,25 +102,9 @@
             />
           </button>
         </label>
+      </SettingsRow>
 
-        <p class="label text-xs">
-          <template v-if="tokenSaved">
-            <Icon
-              name="mdi:lock-check-outline"
-              size="0.875rem"
-              class="text-success"
-              aria-hidden="true"
-            />
-            Stored in your operating system's keyring, not in this app's files.
-            Clear the field and save to delete it.
-          </template>
-          <template v-else>
-            If you only install updates, leave this empty — you do not need a token.
-          </template>
-        </p>
-      </fieldset>
-
-      <div class="flex items-center gap-3 border-t border-base-300 pt-4">
+      <div class="flex items-center justify-end px-4 py-3">
         <button
           type="submit"
           class="btn btn-primary btn-sm gap-1.5"
@@ -138,8 +118,8 @@
           Save
         </button>
       </div>
-    </form>
-  </div>
+    </template>
+  </SettingsGroup>
 </template>
 
 <script setup lang="ts">
@@ -225,9 +205,9 @@ const saveSettings = async () =>
 		else
 		{
 			// Clearing the field should delete the credential, not store an empty
-			// string under it (removeSecure existed but nothing called it). The OS
-			// keyring rejects deleting an entry that was never set — harmless here,
-			// since "no token stored" is the desired end state either way.
+			// string under it. The OS keyring rejects deleting an entry that was
+			// never set, which is harmless: "no token stored" is the desired end
+			// state either way.
 			try
 			{
 				await removeSecure('cemm_github_token')
@@ -247,8 +227,6 @@ const saveSettings = async () =>
 		const errorMsg = err instanceof Error ? err.message : 'Could not save your settings.'
 		logger.error('Failed to save GitHub settings')
 		logger.error(err)
-		// Field-level problems are already shown next to the field itself, so
-		// repeating them in the banner would say the same thing twice.
 		// Field-level problems are already shown next to the field itself, so only
 		// a non-field failure is worth a toast.
 		if (Object.keys(fieldErrors.value).length === 0) notify(errorMsg, 'error')

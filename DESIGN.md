@@ -131,6 +131,27 @@ Mode switching lives **only** in the icon rail. The title bar briefly carried a
 second segmented control doing the same job 40px away; one destination gets one
 control.
 
+### Settings is a list, not a filing cabinet
+
+Settings held four tabs (Repository, Appearance, Updates, About) covering **four
+actual settings**. Updates was one version string and one button; About is not a
+setting at all. Tabs earn their navigation cost when a pane holds more than you
+can take in at once. Here they made you click to discover there was almost
+nothing behind them, and every pane but the first read as mostly empty.
+
+It is now **one scrolling page** in a 768px column: Repository (with the token),
+Appearance, and About with the update check folded into it. Each group is a
+bordered panel of `SettingsRow`s, one setting per row, name and explanation on
+the left and the control on the right so every control lands on the same
+vertical axis. Below ~700px the rows stack.
+
+The uppercase tracked legends (`REPOSITORY`, `ACCESS TOKEN`) are gone. They were
+leftover eyebrow styling from the discarded wallet direction, and three of them
+stacked above three sections is a templated rhythm rather than hierarchy.
+Helper copy that repeated the field's own value went with them: the repository
+hint read "for example YassaaaTU/cemm-updates" directly beneath a field showing
+exactly that.
+
 ## Components
 
 | Component | Role |
@@ -139,6 +160,8 @@ control.
 | `IconRail` | 54px destination rail, sole owner of mode switching |
 | `WorkspacePage` | Heading / context / scroll / pinned actions frame |
 | `EmptyState` | Resting state carrying its own next action |
+| `SettingsGroup` | Titled panel of setting rows; `as` lets it be a `<form>` |
+| `SettingsRow` | One setting: label and description left, control right |
 | `AddonTable` | The dense list — thumbnail, name + filename, version + note, action slot |
 | `AddonThumb` | Addon icon with an offline-safe coloured initial fallback |
 | `StatusChip` | Word-first status label |
