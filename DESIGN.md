@@ -123,7 +123,15 @@ no `StepRail`; install and upload progress live in the action bar, which is what
 they always were.
 
 There is **no landing interstitial**. First run asks once, then redirects to the
-workspace forever after.
+workspace forever after — but the screen is **reachable again** from
+*Settings > Setup*, because the Install/Publish choice was made there and had no
+other way back. Re-running it clears only the choice: the repository and folder
+are carried in already filled, since the point is to reopen the decision, not to
+wipe the configuration made alongside it. The screen says "Setup" rather than
+"First use" once anything is configured.
+
+Switching sides that way clears any loaded manifest, exactly as switching from
+the rail does — a diff fetched as a player is not the admin's working set.
 
 ### One control per destination
 

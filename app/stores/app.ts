@@ -31,6 +31,19 @@ export const useAppStore = defineStore('app', () =>
 		modeChosen.value = true
 	}
 
+	/**
+	 * Sends the app back to the first-run screen.
+	 *
+	 * Only the *choice* is cleared, not the configuration behind it: the setup
+	 * screen pre-fills the repository and folder from this store, so re-running
+	 * it reopens the decision rather than wiping the settings that were made
+	 * alongside it. Anyone who wanted those gone can empty the fields there.
+	 */
+	const resetModeChoice = () =>
+	{
+		modeChosen.value = false
+	}
+
 	const setRailExpanded = (next: boolean) =>
 	{
 		railExpanded.value = next
@@ -48,6 +61,7 @@ export const useAppStore = defineStore('app', () =>
 		modpackPath,
 		railExpanded,
 		setMode,
+		resetModeChoice,
 		setRailExpanded,
 		toggleRail
 	}

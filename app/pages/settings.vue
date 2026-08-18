@@ -66,6 +66,35 @@
       </SettingsGroup>
 
       <!--
+        The first-run screen is the only place the Install/Publish choice is
+        made, and once made it never showed again — so the repository and folder
+        captured beside it became unreachable as a set, and anyone who picked
+        the wrong side on launch had no way back to that screen.
+      -->
+      <SettingsGroup title="Setup">
+        <SettingsRow label="First-time setup">
+          <template #description>
+            Reopens the screen CEMM showed on first launch, where you chose
+            whether you install updates or publish them. Your repository and
+            modpack folder are kept and filled in for you.
+          </template>
+
+          <button
+            type="button"
+            class="btn btn-sm gap-1.5 border-base-300"
+            @click="handleRerunSetup"
+          >
+            <Icon
+              name="mdi:restart"
+              size="1rem"
+              aria-hidden="true"
+            />
+            Run again
+          </button>
+        </SettingsRow>
+      </SettingsGroup>
+
+      <!--
         Updates was its own tab holding a single version string and a single
         button, and About was a tab of static text that is not a setting at all.
         They are the same subject, so they are now one block.
@@ -152,6 +181,7 @@ import pkg from '~~/package.json'
 
 const updater = useUpdater()
 const themeStore = useThemeStore()
+const appStore = useAppStore()
 const { notify } = useNotify()
 
 const packageVersion = pkg.version
@@ -180,6 +210,17 @@ onMounted(async () =>
 		}
 	}
 })
+
+/**
+ * Deliberately not behind a confirmation. Nothing is destroyed — the mode is
+ * re-asked, the repository and folder are carried into the screen already
+ * filled in, and the rail is still there to navigate away with.
+ */
+const handleRerunSetup = async () =>
+{
+	appStore.resetModeChoice()
+	await navigateTo('/')
+}
 
 const handleCheckForUpdates = async () =>
 {

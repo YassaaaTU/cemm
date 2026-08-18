@@ -1,15 +1,16 @@
 <template>
   <div class="flex min-h-0 flex-1 items-center overflow-y-auto px-6 py-8">
     <div class="mx-auto w-full max-w-2xl">
-      <!-- First run only. This is where the settings that never change between
-           updates get captured — which is what lets the workspaces be a single
-           screen instead of a wizard that re-asks them every time. -->
+      <!-- Where the settings that never change between updates get captured —
+           which is what lets the workspaces be a single screen instead of a
+           wizard that re-asks them every time. Shown unprompted on a first run,
+           and reachable again from Settings > Setup afterwards. -->
       <header class="mb-6">
         <p class="text-xs text-base-content/50">
-          First use
+          {{ returning ? 'Setup' : 'First use' }}
         </p>
         <h1 class="mt-1 text-2xl font-bold tracking-tight">
-          {{ chosen === null ? 'Which side are you on?' : 'One-time setup' }}
+          {{ chosen === null ? 'Which side are you on?' : (returning ? 'Update your setup' : 'One-time setup') }}
         </h1>
         <p class="mt-2 max-w-lg text-sm leading-relaxed text-base-content/65">
           <template v-if="chosen === null">
@@ -153,11 +154,22 @@ import type { AppMode } from '~/stores/app'
 import { isValidGithubRepo } from '~/utils/githubRepo'
 
 const appStore = useAppStore()
+const manifestStore = useManifestStore()
 const { notify } = useNotify()
 
 const chosen = ref<AppMode | null>(null)
 const repo = ref(appStore.githubRepo)
 const folder = ref(appStore.modpackPath)
+
+/**
+ * This screen is reachable again from Settings, so it is no longer only ever a
+ * first run. Anything already configured means the user has been here before,
+ * and calling that "First use" would be a lie on the one screen whose job is to
+ * be plain about what it is asking.
+ */
+const returning = computed(
+	() => appStore.githubRepo.length > 0 || appStore.modpackPath.length > 0
+)
 
 const counters: Array<{ mode: AppMode, title: string, description: string, action: string, icon: string }> = [
 	{
@@ -204,6 +216,15 @@ const finish = async () =>
 	if (folder.value.trim().length > 0)
 	{
 		appStore.modpackPath = folder.value.trim()
+	}
+
+	// Re-running setup can now switch sides with a manifest already loaded. The
+	// rail clears it on a mode change for the same reason: a diff fetched as a
+	// player is not the admin's working set, and carrying it across would show
+	// one counter the other's data.
+	if (appStore.mode !== chosen.value)
+	{
+		manifestStore.clearManifest()
 	}
 
 	appStore.setMode(chosen.value)
