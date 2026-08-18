@@ -11,7 +11,7 @@
           {{ tally.label }}
         </p>
         <p
-          class="mt-1.5 font-mono text-2xl font-bold tabular-nums leading-none"
+          class="mt-1.5 font-mono text-2xl leading-none font-bold tabular-nums"
           :class="tally.count > 0 ? tally.tone : 'text-base-content/25'"
         >
           {{ tally.count }}
@@ -22,7 +22,7 @@
     <div
       v-if="updateType === 'config'"
       role="alert"
-      class="alert alert-info alert-soft text-sm"
+      class="alert alert-soft text-sm alert-info"
     >
       <Icon
         name="mdi:information-outline"
@@ -87,7 +87,7 @@
             v-for="option in filters"
             :key="option.value"
             type="button"
-            class="cursor-pointer rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors duration-150 ease-[var(--ease-standard)]"
+            class="cursor-pointer rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors duration-150 ease-(--ease-standard)"
             :class="activeFilter === option.value
               ? 'border-primary bg-primary/15 text-primary'
               : 'border-base-300 bg-base-100 text-base-content/60 hover:text-base-content'"
@@ -111,7 +111,7 @@
         <h3 class="text-sm font-semibold">
           Config files
         </h3>
-        <span class="font-mono text-xs tabular-nums text-base-content/50">{{ configFiles.length }}</span>
+        <span class="font-mono text-xs text-base-content/50 tabular-nums">{{ configFiles.length }}</span>
       </div>
       <ul class="max-h-40 overflow-y-auto">
         <li

@@ -58,7 +58,7 @@
           </span>
           <button
             type="button"
-            class="link link-hover cursor-pointer text-[0.6875rem] font-medium text-primary"
+            class="link cursor-pointer text-[0.6875rem] font-medium text-primary link-hover"
             :aria-expanded="editingName"
             @click="editingName = !editingName"
           >
@@ -71,7 +71,7 @@
           v-if="editingName"
           class="mt-3 border-t border-base-300 pt-3"
         >
-          <label class="input input-sm w-full max-w-sm border-base-300 bg-base-100 font-mono text-xs">
+          <label class="input w-full max-w-sm border-base-300 bg-base-100 font-mono text-xs input-sm">
             <Icon
               name="mdi:package-variant-closed"
               size="0.9375rem"
@@ -106,7 +106,7 @@
         <template #action>
           <button
             type="button"
-            class="btn btn-primary btn-sm gap-1.5"
+            class="btn gap-1.5 btn-primary btn-sm"
             @click="handleLoadInstance"
           >
             <Icon
@@ -134,7 +134,7 @@
             v-for="pane in panes"
             :key="pane.key"
             type="button"
-            class="cursor-pointer rounded-full border px-3 py-1 text-[0.8125rem] font-medium transition-colors duration-150 ease-[var(--ease-standard)]"
+            class="cursor-pointer rounded-full border px-3 py-1 text-[0.8125rem] font-medium transition-colors duration-150 ease-(--ease-standard)"
             :class="activePane === pane.key
               ? 'border-primary bg-primary/15 text-primary'
               : 'border-base-300 bg-base-200 text-base-content/60 hover:text-base-content'"
@@ -168,7 +168,7 @@
             <button
               v-if="excludedCount > 0"
               type="button"
-              class="btn btn-ghost btn-xs gap-1.5"
+              class="btn gap-1.5 btn-ghost btn-xs"
               @click="manifestStore.clearExclusions()"
             >
               <Icon
@@ -188,7 +188,7 @@
               <span class="sr-only">Include {{ row.name }} in the upload</span>
               <input
                 type="checkbox"
-                class="toggle toggle-sm toggle-primary rounded-full"
+                class="toggle rounded-full toggle-primary toggle-sm"
                 :checked="!manifestStore.isExcluded(row.name)"
                 @change="manifestStore.toggleExclusion(row.name)"
               />
@@ -222,7 +222,7 @@
           </code>
           <button
             type="button"
-            class="btn btn-sm shrink-0 gap-1.5"
+            class="btn shrink-0 gap-1.5 btn-sm"
             @click="copyUpdateReference"
           >
             <Icon
@@ -243,7 +243,7 @@
         <span class="min-w-0 flex-1">
           <span class="mb-1 flex items-baseline justify-between gap-3 text-xs">
             <span class="font-medium">Uploading to GitHub…</span>
-            <span class="font-mono tabular-nums text-base-content/60">{{ Math.round(smoothProgress) }}%</span>
+            <span class="font-mono text-base-content/60 tabular-nums">{{ Math.round(smoothProgress) }}%</span>
           </span>
           <progress
             class="progress w-full"
@@ -269,13 +269,13 @@
 
       <button
         type="button"
-        class="btn btn-primary btn-sm gap-1.5"
+        class="btn gap-1.5 btn-primary btn-sm"
         :disabled="!canPublish"
         @click="handleUploadToGithub"
       >
         <span
           v-if="uploading"
-          class="loading loading-spinner loading-xs"
+          class="loading loading-xs loading-spinner"
           aria-hidden="true"
         />
         {{ latestUpdateReference.length > 0 ? 'Publish again' : 'Publish update' }}

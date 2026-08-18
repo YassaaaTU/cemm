@@ -9,7 +9,7 @@
       class="flex items-center gap-2 px-4 py-5 text-sm text-base-content/60"
     >
       <span
-        class="loading loading-spinner loading-sm"
+        class="loading loading-sm loading-spinner"
         aria-hidden="true"
       />
       Loading settings…
@@ -27,7 +27,7 @@
 
         <div class="flex flex-col items-stretch gap-1">
           <label
-            class="input input-sm w-full border-base-300 bg-base-100 font-mono text-xs sm:w-64"
+            class="input w-full border-base-300 bg-base-100 font-mono text-xs input-sm sm:w-64"
             :class="fieldErrors.repo !== undefined ? 'border-error' : ''"
           >
             <Icon
@@ -72,7 +72,7 @@
           </template>
         </template>
 
-        <label class="input input-sm w-full border-base-300 bg-base-100 font-mono text-xs sm:w-64">
+        <label class="input w-full border-base-300 bg-base-100 font-mono text-xs input-sm sm:w-64">
           <Icon
             :name="tokenSaved ? 'mdi:lock-check-outline' : 'mdi:key-variant'"
             size="0.9375rem"
@@ -91,7 +91,7 @@
           />
           <button
             type="button"
-            class="btn btn-ghost btn-xs shrink-0 px-1"
+            class="btn shrink-0 btn-ghost px-1 btn-xs"
             :aria-label="tokenVisible ? 'Hide token' : 'Show token'"
             @click="tokenVisible = !tokenVisible"
           >
@@ -107,7 +107,7 @@
       <div class="flex items-center justify-end px-4 py-3">
         <button
           type="submit"
-          class="btn btn-primary btn-sm gap-1.5"
+          class="btn gap-1.5 btn-primary btn-sm"
           :disabled="loading"
         >
           <Icon

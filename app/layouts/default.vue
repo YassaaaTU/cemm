@@ -2,7 +2,7 @@
   <div class="flex h-dvh flex-col overflow-hidden bg-base-100 font-sans text-base-content antialiased">
     <a
       href="#main-content"
-      class="sr-only left-2 top-2 z-50 rounded-lg border border-primary bg-base-100 px-3 py-2 text-sm font-semibold text-base-content focus:not-sr-only focus:absolute"
+      class="sr-only top-2 left-2 z-50 rounded-lg border border-primary bg-base-100 px-3 py-2 text-sm font-semibold text-base-content focus:not-sr-only focus:absolute"
     >
       Skip to main content
     </a>

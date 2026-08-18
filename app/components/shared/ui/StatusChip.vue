@@ -3,7 +3,7 @@
        still reads correctly in greyscale and to anyone who cannot separate the
        hues. Colour never operates alone here. -->
   <span
-    class="inline-flex shrink-0 items-center rounded-md border px-2 py-px text-[0.6875rem] font-semibold leading-[1.5]"
+    class="inline-flex shrink-0 items-center rounded-md border px-2 py-px text-[0.6875rem] leading-normal font-semibold"
     :class="toneClass"
   >
     <slot>{{ label }}</slot>

@@ -7,7 +7,7 @@
       holds more than you can take in at once; here they made you click to find
       out there was almost nothing behind them.
     -->
-    <div class="mx-auto w-full max-w-3xl px-6 py-6">
+    <div class="mx-auto w-full max-w-3xl p-6 ">
       <h1 class="mb-5 text-2xl font-bold tracking-tight">
         Settings
       </h1>
@@ -27,7 +27,7 @@
               v-for="option in themeOptions"
               :key="option.value"
               type="button"
-              class="btn join-item btn-sm gap-1.5 border-base-300"
+              class="btn join-item gap-1.5 border-base-300 btn-sm"
               :class="themeStore.preference === option.value ? 'btn-primary' : ''"
               :aria-pressed="themeStore.preference === option.value"
               @click="themeStore.setPreference(option.value)"
@@ -61,7 +61,7 @@
               v-for="step in uiScaleSteps"
               :key="step"
               type="button"
-              class="btn join-item btn-sm border-base-300 font-mono tabular-nums"
+              class="btn join-item border-base-300 font-mono tabular-nums btn-sm"
               :class="themeStore.uiScale === step ? 'btn-primary' : ''"
               :aria-pressed="themeStore.uiScale === step"
               :aria-label="`Interface scale ${step} percent`"
@@ -112,7 +112,7 @@
 
           <button
             type="button"
-            class="btn btn-sm gap-1.5 border-base-300"
+            class="btn gap-1.5 border-base-300 btn-sm"
             @click="handleRerunSetup"
           >
             <Icon
@@ -131,7 +131,7 @@
         They are the same subject, so they are now one block.
       -->
       <SettingsGroup title="About">
-        <div class="flex items-start gap-4 px-4 py-4">
+        <div class="flex items-start gap-4 p-4 ">
           <BrandMark class="mt-0.5 size-9 shrink-0 text-primary" />
 
           <div class="min-w-0 flex-1">
@@ -139,12 +139,12 @@
               <p class="text-base font-bold">
                 CEMM
               </p>
-              <p class="font-mono text-xs tabular-nums text-accent">
+              <p class="font-mono text-xs text-accent tabular-nums">
                 v{{ appVersion ?? packageVersion }}
               </p>
             </div>
 
-            <p class="mt-1.5 text-sm leading-relaxed text-base-content/65">
+            <p class="mt-1.5 text-sm/relaxed  text-base-content/65">
               ChillEcke Modpack Manager. Distributes changes to an existing
               CurseForge modpack among a group, without republishing the whole pack.
             </p>
@@ -158,7 +158,7 @@
                 href="https://github.com/YassaaaTU/cemm"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="link link-hover inline-flex items-center gap-1 text-primary"
+                class="inline-flex link items-center gap-1 text-primary link-hover"
               >
                 <Icon
                   name="mdi:github"
@@ -183,13 +183,13 @@
 
           <button
             type="button"
-            class="btn btn-sm gap-1.5 border-base-300"
+            class="btn gap-1.5 border-base-300 btn-sm"
             :disabled="checking"
             @click="handleCheckForUpdates"
           >
             <span
               v-if="checking"
-              class="loading loading-spinner loading-xs"
+              class="loading loading-xs loading-spinner"
               aria-hidden="true"
             />
             <Icon

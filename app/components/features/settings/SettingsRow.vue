@@ -3,7 +3,7 @@
        right. With this few settings it reads faster than stacked fieldsets, and
        every control lands on the same vertical axis. -->
   <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3.5">
-    <div class="min-w-0 flex-1 basis-64 max-w-[54ch]">
+    <div class="max-w-[54ch] min-w-0 flex-1 basis-64">
       <component
         :is="labelFor.length > 0 ? 'label' : 'p'"
         :for="labelFor.length > 0 ? labelFor : undefined"
@@ -13,7 +13,7 @@
       </component>
       <p
         v-if="$slots.description"
-        class="mt-0.5 text-xs leading-relaxed text-base-content/55"
+        class="mt-0.5 text-xs/relaxed  text-base-content/55"
       >
         <slot name="description" />
       </p>

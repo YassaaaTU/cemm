@@ -1,3 +1,5 @@
+import betterTailwindcss from 'eslint-plugin-better-tailwindcss'
+import { getDefaultSelectors } from 'eslint-plugin-better-tailwindcss/defaults'
 import withNuxt from './.nuxt/eslint.config.mjs'
 
 export default withNuxt(
@@ -65,6 +67,35 @@ export default withNuxt(
 			'import/no-empty-named-blocks': 'error',
 			'import/first': 'error'
 		} },
+	// Tailwind CSS rules (mirrors nk-glanz; catches what tailwindcss-intellisense hints at)
+	{
+		name: 'better-tailwindcss',
+		plugins: {
+			'better-tailwindcss': betterTailwindcss
+		},
+		settings: {
+			'better-tailwindcss': {
+				entryPoint: 'app/assets/css/main.css',
+				// `anim(...)` from useMotion returns its argument as class list —
+				// lint string arguments inside those calls too (not a default callee)
+				selectors: [
+					...getDefaultSelectors(),
+					{
+						kind: 'callee',
+						name: '^anim$',
+						match: [{ type: 'strings' }]
+					}
+				]
+			}
+		},
+		rules: {
+			'better-tailwindcss/enforce-shorthand-classes': 'off',
+			'better-tailwindcss/enforce-consistent-important-position': 'off',
+			'better-tailwindcss/enforce-consistent-variable-syntax': 'off',
+			'better-tailwindcss/enforce-consistent-class-order': 'warn',
+			'better-tailwindcss/enforce-canonical-classes': 'warn'
+		}
+	},
 	// Ignore patterns
 	{
 		ignores: ['.nuxt/**', 'node_modules/**', '.output/**', 'src-tauri/target/**', 'dist/**']

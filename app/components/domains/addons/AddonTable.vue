@@ -11,7 +11,7 @@
       >
         {{ title }}
       </h3>
-      <span class="font-mono text-[0.8125rem] tabular-nums text-base-content/50">
+      <span class="font-mono text-[0.8125rem] text-base-content/50 tabular-nums">
         {{ visibleRows.length }}<template v-if="visibleRows.length !== rows.length"> / {{ rows.length }}</template>
       </span>
 
@@ -23,7 +23,7 @@
 
       <label
         v-if="rows.length > 8"
-        class="input input-md w-full max-w-[17rem] border-base-300 bg-base-100"
+        class="input w-full max-w-68 border-base-300 bg-base-100 input-md"
       >
         <Icon
           name="mdi:magnify"
@@ -91,8 +91,8 @@
         <div
           :key="row.key"
           role="row"
-          class="grid items-center gap-4 border-b border-base-300/40 px-4 text-sm transition-[background-color,opacity] duration-150 ease-[var(--ease-standard)] last:border-b-0 hover:bg-base-300/40"
-          :class="[gridClass, row.dimmed === true ? 'bg-error/[0.06]' : '']"
+          class="grid items-center gap-4 border-b border-base-300/40 px-4 text-sm transition-[background-color,opacity] duration-150 ease-(--ease-standard) last:border-b-0 hover:bg-base-300/40"
+          :class="[gridClass, row.dimmed === true ? 'bg-error/6' : '']"
         >
           <span
             v-if="variant === 'review'"

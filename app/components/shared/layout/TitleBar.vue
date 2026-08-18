@@ -1,10 +1,10 @@
 <template>
   <header
-    class="flex h-9 shrink-0 [user-select:none] items-center gap-2.5 border-b border-base-300 bg-base-200 pl-3 [-webkit-app-region:drag]"
+    class="flex h-9 shrink-0 items-center gap-2.5 border-b border-base-300 bg-base-200 pl-3 [-webkit-app-region:drag] [user-select:none]"
     @dblclick="onTitleBarDoubleClick"
   >
     <div class="flex items-center gap-2">
-      <BrandMark class="size-[1.0625rem] shrink-0 text-primary" />
+      <BrandMark class="size-4.25 shrink-0 text-primary" />
       <span class="text-[0.8125rem] font-bold tracking-[0.04em]">CEMM</span>
     </div>
 

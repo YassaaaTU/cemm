@@ -8,13 +8,13 @@
         Config files
       </h3>
 
-      <span class="font-mono text-xs tabular-nums text-base-content/50">{{ modelValue.length }}</span>
+      <span class="font-mono text-xs text-base-content/50 tabular-nums">{{ modelValue.length }}</span>
 
       <span class="flex-1" />
 
       <button
         type="button"
-        class="btn btn-xs gap-1.5 border-base-300"
+        class="btn gap-1.5 border-base-300 btn-xs"
         :disabled="busy"
         @click="handleSelectFiles"
       >
@@ -30,13 +30,13 @@
            The native directory dialog is the same decision in one click. -->
       <button
         type="button"
-        class="btn btn-xs gap-1.5 border-base-300"
+        class="btn gap-1.5 border-base-300 btn-xs"
         :disabled="busy"
         @click="handleScanDirectory"
       >
         <span
           v-if="busy"
-          class="loading loading-spinner loading-xs"
+          class="loading loading-xs loading-spinner"
           aria-hidden="true"
         />
         <Icon
@@ -51,7 +51,7 @@
       <button
         v-if="modelValue.length > 0"
         type="button"
-        class="btn btn-ghost btn-xs gap-1.5 text-error"
+        class="btn gap-1.5 btn-ghost text-error btn-xs"
         @click="clearFiles"
       >
         <Icon
@@ -91,7 +91,7 @@
         >{{ file.relative_path }}</span>
         <button
           type="button"
-          class="btn btn-ghost btn-xs px-1 text-base-content/50 hover:text-error"
+          class="btn btn-ghost px-1 text-base-content/50 btn-xs hover:text-error"
           :aria-label="`Remove ${file.relative_path}`"
           @click="removeFile(file)"
         >

@@ -42,9 +42,9 @@ export const useMotion = () =>
 	 * off every class is empty, so the element simply appears.
 	 */
 	const paneTransition = computed(() => ({
-		enterActiveClass: anim('transition duration-200 ease-[var(--ease-out-quick)]'),
-		enterFromClass: anim('opacity-0 translate-x-2'),
-		enterToClass: anim('opacity-100 translate-x-0')
+		enterActiveClass: anim('transition duration-200 ease-out-quick'),
+		enterFromClass: anim('translate-x-2 opacity-0'),
+		enterToClass: anim('translate-x-0 opacity-100')
 	}))
 
 	return { motionOk, anim, paneTransition }

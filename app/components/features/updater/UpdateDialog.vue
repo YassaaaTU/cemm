@@ -26,14 +26,14 @@
         </div>
       </div>
 
-      <div class="space-y-3 px-4 py-4">
+      <div class="space-y-3 p-4 ">
         <!-- Version change, read as a route: what you are on, what you go to. -->
         <div class="flex items-center gap-3 rounded-box border border-base-300 bg-base-100 px-3 py-2.5">
           <div class="min-w-0">
             <p class="text-xs text-base-content/55">
               Installed
             </p>
-            <p class="font-mono text-base tabular-nums text-base-content/70">
+            <p class="font-mono text-base text-base-content/70 tabular-nums">
               {{ updater.updateInfo.value?.currentVersion ?? '—' }}
             </p>
           </div>
@@ -49,13 +49,13 @@
             <p class="text-xs text-base-content/55">
               Available
             </p>
-            <p class="font-mono text-base font-bold tabular-nums text-primary">
+            <p class="font-mono text-base font-bold text-primary tabular-nums">
               {{ updater.updateInfo.value?.version ?? '—' }}
             </p>
           </div>
         </div>
 
-        <p class="text-sm leading-relaxed text-base-content/70">
+        <p class="text-sm/relaxed  text-base-content/70">
           CEMM will download the update and restart itself. Your settings and
           saved repository are kept.
         </p>
@@ -63,14 +63,14 @@
         <div
           v-if="updateError !== null"
           role="alert"
-          class="alert alert-error alert-soft text-sm"
+          class="alert alert-soft text-sm alert-error"
         >
           <Icon
             name="mdi:alert-circle-outline"
             size="1.1rem"
             aria-hidden="true"
           />
-          <span class="min-w-0 break-words">{{ updateError }}</span>
+          <span class="min-w-0 wrap-break-word">{{ updateError }}</span>
         </div>
 
         <div
@@ -79,7 +79,7 @@
         >
           <div class="flex items-baseline justify-between gap-2 text-xs">
             <span class="font-semibold">Downloading…</span>
-            <span class="font-mono tabular-nums text-primary">
+            <span class="font-mono text-primary tabular-nums">
               {{ updater.downloadProgress.value }}%
               <template v-if="updater.totalBytes.value > 0">
                 ({{ updater.formatBytes(updater.downloadedBytes.value) }} / {{ updater.formatBytes(updater.totalBytes.value) }})
@@ -99,7 +99,7 @@
           class="flex items-center gap-2 text-sm"
         >
           <span
-            class="loading loading-spinner loading-sm"
+            class="loading loading-sm loading-spinner"
             aria-hidden="true"
           />
           <span>Installing — CEMM will restart.</span>
@@ -117,7 +117,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-primary btn-sm gap-1.5"
+            class="btn gap-1.5 btn-primary btn-sm"
             :disabled="updater.updateInfo.value === null"
             @click="handleUpdateConfirm"
           >
@@ -136,7 +136,7 @@
           disabled
         >
           <span
-            class="loading loading-spinner loading-xs"
+            class="loading loading-xs loading-spinner"
             aria-hidden="true"
           />
           {{ updater.isDownloading.value ? 'Downloading…' : 'Installing…' }}

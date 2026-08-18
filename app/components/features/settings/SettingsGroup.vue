@@ -18,7 +18,7 @@
 
     <p
       v-if="$slots.footnote"
-      class="mt-2 px-1 text-xs leading-relaxed text-base-content/50"
+      class="mt-2 px-1 text-xs/relaxed  text-base-content/50"
     >
       <slot name="footnote" />
     </p>

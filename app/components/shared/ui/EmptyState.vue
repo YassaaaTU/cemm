@@ -1,7 +1,7 @@
 <template>
   <!-- The resting state of a workspace before there is anything to act on.
        Carries the next action rather than only an apology for being empty. -->
-  <div class="flex min-h-[16rem] flex-col items-center justify-center gap-2.5 px-6 text-center">
+  <div class="flex min-h-64 flex-col items-center justify-center gap-2.5 px-6 text-center">
     <span class="grid size-12 place-items-center rounded-box bg-base-200 text-base-content/40">
       <Icon
         :name="icon"

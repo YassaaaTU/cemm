@@ -12,7 +12,7 @@
         <h1 class="mt-1 text-2xl font-bold tracking-tight">
           {{ chosen === null ? 'Which side are you on?' : (returning ? 'Update your setup' : 'One-time setup') }}
         </h1>
-        <p class="mt-2 max-w-lg text-sm leading-relaxed text-base-content/65">
+        <p class="mt-2 max-w-lg text-sm/relaxed  text-base-content/65">
           <template v-if="chosen === null">
             CEMM moves modpack changes between the person who makes them and
             everyone who plays with them. You can switch any time from the rail.
@@ -57,7 +57,7 @@
           </span>
 
           <span class="mt-3 block text-base font-semibold">{{ counter.title }}</span>
-          <span class="mt-1 block text-sm leading-relaxed text-base-content/65">
+          <span class="mt-1 block text-sm/relaxed  text-base-content/65">
             {{ counter.description }}
           </span>
 
@@ -66,7 +66,7 @@
             <Icon
               name="mdi:arrow-right"
               size="0.9375rem"
-              class="transition-transform duration-200 ease-(--ease-out-quick) group-hover:translate-x-1"
+              class="transition-transform duration-200 ease-out-quick group-hover:translate-x-1"
               aria-hidden="true"
             />
           </span>
@@ -85,7 +85,7 @@
           >
             GitHub repository
           </label>
-          <label class="input input-sm w-full max-w-md border-base-300 bg-base-100 font-mono text-xs">
+          <label class="input w-full max-w-md border-base-300 bg-base-100 font-mono text-xs input-sm">
             <Icon
               name="mdi:github"
               size="0.9375rem"

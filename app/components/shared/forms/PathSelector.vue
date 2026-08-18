@@ -7,7 +7,7 @@
          field, validated as you go. -->
     <div class="flex items-stretch gap-2">
       <label
-        class="input input-sm flex-1 border-base-300 bg-base-100 font-mono text-xs"
+        class="input flex-1 border-base-300 bg-base-100 font-mono text-xs input-sm"
         :class="validationStateClass"
       >
         <Icon
@@ -29,13 +29,13 @@
         />
         <span
           v-if="validating"
-          class="loading loading-spinner loading-xs shrink-0 text-base-content/40"
+          class="loading loading-xs shrink-0 loading-spinner text-base-content/40"
           aria-hidden="true"
         />
         <button
           v-else-if="draft.length > 0"
           type="button"
-          class="btn btn-ghost btn-xs shrink-0 px-1"
+          class="btn shrink-0 btn-ghost px-1 btn-xs"
           aria-label="Clear path"
           @click="clearSelection"
         >
@@ -49,13 +49,13 @@
 
       <button
         type="button"
-        class="btn btn-sm shrink-0 gap-1.5 border-secondary/40 bg-base-200 hover:border-secondary hover:bg-base-300"
+        class="btn shrink-0 gap-1.5 border-secondary/40 bg-base-200 btn-sm hover:border-secondary hover:bg-base-300"
         :disabled="loading"
         @click="openDialog"
       >
         <span
           v-if="loading"
-          class="loading loading-spinner loading-xs"
+          class="loading loading-xs loading-spinner"
           aria-hidden="true"
         />
         <Icon

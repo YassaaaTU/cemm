@@ -2,7 +2,7 @@
   <div>
     <button
       type="button"
-      class="btn btn-ghost btn-sm h-7 w-9 px-0 text-base-content/70 hover:bg-base-300 hover:text-base-content"
+      class="btn h-7 w-9 btn-ghost px-0 text-base-content/70 btn-sm hover:bg-base-300 hover:text-base-content"
       popovertarget="cemm-theme-menu"
       style="anchor-name:--cemm-theme-menu"
       :aria-label="`Appearance: ${activeLabel}`"
@@ -16,11 +16,11 @@
 
     <ul
       id="cemm-theme-menu"
-      class="dropdown dropdown-end menu z-10 w-48 border border-base-300 bg-base-100 p-1 text-base-content shadow-lg"
+      class="menu dropdown dropdown-end z-10 w-48 border border-base-300 bg-base-100 p-1 text-base-content shadow-lg"
       popover
       style="position-anchor:--cemm-theme-menu"
     >
-      <li class="menu-title px-2 pb-1 pt-1.5 text-[0.625rem] font-bold uppercase tracking-[0.16em] text-base-content/50">
+      <li class="menu-title px-2 pt-1.5 pb-1 text-[0.625rem] font-bold tracking-[0.16em] text-base-content/50 uppercase">
         Appearance
       </li>
       <li

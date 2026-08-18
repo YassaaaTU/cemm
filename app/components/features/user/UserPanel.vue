@@ -14,7 +14,7 @@
          screens the user walks through on every update. -->
     <template #context>
       <div
-        class="overflow-hidden rounded-box border bg-base-200 transition-colors duration-150 ease-[var(--ease-standard)]"
+        class="overflow-hidden rounded-box border bg-base-200 transition-colors duration-150 ease-(--ease-standard)"
         :class="manifest !== null ? 'border-primary/50' : 'border-base-300'"
       >
         <!-- Destination first, and stated in full. This is the folder that gets
@@ -32,7 +32,7 @@
           </span>
 
           <span class="min-w-0 flex-1">
-            <span class="block text-xs font-medium uppercase tracking-wide text-base-content/60">
+            <span class="block text-xs font-medium tracking-wide text-base-content/60 uppercase">
               Installing to
             </span>
             <span
@@ -53,7 +53,7 @@
 
           <button
             type="button"
-            class="btn btn-sm shrink-0"
+            class="btn shrink-0 btn-sm"
             :aria-expanded="editingDestination"
             @click="editingDestination = !editingDestination"
           >
@@ -78,13 +78,13 @@
         <!-- Then the code — the only thing that changes per update. -->
         <div class="px-4 py-3">
           <label
-            class="mb-1.5 block text-xs font-medium uppercase tracking-wide text-base-content/60"
+            class="mb-1.5 block text-xs font-medium tracking-wide text-base-content/60 uppercase"
             for="user-update-code"
           >
             Update code
           </label>
           <div class="flex flex-wrap items-center gap-2">
-            <label class="input input-md min-w-0 flex-1 border-base-300 bg-base-100 font-mono text-sm">
+            <label class="input min-w-0 flex-1 border-base-300 bg-base-100 font-mono text-sm input-md">
               <Icon
                 name="mdi:key-variant"
                 size="1rem"
@@ -107,13 +107,13 @@
             <button
               v-if="manifest === null"
               type="button"
-              class="btn btn-primary btn-md gap-1.5"
+              class="btn gap-1.5 btn-md btn-primary"
               :disabled="!canFetch"
               @click="handleFetch"
             >
               <span
                 v-if="downloading"
-                class="loading loading-spinner loading-xs"
+                class="loading loading-xs loading-spinner"
                 aria-hidden="true"
               />
               {{ downloading ? 'Fetching…' : 'Fetch' }}
@@ -131,7 +131,7 @@
 
           <NuxtLink
             to="/settings"
-            class="link link-hover mt-2 inline-block text-xs text-base-content/50"
+            class="mt-2 inline-block link text-xs text-base-content/50 link-hover"
           >
             from {{ appStore.githubRepo.length > 0 ? appStore.githubRepo : 'no repository set' }}
           </NuxtLink>
@@ -172,7 +172,7 @@
             <p class="text-sm font-medium">
               {{ progressLabel }}
             </p>
-            <p class="font-mono text-xs tabular-nums text-base-content/60">
+            <p class="font-mono text-xs text-base-content/60 tabular-nums">
               {{ Math.round(smoothProgress) }}%
             </p>
           </div>
@@ -215,7 +215,7 @@
         <input
           v-model="acknowledged"
           type="checkbox"
-          class="checkbox checkbox-sm border-error"
+          class="checkbox border-error checkbox-sm"
         />
         I understand {{ removedRows.length }} {{ removedRows.length === 1 ? 'file' : 'files' }}
         will be permanently deleted
