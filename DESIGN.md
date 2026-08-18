@@ -160,7 +160,8 @@ can take in at once. Here they made you click to discover there was almost
 nothing behind them, and every pane but the first read as mostly empty.
 
 It is now **one scrolling page** in a 768px column: Repository (with the token),
-Appearance, and About with the update check folded into it. Each group is a
+Appearance, Accessibility, Setup, and About with the update check folded into
+it. Each group is a
 bordered panel of `SettingsRow`s, one setting per row, name and explanation on
 the left and the control on the right so every control lands on the same
 vertical axis. Below ~700px the rows stack.
@@ -287,6 +288,39 @@ prebundles them separately and toasts vanish into a store nothing renders.
 
 ## Accessibility
 
+### Interface scale
+
+One setting, five steps — 90 / 100 / 110 / 125 / 150% — and it resizes the
+**whole shell**, not just the type: the rail, the title bar, the icon boxes, the
+rows and the controls all move together.
+
+It works by setting the **root font size**, which is why every length in the
+interface is authored in `rem`. The five hard-coded pixel utilities that
+survived (`[38px]` icon boxes, the `[54px]`/`[200px]` rail, the `[17px]` mark,
+the `[3px]` active marker) were converted for this; there are now **no `px`
+utilities anywhere in `app/`**, and that is a rule to keep, not a coincidence.
+
+The value is a **percentage**, never a pixel size, so it multiplies whatever the
+OS and webview already decided. Someone who has enlarged their system font keeps
+that and gets 110% *of their size*. At 100% the inline style is removed
+altogether rather than written as `100%`, on the same principle as `data-theme`:
+absent means "whatever the machine already agreed".
+
+Scaling the root rather than applying a transform or `zoom` means nothing blurs
+and hit targets stay exactly where they are drawn.
+
+**Ctrl and `+` / `−` / `0`** step and reset it, because this is a desktop app and
+that is the shortcut every other window on the machine uses for this. The
+handler reads `event.code`, so it lands on the physical key on any layout, and
+accepts the numpad. Tauri leaves `zoomHotkeysEnabled` off, so there is nothing
+to fight over.
+
+Persisted values are normalised on read: a step this build does not have falls
+back to 100% and is written back, because an unrecognised number applied to the
+root font size would scale the app to a size no control could express.
+
+### The rest
+
 Binding, and carried over from the previous build's audit:
 
 - Single `<main>` landmark with a skip-link target (`F-P2-8`).
@@ -294,7 +328,9 @@ Binding, and carried over from the previous build's audit:
 - `role="alert"` on status regions, `role="status"` on copy confirmation.
 - Status never signalled by colour alone — every chip carries its word.
 - Per-row toggles get a wrapping `<label>` naming the specific addon.
-- Reduced motion honoured from both the OS and the in-app switch.
+- Reduced motion honoured from both the OS and the in-app switch. The switch
+  lives under **Accessibility**, not Appearance — it is the same control the OS
+  exposes there, not a matter of taste.
 - Light-theme status colours are darkened specifically to hold contrast against
   white surfaces, where the dark theme's brighter values would fail.
 

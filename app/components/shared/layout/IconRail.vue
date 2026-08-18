@@ -12,7 +12,7 @@
   <nav
     class="flex shrink-0 flex-col gap-1.5 overflow-hidden border-r border-base-300 bg-base-200 px-2 py-2"
     :class="[
-      appStore.railExpanded ? 'w-[200px]' : 'w-[54px]',
+      appStore.railExpanded ? 'w-[12.5rem]' : 'w-[3.375rem]',
       anim('transition-[width] duration-[220ms] ease-[var(--ease-out-quick)]'),
     ]"
     aria-label="Main"
@@ -21,7 +21,7 @@
       v-for="item in destinations"
       :key="item.label"
       :to="item.to"
-      class="relative flex h-[38px] w-full items-center overflow-hidden rounded-lg transition-colors duration-150 ease-[var(--ease-standard)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      class="relative flex h-[2.375rem] w-full items-center overflow-hidden rounded-lg transition-colors duration-150 ease-[var(--ease-standard)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       :class="[
         tooltipClass,
         isActive(item)
@@ -37,10 +37,10 @@
            destination is not signalled by hue alone. -->
       <span
         v-if="isActive(item)"
-        class="absolute -left-2 top-2.5 bottom-2.5 w-[3px] rounded-r bg-primary"
+        class="absolute -left-2 top-2.5 bottom-2.5 w-[0.1875rem] rounded-r bg-primary"
         aria-hidden="true"
       />
-      <span class="grid size-[38px] shrink-0 place-items-center">
+      <span class="grid size-[2.375rem] shrink-0 place-items-center">
         <Icon
           :name="item.icon"
           size="1.1875rem"
@@ -60,7 +60,7 @@
 
     <NuxtLink
       to="/settings"
-      class="relative flex h-[38px] w-full items-center overflow-hidden rounded-lg transition-colors duration-150 ease-[var(--ease-standard)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      class="relative flex h-[2.375rem] w-full items-center overflow-hidden rounded-lg transition-colors duration-150 ease-[var(--ease-standard)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       :class="[
         tooltipClass,
         isSettings
@@ -73,10 +73,10 @@
     >
       <span
         v-if="isSettings"
-        class="absolute -left-2 top-2.5 bottom-2.5 w-[3px] rounded-r bg-primary"
+        class="absolute -left-2 top-2.5 bottom-2.5 w-[0.1875rem] rounded-r bg-primary"
         aria-hidden="true"
       />
-      <span class="grid size-[38px] shrink-0 place-items-center">
+      <span class="grid size-[2.375rem] shrink-0 place-items-center">
         <Icon
           name="mdi:cog-outline"
           size="1.1875rem"
@@ -95,14 +95,14 @@
     <div class="mt-0.5 border-t border-base-300 pt-1.5">
       <button
         type="button"
-        class="relative flex h-[38px] w-full items-center overflow-hidden rounded-lg text-base-content/40 transition-colors duration-150 ease-[var(--ease-standard)] hover:bg-base-300 hover:text-base-content focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        class="relative flex h-[2.375rem] w-full items-center overflow-hidden rounded-lg text-base-content/40 transition-colors duration-150 ease-[var(--ease-standard)] hover:bg-base-300 hover:text-base-content focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         :class="tooltipClass"
         :data-tip="appStore.railExpanded ? 'Collapse sidebar' : 'Expand sidebar'"
         :aria-label="appStore.railExpanded ? 'Collapse sidebar' : 'Expand sidebar'"
         :aria-expanded="appStore.railExpanded"
         @click="appStore.toggleRail()"
       >
-        <span class="grid size-[38px] shrink-0 place-items-center">
+        <span class="grid size-[2.375rem] shrink-0 place-items-center">
           <Icon
             name="mdi:chevron-right"
             size="1.1875rem"

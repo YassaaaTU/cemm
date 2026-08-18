@@ -4,7 +4,7 @@
     @dblclick="onTitleBarDoubleClick"
   >
     <div class="flex items-center gap-2">
-      <BrandMark class="size-[17px] shrink-0 text-primary" />
+      <BrandMark class="size-[1.0625rem] shrink-0 text-primary" />
       <span class="text-[0.8125rem] font-bold tracking-[0.04em]">CEMM</span>
     </div>
 
@@ -29,7 +29,7 @@
       >
         <button
           type="button"
-          class="flex w-10 items-center justify-center text-base-content/55 transition-colors duration-100 hover:bg-base-300 hover:text-base-content focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-primary"
+          class="flex w-10 items-center justify-center text-base-content/55 transition-colors duration-100 hover:bg-base-300 hover:text-base-content focus-visible:outline-2 focus-visible:outline-offset-[-0.1875rem] focus-visible:outline-primary"
           aria-label="Minimise window"
           @click="minimize"
         >
@@ -41,7 +41,7 @@
         </button>
         <button
           type="button"
-          class="flex w-10 items-center justify-center text-base-content/55 transition-colors duration-100 hover:bg-base-300 hover:text-base-content focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-primary"
+          class="flex w-10 items-center justify-center text-base-content/55 transition-colors duration-100 hover:bg-base-300 hover:text-base-content focus-visible:outline-2 focus-visible:outline-offset-[-0.1875rem] focus-visible:outline-primary"
           :aria-label="isMaximized ? 'Restore window' : 'Maximise window'"
           @click="toggleMaximize"
         >
@@ -55,7 +55,7 @@
              Windows and the common Linux desktops. -->
         <button
           type="button"
-          class="flex w-10 items-center justify-center text-base-content/55 transition-colors duration-100 hover:bg-error hover:text-error-content focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-primary"
+          class="flex w-10 items-center justify-center text-base-content/55 transition-colors duration-100 hover:bg-error hover:text-error-content focus-visible:outline-2 focus-visible:outline-offset-[-0.1875rem] focus-visible:outline-primary"
           aria-label="Close window"
           @click="close"
         >

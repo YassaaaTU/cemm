@@ -41,14 +41,45 @@
             </button>
           </div>
         </SettingsRow>
+      </SettingsGroup>
+
+      <!--
+        Reduce animation used to sit under Appearance, beside the theme. It is
+        not a matter of taste — it is the same control the OS exposes under
+        accessibility, and it belongs with the others rather than filed as
+        decoration.
+      -->
+      <SettingsGroup title="Accessibility">
+        <SettingsRow label="Interface scale">
+          <template #description>
+            Resizes everything — text, rows, the rail and the controls — not
+            just the type. Ctrl and + or − steps it, Ctrl and 0 returns to 100%.
+          </template>
+
+          <div class="join">
+            <button
+              v-for="step in uiScaleSteps"
+              :key="step"
+              type="button"
+              class="btn join-item btn-sm border-base-300 font-mono tabular-nums"
+              :class="themeStore.uiScale === step ? 'btn-primary' : ''"
+              :aria-pressed="themeStore.uiScale === step"
+              :aria-label="`Interface scale ${step} percent`"
+              @click="themeStore.setUiScale(step)"
+            >
+              {{ step }}%
+            </button>
+          </div>
+        </SettingsRow>
 
         <SettingsRow
           label="Reduce animation"
           label-for="settings-motion"
         >
           <template #description>
-            Turns off panel transitions and progress easing. If your system
-            already asks for reduced motion, that is honoured either way.
+            Turns off panel transitions, the rail's resize and progress easing.
+            If your system already asks for reduced motion, that is honoured
+            either way.
           </template>
 
           <!-- The visible <label for> is emitted by SettingsRow, so the naming
@@ -177,6 +208,7 @@
 
 <script setup lang="ts">
 import type { ThemePreference } from '~/stores/theme'
+import { UI_SCALE_STEPS } from '~/stores/theme'
 import pkg from '~~/package.json'
 
 const updater = useUpdater()
@@ -188,6 +220,8 @@ const packageVersion = pkg.version
 const lastUpdateCheck = ref('')
 const checking = ref(false)
 const appVersion = ref<string | null>(null)
+
+const uiScaleSteps = UI_SCALE_STEPS
 
 const themeOptions: Array<{ value: ThemePreference, label: string, icon: string }> = [
 	{ value: 'system', label: 'Match system', icon: 'mdi:monitor' },
