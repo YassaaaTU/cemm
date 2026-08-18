@@ -43,7 +43,7 @@
 
     <!-- Column heads -->
     <div
-      class="grid shrink-0 items-center gap-4 border-b border-base-300/60 px-4 py-2 text-xs font-medium text-base-content/45"
+      class="grid shrink-0 items-center gap-4 border-b border-base-300/60 px-4 py-2 text-xs font-medium text-base-content/60"
       :class="gridClass"
       role="presentation"
     >
@@ -119,12 +119,12 @@
             <span class="min-w-0">
               <span
                 class="block truncate text-[0.9375rem] font-medium"
-                :class="row.struck === true ? 'text-base-content/45 line-through decoration-error' : ''"
+                :class="row.struck === true ? 'text-base-content/60 line-through decoration-error' : ''"
                 :title="row.name"
               >{{ row.name }}</span>
               <span
                 v-if="row.subtitle.length > 0"
-                class="block truncate font-mono text-xs text-base-content/45"
+                class="block truncate font-mono text-xs text-base-content/60"
                 :title="row.subtitle"
               >{{ row.subtitle }}</span>
             </span>
@@ -145,7 +145,7 @@
                  Setting this to the filename duplicated it in two columns. -->
             <span
               v-if="row.versionNote.length > 0"
-              class="block truncate text-xs text-base-content/45"
+              class="block truncate text-xs text-base-content/60"
               :title="row.versionNote"
             >{{ row.versionNote }}</span>
           </span>
@@ -219,6 +219,18 @@ const props = withDefaults(
 )
 
 const search = ref('')
+
+/**
+ * The admin panel swaps categories through the same component instance rather
+ * than remounting it, so a term typed while browsing Mods used to survive into
+ * Data packs — where it hid a list that was not actually empty behind
+ * "Nothing matches". The id changes with the dataset, so it is the signal that
+ * this is a different list and the filter no longer applies.
+ */
+watch(() => props.id, () =>
+{
+	search.value = ''
+})
 
 const gridClass = computed(() =>
 {

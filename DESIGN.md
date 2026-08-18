@@ -267,6 +267,33 @@ What deliberately does **not** move: the diff tallies (data being read before a
 destructive action must never animate), the theme switch, and addon rows
 (removed after review — a virtualised list of 300 does not need a cascade).
 
+## State
+
+Every surface has a resting, busy, error and finished state, and the rules that
+keep them from lying to the user:
+
+- **A cleared surface goes fully back to resting.** Clearing a finished install
+  used to leave the "Update installed" banner above an empty code field — the
+  app reporting success for something the user had just cleared away. Clearing
+  and starting over are now the same reset.
+- **A filter belongs to the list it was typed against.** `AddonTable` is reused
+  across the admin's categories rather than remounted, so a term typed in Mods
+  survived into Data packs and hid a list that was not actually empty behind
+  "Nothing matches". The search resets when the dataset does.
+- **Cancelling is not failing.** Backing out of a native file dialog produced a
+  six-second warning toast reporting that nothing had happened. It now returns
+  quietly; only real failures notify.
+- **Consent resets with the thing consented to** — the deletion acknowledgement
+  clears on every fetch, but survives a *failed* install, because the diff on
+  screen is still the one that was agreed to.
+- Switching counters destroys the panel, so no admin state can leak into the
+  player's screen or vice versa.
+
+The faintest text tier (`base-content/45`) was raised to `/60`. At 12px on
+`base-200` it was the one step in the muted scale that was hard to read in both
+themes rather than merely quiet, and it carried real labels — "Installing to",
+"Update code", and every on-disk filename in the table.
+
 ## Notifications
 
 Outcomes are **toasts** (`vue-sonner`, bottom-right, offset above the action

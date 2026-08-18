@@ -36,7 +36,9 @@ export function useAdminApi()
 		const filePath = await selectFile()
 		if (filePath == null || filePath.length === 0)
 		{
-			setStatus('No file selected.', 'warning')
+			// Backing out of the native file dialog is a decision, not a failure.
+			// Toasting a warning for it meant every accidental Escape produced a
+			// six-second notification reporting that nothing had happened.
 			return { success: false }
 		}
 

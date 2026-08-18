@@ -32,7 +32,7 @@
           </span>
 
           <span class="min-w-0 flex-1">
-            <span class="block text-xs font-medium uppercase tracking-wide text-base-content/45">
+            <span class="block text-xs font-medium uppercase tracking-wide text-base-content/60">
               Installing to
             </span>
             <span
@@ -78,7 +78,7 @@
         <!-- Then the code — the only thing that changes per update. -->
         <div class="px-4 py-3">
           <label
-            class="mb-1.5 block text-xs font-medium uppercase tracking-wide text-base-content/45"
+            class="mb-1.5 block text-xs font-medium uppercase tracking-wide text-base-content/60"
             for="user-update-code"
           >
             Update code
@@ -586,6 +586,10 @@ const clearFetched = () =>
 	configFilesDownloaded.value = false
 	downloadedConfigFiles.value = []
 	progress.value = 0
+	// Clearing after a finished install used to leave installComplete set, which
+	// held the "Update installed" panel on screen above an empty code field —
+	// the app reporting success for something the user had just cleared away.
+	installComplete.value = false
 	clearStatus()
 }
 
@@ -697,7 +701,6 @@ async function performInstall()
 
 const startOver = () =>
 {
-	installComplete.value = false
 	clearFetched()
 }
 
