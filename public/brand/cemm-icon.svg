@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="CEMM">
+  <title>CEMM</title>
+
+  <!-- The tile. Violet is CEMM's accent precisely because it is neither
+       Modrinth's green nor CurseForge's orange: the icon has to sit beside
+       both in a taskbar and read as a peer, not a clone. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#8172F7"/>
+      <stop offset="1" stop-color="#5B4BE0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" rx="192" fill="url(#tile)"/>
+
+  <!--
+    The mark: an isometric box with its lid lifted clear of the body.
+
+    This is the product in one shape. CEMM does not ship a modpack; it ships
+    the DIFFERENCE to a pack you already have, so the glyph is a container
+    receiving a part rather than a closed cube. Faces are filled rather than
+    outlined because the icon has to survive being drawn at 16px, where a
+    1px stroke disappears.
+
+    Geometry is authored on a 24-unit isometric grid and scaled once, so the
+    lid and the body share exactly the same projection angles.
+  -->
+  <g transform="translate(88,121.567) scale(35.3333)">
+    <!-- Lid — the arriving part, held 1.9 units above the body it belongs to. -->
+    <path d="M12 0.7 21 5.1 12 10.3 3 5.1Z" fill="#FFFFFF"/>
+
+    <!-- Body, left face. Full white: the face turned toward the light. -->
+    <path d="M3 7 12 12.2 12 21.4 3 17Z" fill="#FFFFFF"/>
+
+    <!-- Body, right face. Held back so the two planes separate without a
+         shadow, a bevel or a stroke: the theme runs flat, at zero depth. -->
+    <path d="M21 7 21 17 12 21.4 12 12.2Z" fill="#FFFFFF" fill-opacity="0.72"/>
+  </g>
+</svg>

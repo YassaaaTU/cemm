@@ -1,25 +1,33 @@
 <template>
-  <!-- An isometric cube split along its top face: one pack, assembled from
-       parts that arrive separately. Drawn rather than pulled from an icon set
-       because it is the product's identity. -->
+  <!-- An isometric box with its lid lifted clear of the body: one pack, and the
+       part that is arriving to join it. CEMM never ships a whole modpack, only
+       the difference to one you already have, so the mark is a container
+       receiving something rather than a closed cube.
+
+       Faces are filled rather than outlined because this is drawn at 17px in
+       the title bar, where a 1.4px stroke closes up into a smudge. The same
+       geometry, on a violet tile, is `public/brand/cemm-icon.svg` — the source
+       the whole Tauri icon set is generated from, so the window icon and the
+       mark inside the window are the one shape. -->
   <svg
-    viewBox="0 0 24 24"
-    fill="none"
+    viewBox="1.65 0.7 20.7 20.7"
+    fill="currentColor"
     role="img"
     :aria-label="title"
   >
     <title>{{ title }}</title>
+
+    <!-- Lid — the arriving part. -->
+    <path d="M12 0.7 21 5.1 12 10.3 3 5.1Z" />
+
+    <!-- Body, left face. -->
+    <path d="M3 7 12 12.2 12 21.4 3 17Z" />
+
+    <!-- Body, right face. Held back so the two planes read as separate
+         without a shadow, a bevel or a stroke; the theme runs at zero depth. -->
     <path
-      d="M12 2.6 21 7v10l-9 4.4L3 17V7l9-4.4Z"
-      stroke="currentColor"
-      stroke-width="1.7"
-      stroke-linejoin="round"
-    />
-    <path
-      d="M12 12.2 21 7.6M12 12.2v9M12 12.2 3 7.6"
-      stroke="currentColor"
-      stroke-width="1.4"
-      stroke-linejoin="round"
+      d="M21 7 21 17 12 21.4 12 12.2Z"
+      fill-opacity="0.72"
     />
   </svg>
 </template>

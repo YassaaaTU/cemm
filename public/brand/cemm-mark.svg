@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="1.65 0.7 20.7 20.7" width="128" height="128" fill="currentColor" role="img" aria-label="CEMM">
+  <title>CEMM</title>
+
+  <!--
+    The mark on its own, with no tile and no colour of its own: it inherits
+    currentColor so it can sit on a README, a light page or a dark one without
+    a second file. `public/brand/cemm-icon.svg` is the same geometry on the
+    violet tile, and is the source the Tauri icon set is generated from.
+
+    The shape is an isometric box with its lid lifted clear of the body,
+    because that is what the product does — it does not ship a modpack, it
+    ships the difference to a pack you already have.
+  -->
+
+  <!-- Lid: the arriving part. -->
+  <path d="M12 0.7 21 5.1 12 10.3 3 5.1Z"/>
+
+  <!-- Body, left face. -->
+  <path d="M3 7 12 12.2 12 21.4 3 17Z"/>
+
+  <!-- Body, right face, held back so the two planes separate without a
+       shadow, a bevel or a stroke: the theme runs flat, at zero depth. -->
+  <path d="M21 7 21 17 12 21.4 12 12.2Z" fill-opacity="0.72"/>
+</svg>

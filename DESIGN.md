@@ -172,6 +172,7 @@ exactly that.
 | `IconRail` | Destination rail in two widths, sole owner of mode switching |
 | `WorkspacePage` | Heading / context / scroll / pinned actions frame |
 | `EmptyState` | Resting state carrying its own next action |
+| `BrandMark` | The identity glyph, filled, inheriting `currentColor` |
 | `SettingsGroup` | Titled panel of setting rows; `as` lets it be a `<form>` |
 | `SettingsRow` | One setting: label and description left, control right |
 | `AddonTable` | The dense list — thumbnail, name + filename, version + note, action slot |
@@ -189,6 +190,32 @@ real `.jar` filename beneath, version with context under it (`from 15.2.0.27`,
 Admin exclusion is a **toggle**, matching how both reference apps enable and
 disable a mod. Off means the addon stays on the maintainer's machine and is left
 out of the upload; the row strikes through, dims and tints.
+
+## Identity
+
+The mark is an **isometric box with its lid lifted clear of the body**. CEMM
+never ships a whole modpack, only the difference to one you already have, so the
+glyph is a container receiving a part rather than a closed cube.
+
+Faces are filled, not outlined. The mark is drawn at 17px in the title bar and
+16px in the Windows taskbar, and at that size the previous 1.4px stroke closed
+up into a smudge.
+
+One geometry, two files, both in `public/brand`:
+
+| File | Use |
+| --- | --- |
+| `cemm-mark.svg` | The glyph alone, `currentColor`, no tile — README, docs, anywhere the surface colour is not ours |
+| `cemm-icon.svg` | The same glyph on the violet tile, 1024px — the **source** for the whole Tauri icon set |
+
+`bunx tauri icon public/brand/cemm-icon.svg` regenerates `src-tauri/icons` from
+that one file, so the window icon and the mark inside the window can never drift
+apart. The generated Android and iOS sets are deleted: this is a desktop app and
+`tauri.conf.json` references neither.
+
+The tile is violet for the same reason the accent is — green is Modrinth's and
+orange is CurseForge's, and the icon has to sit beside both in a taskbar reading
+as a peer rather than a clone.
 
 ## Safety
 
