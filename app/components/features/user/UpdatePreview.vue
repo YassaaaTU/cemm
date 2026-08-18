@@ -87,7 +87,7 @@
             v-for="option in filters"
             :key="option.value"
             type="button"
-            class="rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors duration-150 ease-[var(--ease-standard)]"
+            class="cursor-pointer rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors duration-150 ease-[var(--ease-standard)]"
             :class="activeFilter === option.value
               ? 'border-primary bg-primary/15 text-primary'
               : 'border-base-300 bg-base-100 text-base-content/60 hover:text-base-content'"

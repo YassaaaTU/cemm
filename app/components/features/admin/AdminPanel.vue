@@ -58,7 +58,7 @@
           </span>
           <button
             type="button"
-            class="link link-hover text-[0.6875rem] font-medium text-primary"
+            class="link link-hover cursor-pointer text-[0.6875rem] font-medium text-primary"
             :aria-expanded="editingName"
             @click="editingName = !editingName"
           >
@@ -134,7 +134,7 @@
             v-for="pane in panes"
             :key="pane.key"
             type="button"
-            class="rounded-full border px-3 py-1 text-[0.8125rem] font-medium transition-colors duration-150 ease-[var(--ease-standard)]"
+            class="cursor-pointer rounded-full border px-3 py-1 text-[0.8125rem] font-medium transition-colors duration-150 ease-[var(--ease-standard)]"
             :class="activePane === pane.key
               ? 'border-primary bg-primary/15 text-primary'
               : 'border-base-300 bg-base-200 text-base-content/60 hover:text-base-content'"

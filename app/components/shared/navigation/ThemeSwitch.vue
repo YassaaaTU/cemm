@@ -29,7 +29,7 @@
       >
         <button
           type="button"
-          class="flex items-center gap-2.5 text-sm"
+          class="flex cursor-pointer items-center gap-2.5 text-sm"
           :class="{ 'menu-active': themeStore.preference === option.value }"
           @click="choose(option.value)"
         >

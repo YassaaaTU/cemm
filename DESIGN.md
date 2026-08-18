@@ -238,6 +238,29 @@ The diff is the product's most consequential screen and its treatment is fixed:
 4. The acknowledgement checkbox gates the button, and **resets on every fetch** —
    consent to one diff is not consent to a different one.
 
+## Micro-interactions
+
+**Every interactive control shows a pointer.** Tailwind v4's Preflight dropped
+`cursor: pointer` from `<button>`. daisyUI's `.btn` puts it back, so styled
+buttons were fine and the gap was invisible — but every *custom-styled* control
+in the app was silently on `cursor: default`: the three window controls, the
+rail's collapse toggle, the admin category pills, the diff filter pills, the
+rename button and the theme menu items. Any bare `<button>` added from here on
+needs `cursor-pointer` explicitly; there is no global rule doing it.
+
+**A native `<button>` centres its own content**, whatever its `display` says.
+That is what made the two setup cards look crooked: with one description running
+to three lines and the other to two, the shorter card's icon sat 11.4px lower
+and its call to action 11.4px higher — half a line-height — even though both
+cards were the same height and the same top. The cards were not unequal, they
+were anchored differently.
+
+The fix is layout, not copy: the card is an explicit `flex flex-col`, which
+overrides the centring and tops the icon out, and `mt-auto` on the call to
+action pins it to the floor. The description then floats between two fixed
+anchors and its length stops mattering — verified holding at four lines against
+two. Matching the copy would only have hidden the bug until the next edit.
+
 ## Motion
 
 One language: `--ease-out-quick` for entrances, `--ease-standard` for state.

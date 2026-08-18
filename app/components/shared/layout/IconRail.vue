@@ -95,7 +95,7 @@
     <div class="mt-0.5 border-t border-base-300 pt-1.5">
       <button
         type="button"
-        class="relative flex h-[2.375rem] w-full items-center overflow-hidden rounded-lg text-base-content/40 transition-colors duration-150 ease-[var(--ease-standard)] hover:bg-base-300 hover:text-base-content focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        class="relative flex h-[2.375rem] w-full cursor-pointer items-center overflow-hidden rounded-lg text-base-content/40 transition-colors duration-150 ease-[var(--ease-standard)] hover:bg-base-300 hover:text-base-content focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         :class="tooltipClass"
         :data-tip="appStore.railExpanded ? 'Collapse sidebar' : 'Expand sidebar'"
         :aria-label="appStore.railExpanded ? 'Collapse sidebar' : 'Expand sidebar'"

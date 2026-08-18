@@ -28,14 +28,27 @@
         v-if="chosen === null"
         class="grid gap-3 sm:grid-cols-2"
       >
+        <!--
+          An explicit flex column, and that is load-bearing rather than tidying.
+          A native <button> vertically CENTRES its content, so with one card's
+          description running to three lines and the other's to two, the shorter
+          card's icon sat 11.4px lower and its call to action 11.4px higher —
+          half a line-height — even though both cards were exactly the same
+          height. The two cards were anchored differently, which is what read as
+          crooked; matching the copy would only have hidden it.
+
+          Column layout tops the icon out, `mt-auto` pins the call to action to
+          the floor, and the descriptions are free to differ in length between
+          two fixed anchors.
+        -->
         <button
           v-for="counter in counters"
           :key="counter.mode"
           type="button"
-          class="group rounded-box border border-base-300 bg-base-200 p-4 text-left transition-colors duration-200 ease-[var(--ease-standard)] hover:border-primary/60 hover:bg-base-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          class="group flex cursor-pointer flex-col rounded-box border border-base-300 bg-base-200 p-4 text-left transition-colors duration-200 ease-(--ease-standard) hover:border-primary/60 hover:bg-base-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           @click="chosen = counter.mode"
         >
-          <span class="grid size-10 place-items-center rounded-box bg-primary/15 text-primary">
+          <span class="grid size-10 shrink-0 place-items-center rounded-box bg-primary/15 text-primary transition-colors duration-200 ease-(--ease-standard) group-hover:bg-primary/25">
             <Icon
               :name="counter.icon"
               size="1.25rem"
@@ -48,12 +61,12 @@
             {{ counter.description }}
           </span>
 
-          <span class="mt-3 flex items-center gap-1.5 text-sm font-medium text-primary">
+          <span class="mt-auto flex items-center gap-1.5 pt-3 text-sm font-medium text-primary">
             {{ counter.action }}
             <Icon
               name="mdi:arrow-right"
               size="0.9375rem"
-              class="transition-transform duration-200 ease-[var(--ease-out-quick)] group-hover:translate-x-1"
+              class="transition-transform duration-200 ease-(--ease-out-quick) group-hover:translate-x-1"
               aria-hidden="true"
             />
           </span>
@@ -175,7 +188,7 @@ const counters: Array<{ mode: AppMode, title: string, description: string, actio
 	{
 		mode: 'user',
 		title: 'Install an update',
-		description: 'Someone sent you a code. Paste it in, see exactly what changes, and apply it to your modpack.',
+		description: 'Someone sent you a code. Paste it in, see exactly what changes, then apply it.',
 		action: 'Set this up',
 		icon: 'mdi:tray-arrow-down'
 	},
