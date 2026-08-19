@@ -100,21 +100,27 @@
         icon="mdi:folder-search-outline"
         title="No instance loaded"
       >
-        Pick the modpack folder you have been modifying. CEMM reads its
+        Pick the modpack you have been modifying. CEMM reads its
         <span class="font-mono text-xs">minecraftinstance.json</span> and builds the
         list of addons you are running.
         <template #action>
-          <button
-            type="button"
+          <NuxtLink
+            to="/packs"
             class="btn gap-1.5 btn-primary btn-sm"
-            @click="handleLoadInstance"
           >
             <Icon
-              name="mdi:folder-open-outline"
+              name="mdi:view-grid-outline"
               size="1rem"
               aria-hidden="true"
             />
-            Choose instance folder
+            Browse your packs
+          </NuxtLink>
+          <button
+            type="button"
+            class="btn btn-sm"
+            @click="handleLoadInstance"
+          >
+            Choose a file instead
           </button>
         </template>
       </EmptyState>
@@ -200,10 +206,7 @@
           Excluded addons stay installed on your machine — they are simply left out
           of what you publish. Use this for server-side or private mods.
           <template v-if="disabledExcludedCount > 0">
-            {{ disabledExcludedCount }}
-            {{ disabledExcludedCount === 1 ? 'addon is' : 'addons are' }}
-            switched off in CurseForge and start excluded; switch one back on here
-            to publish it anyway.
+            {{ disabledNote }}
           </template>
         </p>
       </div>
@@ -298,6 +301,7 @@ const { loadInstance, saveManifest, uploadToGithub } = useAdminApi()
 const { notify } = useNotify()
 const { paneTransition } = useMotion()
 const manifestStore = useManifestStore()
+const packsStore = usePacksStore()
 const { $logger: logger } = useNuxtApp()
 
 const uploading = ref(false)
@@ -313,7 +317,14 @@ const latestUpdateReference = ref('')
 const copied = ref(false)
 const copyStatus = ref('')
 const editingName = ref(false)
-const instanceDir = ref('')
+
+/**
+ * Where the loaded instance came from. Read off the manifest store rather than
+ * held locally, because this panel is now sometimes mounted *after* the load —
+ * the pack library loads a card and then navigates here, and a local ref would
+ * be empty at that moment.
+ */
+const instanceDir = computed(() => manifestStore.sourcePath)
 
 const activePane = ref('mods')
 
@@ -344,6 +355,14 @@ const disabledExcludedCount = computed(
  * can do nothing — clearing exclusions never re-includes a disabled addon.
  */
 const manualExcludedCount = computed(() => excludedCount.value - disabledExcludedCount.value)
+
+const disabledNote = computed(() =>
+{
+	const count = disabledExcludedCount.value
+	return count === 1
+		? 'One addon is switched off in CurseForge, so it starts excluded — switch it back on here to publish it anyway.'
+		: `${count} addons are switched off in CurseForge, so they start excluded — switch one back on here to publish it anyway.`
+})
 
 /** Action-bar tally. The disabled figure is stated as a subset, not an addend. */
 const excludedSummary = computed(() =>
@@ -465,9 +484,9 @@ async function handleLoadInstance()
 {
 	clearStatus()
 	const result = await loadInstance(setStatus)
-	if (typeof result.instanceDir === 'string')
+	if (result.success && typeof result.instanceDir === 'string')
 	{
-		instanceDir.value = result.instanceDir
+		packsStore.recordOpened(result.instanceDir)
 	}
 	if (manifest.value !== null)
 	{
@@ -515,6 +534,11 @@ async function handleUploadToGithub()
 		{
 			latestUpdateReference.value = result.updateReference
 			progress.value = 100
+			// The pack library sorts on this, and shows it as "Published 3d ago".
+			if (instanceDir.value.length > 0)
+			{
+				packsStore.recordPublished(instanceDir.value)
+			}
 		}
 	}
 	finally

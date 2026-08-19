@@ -192,6 +192,19 @@
       >
         Paste the code your admin sent you. You will see exactly what is added,
         updated and deleted before anything touches your modpack.
+        <template #action>
+          <NuxtLink
+            to="/packs"
+            class="btn gap-1.5 btn-sm"
+          >
+            <Icon
+              name="mdi:view-grid-outline"
+              size="1rem"
+              aria-hidden="true"
+            />
+            Browse your packs
+          </NuxtLink>
+        </template>
       </EmptyState>
     </Transition>
 
@@ -295,9 +308,21 @@ const { notify } = useNotify()
 const { paneTransition } = useMotion()
 const manifestStore = useManifestStore()
 const appStore = useAppStore()
+const packsStore = usePacksStore()
 const { $logger: logger } = useNuxtApp()
 
-const uuid = ref('')
+/**
+ * Held on the manifest store, not locally, so the pack library can set the code
+ * and the destination together and navigate straight here — this panel then
+ * mounts already knowing which update it is showing.
+ */
+const uuid = computed({
+	get: () => manifestStore.updateCode,
+	set: (value: string) =>
+	{
+		manifestStore.updateCode = value
+	}
+})
 const progress = ref(0)
 /** Eased for display so event-driven jumps do not read as a broken bar. */
 const { displayed: smoothProgress } = useSmoothProgress(progress)
@@ -728,6 +753,11 @@ async function performInstall()
 		)
 		updateApplied.value = installed
 		installPhase.value = installed ? 'done' : 'failed'
+		if (installed)
+		{
+			// The pack library sorts on this, and shows it as "Updated 3d ago".
+			packsStore.recordInstalled(appStore.modpackPath)
+		}
 	}
 	finally
 	{

@@ -79,3 +79,64 @@ export interface UpdateDiff
 	updated_addon_ids: number[] // project IDs of addons that were updated (matched by project_id for reliability)
 	new_addons: string[] // completely new addon names
 }
+
+/**
+ * One of CurseForge's instance groups.
+ *
+ * Mirrored in Rust: src-tauri/src/composables/instances.rs (PackGroup).
+ */
+export interface PackGroup
+{
+	id: string
+	name: string
+}
+
+/**
+ * A modpack as the library lists it — enough to recognise and choose one, and
+ * deliberately not a Manifest. Loading a pack for real still goes through
+ * parse_minecraft_instance.
+ *
+ * Mirrored in Rust: src-tauri/src/composables/instances.rs (PackSummary).
+ */
+export interface PackSummary
+{
+	/** Folder holding minecraftinstance.json. The identity key everywhere. */
+	instancePath: string
+	instanceFile: string
+	/**
+	 * The directory's own name, which is not always the pack's: a real library
+	 * holds a folder called `All the Mods 10 - ATM10 (2)` containing a pack
+	 * named `Aeronautics`. Both are shown so a card is never ambiguous.
+	 */
+	folderName: string
+	name: string
+	gameVersion: string | null
+	/** Loader family only — `NeoForge`, not `neoforge-21.1.228`. */
+	loader: string | null
+	groupId: string | null
+	addonCount: number
+	/** RFC 3339. CurseForge writes year 0001 for "never played". */
+	lastPlayed: string | null
+	playedCount: number
+	/** A `data:` URI, or null. Never a remote URL. */
+	icon: string | null
+	projectId: number | null
+}
+
+/**
+ * Mirrored in Rust: src-tauri/src/composables/instances.rs (PackLibrary).
+ */
+export interface PackLibrary
+{
+	instancesDir: string | null
+	/**
+	 * `curseforge` when found from CurseForge's own settings, `manual` when the
+	 * folder was supplied, `none` when there was nothing to scan. "You have no
+	 * packs" and "I could not find CurseForge" are different problems.
+	 */
+	source: 'curseforge' | 'manual' | 'none'
+	packs: PackSummary[]
+	groups: PackGroup[]
+	/** Instances that could not be read. One bad pack must not cost the rest. */
+	warnings: string[]
+}

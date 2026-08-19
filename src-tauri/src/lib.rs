@@ -15,10 +15,12 @@ fn normalize_path(path: &str) -> String {
 
 mod composables {
     pub mod github;
+    pub mod instances;
     pub mod manifest;
 }
 
 pub use composables::github::{download_config_files, download_manifest, upload_update};
+pub use composables::instances::{scan_pack_library, PackGroup, PackLibrary, PackSummary};
 pub use composables::manifest::{
     compare_manifests, open_curseforge_url, open_url, parse_minecraft_instance, Addon, Manifest,
     UpdateInfo,
@@ -50,7 +52,8 @@ pub fn run() {
             select_multiple_files,
             read_directory_recursive,
             is_binary_file,
-            validate_path
+            validate_path,
+            scan_pack_library
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

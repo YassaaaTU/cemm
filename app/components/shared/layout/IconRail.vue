@@ -141,7 +141,11 @@ interface Destination
 
 const destinations: Destination[] = [
 	{ label: 'Install update', to: '/dashboard', icon: 'mdi:tray-arrow-down', mode: 'user' },
-	{ label: 'Publish update', to: '/dashboard', icon: 'mdi:tray-arrow-up', mode: 'admin' }
+	{ label: 'Publish update', to: '/dashboard', icon: 'mdi:tray-arrow-up', mode: 'admin' },
+	// A peer destination rather than a landing screen: the job is still to ship
+	// or receive an update, and a library you must pass through every launch is
+	// the interstitial this build already removed once.
+	{ label: 'Your packs', to: '/packs', icon: 'mdi:view-grid-outline' }
 ]
 
 const isSettings = computed(() => route.path === '/settings')
@@ -176,11 +180,14 @@ const labelClass = computed(() =>
 })
 
 /**
- * Both counters live on /dashboard, so the active rail item is decided by the
- * current mode rather than by the route alone.
+ * Both counters live on /dashboard, so their active state is decided by the
+ * current mode rather than by the route alone. Destinations with no mode — the
+ * pack library — are ordinary routes and match on the path.
  */
 const isActive = (item: Destination) =>
-	route.path === '/dashboard' && item.mode === appStore.mode
+	item.mode === undefined
+		? route.path === item.to
+		: route.path === '/dashboard' && item.mode === appStore.mode
 
 const selectMode = (next: AppMode) =>
 {

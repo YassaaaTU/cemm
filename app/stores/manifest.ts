@@ -22,6 +22,20 @@ export const useManifestStore = defineStore('manifest', () =>
 	const updateInfo = ref<ManifestUpdateInfo | null>(null)
 	const excludedAddons = ref<string[]>([])
 
+	/**
+	 * Where the loaded manifest came from, and the code it came from — both
+	 * belong to the manifest rather than to whichever panel happens to be
+	 * mounted. The pack library sets these before navigating, so a manifest
+	 * loaded from a card arrives knowing its own provenance instead of the
+	 * panel having to rediscover it.
+	 *
+	 * `sourcePath` is the instance folder (admin), `updateCode` the update
+	 * reference (player). Deliberately NOT persisted: both describe a manifest
+	 * that only lives for this session.
+	 */
+	const sourcePath = ref('')
+	const updateCode = ref('')
+
 	function setManifest(newManifest: Manifest | null)
 	{
 		// Store the current manifest as previous before setting new one
@@ -96,6 +110,8 @@ export const useManifestStore = defineStore('manifest', () =>
 		previousManifest.value = null
 		updateInfo.value = null
 		excludedAddons.value = []
+		sourcePath.value = ''
+		updateCode.value = ''
 	}
 
 	return {
@@ -103,6 +119,8 @@ export const useManifestStore = defineStore('manifest', () =>
 		previousManifest,
 		updateInfo,
 		excludedAddons,
+		sourcePath,
+		updateCode,
 		setManifest,
 		loadInstalledManifest,
 		setPreviousManifest,

@@ -103,6 +103,50 @@
         the wrong side on launch had no way back to that screen.
       -->
       <SettingsGroup title="Setup">
+        <!--
+          CEMM finds this folder from CurseForge's own settings, which works on
+          Windows and does not exist to find on Linux — CurseForge ships no
+          official build there. This row is how the library works anyway, and
+          how anyone keeping packs outside the default location points at them.
+        -->
+        <SettingsRow label="Modpack instances folder">
+          <template #description>
+            Where CEMM looks for your modpacks.
+            <template v-if="packsStore.instancesDirOverride.length > 0">
+              Currently
+              <span class="font-mono">{{ packsStore.instancesDirOverride }}</span>.
+            </template>
+            <template v-else-if="packsStore.library?.instancesDir">
+              Found automatically at
+              <span class="font-mono">{{ packsStore.library.instancesDir }}</span>.
+            </template>
+            <template v-else>
+              Not found automatically — choose it here.
+            </template>
+          </template>
+
+          <button
+            v-if="packsStore.instancesDirOverride.length > 0"
+            type="button"
+            class="btn btn-ghost btn-sm"
+            @click="resetInstancesDir"
+          >
+            Use CurseForge's
+          </button>
+          <button
+            type="button"
+            class="btn gap-1.5 border-base-300 btn-sm"
+            @click="chooseInstancesDir"
+          >
+            <Icon
+              name="mdi:folder-open-outline"
+              size="1rem"
+              aria-hidden="true"
+            />
+            Choose
+          </button>
+        </SettingsRow>
+
         <SettingsRow label="First-time setup">
           <template #description>
             Reopens the screen CEMM showed on first launch, where you chose
@@ -214,7 +258,9 @@ import pkg from '~~/package.json'
 const updater = useUpdater()
 const themeStore = useThemeStore()
 const appStore = useAppStore()
+const packsStore = usePacksStore()
 const { notify } = useNotify()
+const { selectDirectory } = useTauri()
 
 const packageVersion = pkg.version
 const lastUpdateCheck = ref('')
@@ -250,6 +296,22 @@ onMounted(async () =>
  * re-asked, the repository and folder are carried into the screen already
  * filled in, and the rail is still there to navigate away with.
  */
+const chooseInstancesDir = async () =>
+{
+	const dir = await selectDirectory()
+	if (dir === null || dir.trim().length === 0) return
+	packsStore.setInstancesDirOverride(dir)
+	await packsStore.scan(true)
+	notify('CEMM will look for your modpacks there.', 'success')
+}
+
+/** Hands discovery back to CurseForge rather than clearing the setting to nothing. */
+const resetInstancesDir = async () =>
+{
+	packsStore.setInstancesDirOverride('')
+	await packsStore.scan(true)
+}
+
 const handleRerunSetup = async () =>
 {
 	appStore.resetModeChoice()

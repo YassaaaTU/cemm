@@ -15,9 +15,12 @@
     <p class="max-w-[46ch] text-[0.8125rem] leading-relaxed text-base-content/55">
       <slot />
     </p>
+    <!-- Wraps rather than stacks: a resting state can carry a primary action and
+         a way round it — "browse your packs" beside "choose a file instead" —
+         and two bare buttons in a plain div sit flush against each other. -->
     <div
       v-if="$slots.action"
-      class="mt-1.5"
+      class="mt-1.5 flex flex-wrap items-center justify-center gap-2"
     >
       <slot name="action" />
     </div>

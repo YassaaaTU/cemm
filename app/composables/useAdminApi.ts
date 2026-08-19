@@ -27,13 +27,20 @@ export function useAdminApi()
 	} = useTauri()
 
 	/**
-   * Load a minecraftinstance.json file and convert to manifest
+   * Load a minecraftinstance.json file and convert to manifest.
+   *
+   * `knownPath` skips the native file dialog — that is how the pack library
+   * loads a card the user has already chosen. Without it the dialog opens, as
+   * before.
    */
 	async function loadInstance(
-		setStatus: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void
+		setStatus: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void,
+		knownPath?: string
 	): Promise<{ success: boolean, manifest?: Manifest, instanceDir?: string }>
 	{
-		const filePath = await selectFile()
+		const filePath = knownPath !== undefined && knownPath.trim().length > 0
+			? knownPath
+			: await selectFile()
 		if (filePath == null || filePath.length === 0)
 		{
 			// Backing out of the native file dialog is a decision, not a failure.
@@ -77,6 +84,10 @@ export function useAdminApi()
 			// Strip the trailing path segment on either separator, so this works
 			// for Windows paths as well as POSIX ones.
 			const instanceDir = filePath.replace(/[\\/][^\\/]*$/, '')
+			// Recorded on the manifest itself so any surface can name what is
+			// loaded, including one mounted after the load happened — which is
+			// exactly the case when the pack library loads a card and navigates.
+			manifestStore.sourcePath = instanceDir
 
 			return { success: true, manifest: parsed, instanceDir }
 		}

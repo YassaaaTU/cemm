@@ -105,6 +105,23 @@ So each flow is a single surface that grows:
 | Work area | Empty state → the diff | Empty state → category/config panes |
 | Action bar | Destination + acknowledgement + Install | Ship counts + Publish, then the resulting code in place |
 
+**The install does not replace the screen it was launched from.** It used to:
+pressing Install swapped the diff for a progress bar, so the thing the player
+had just read and consented to disappeared the moment they acted on it, and came
+back as a bare success panel with nothing to check it against. It now runs in a
+modal `<dialog>` over the diff, which stays put and afterwards reads as the
+record of what was applied — with its copy moved to the past tense, because a
+panel still saying "1 addon **will** be deleted" after the deletion is a surface
+reporting something untrue. Dismissing the dialog returns to that diff; nothing
+resets until the player asks for another update.
+
+Being modal is also a safety property, not just a layout one: the rail was
+clickable mid-install, which unmounted the panel while the Rust side carried on
+writing. Escape and backdrop dismissal are refused while files are being
+written, and the failure state does not claim the modpack is untouched — an
+install writes file by file, so a failure part-way through leaves what it had
+already done.
+
 The context bar **scrolls with the content**; it is not pinned. Pinning it cost
 ~150px permanently and made the diff scroll underneath it, partly hiding the
 deletions panel — the most safety-critical thing on the screen — behind an input
@@ -119,8 +136,8 @@ modpacks.
 
 Anything stable moved to first-run setup (`pages/index.vue`, which now captures
 mode, repository and folder) and stays editable inline and in Settings. There is
-no `StepRail`; install and upload progress live in the action bar, which is what
-they always were.
+no `StepRail`. Upload progress lives in the action bar, which is what it always
+was; install progress moved to its own dialog for the reason above.
 
 There is **no landing interstitial**. First run asks once, then redirects to the
 workspace forever after — but the screen is **reachable again** from
@@ -132,6 +149,55 @@ wipe the configuration made alongside it. The screen says "Setup" rather than
 
 Switching sides that way clears any loaded manifest, exactly as switching from
 the rail does — a diff fetched as a player is not the admin's working set.
+
+### The library is a third destination, not a landing screen
+
+**Your packs** reads the local CurseForge library and lists it as a card grid.
+It is a peer of Install and Publish in the rail, deliberately not the screen the
+app opens on: the job is still to ship or receive an update, and a library you
+pass through every launch is the interstitial this build already removed once.
+
+Cards rather than the app's usual dense rows, because this is the one screen
+whose job is **recognition** rather than reading — you are picking one modpack
+out of forty, which is exactly what CurseForge's and Modrinth's own overviews
+are for. It is the only place in CEMM that departs from the row grammar, and
+that departure is the reason.
+
+**History is expressed on the library, not as a second list.** A separate
+"recently used" list would be empty at the one moment it is most needed — first
+run. So packs CEMM has been used with sort to the front and carry a mark
+(`Published 3d ago`, `Updated 3d ago`), everything else falls back to how
+recently CurseForge says it was played, and a pack CEMM has used that the scan
+no longer finds stays listed as `Missing` rather than vanishing. Only
+timestamps are kept; a remembered update code sitting beside a pack that has
+since changed would be a lie waiting to happen.
+
+Every card states its **folder** as well as its name, for the reason the install
+destination already does: in a real library the folder `All the Mods 10 - ATM10
+(2)` holds a pack named `Aeronautics`, and `FTB Evolution (2)` holds one named
+`FTB Evolution (1)`. A name-only card points at something the user cannot
+identify.
+
+Filters are CurseForge's own groups, read from its `groups.json`, so the pills
+are the ones the user already organised their library with — plus `Used in
+CEMM`, `Ungrouped`, and free-text search across name, folder, version and
+loader.
+
+Clicking a card does the mode's job: in Publish it loads the instance and goes
+to the diff; in Install it asks for the update code **on the card**, so choosing
+a pack and saying which update to put on it stay one gesture.
+
+No virtualisation. The author's library is 36 packs and the scan behind it takes
+~70ms warm (~400ms cold), because the Rust side deserializes a header struct
+that counts `installedAddons` without building them. If someone turns up with
+hundreds of instances, the grid is where to revisit.
+
+**Discovery is allowed to fail.** CurseForge ships no official Linux build, so
+"no library found" is an ordinary outcome with a way forward rather than an
+error, the manual folder picker stays a first-class path, and Settings carries
+an override. A failed scan that still leaves history packs on screen shows a
+strip above the list rather than an empty state over the top of it — the screen
+must not report "no library" while its own footer counts packs.
 
 ### One control per destination
 
@@ -188,6 +254,9 @@ exactly that.
 | `AddonThumb` | Addon icon with an offline-safe coloured initial fallback |
 | `StatusChip` | Word-first status label |
 | `UpdatePreview` | The diff: four tallies, deletions panel, filtered incoming list |
+| `InstallProgressDialog` | The install, run over the diff rather than instead of it |
+| `PackCard` | One modpack in the library: icon, name, version, group, CEMM history |
+| `PackUpdateDialog` | Asks for the update code against the pack that was clicked |
 
 ### The row grammar
 
@@ -311,6 +380,19 @@ keep them from lying to the user:
   screen is still the one that was agreed to.
 - Switching counters destroys the panel, so no admin state can leak into the
   player's screen or vice versa.
+- **What was true before the action is not true after it.** The diff survives an
+  install now, so every sentence on it that described something about to happen
+  has to stop claiming that once it has — deletions in the past tense, the lede
+  saying the update has been applied, the action bar offering another rather
+  than the same one again.
+- **A failure only empties what it actually emptied.** The pack library keeps
+  showing packs CEMM knows from its own history when a scan fails, with a strip
+  saying why, rather than an empty state contradicting a footer that is still
+  counting them.
+- **"Missing" is only trusted when the scan was.** A pack absent from a failed
+  scan, or from one that found no library at all, is not offered for removal —
+  a wrong instances folder would otherwise make one click discard the history of
+  every pack at once.
 
 The faintest text tier (`base-content/45`) was raised to `/60`. At 12px on
 `base-200` it was the one step in the muted scale that was hard to read in both

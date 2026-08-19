@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { Addon, ConfigFileWithContent, Manifest, ManifestUpdateInfo, UpdateDiff } from '~/types'
+import type { Addon, ConfigFileWithContent, Manifest, ManifestUpdateInfo, PackLibrary, UpdateDiff } from '~/types'
 
 export const useTauri = () =>
 {
@@ -253,6 +253,29 @@ export const useTauri = () =>
 		}
 	}
 
+	/**
+	 * Read the local CurseForge library.
+	 *
+	 * `instancesDir` overrides discovery; omit it to let Rust find the folder
+	 * from CurseForge's own settings. Failure is returned rather than thrown so
+	 * the library can show its own empty state — not finding CurseForge is an
+	 * ordinary outcome on a machine that does not have it.
+	 */
+	const scanPackLibrary = async (instancesDir?: string | null): Promise<PackLibrary | null> =>
+	{
+		try
+		{
+			return await invoke<PackLibrary>('scan_pack_library', {
+				instancesDir: instancesDir ?? null
+			})
+		}
+		catch (error)
+		{
+			logger.error({ instancesDir, error }, '[useTauri] scanPackLibrary failed')
+			return null
+		}
+	}
+
 	return {
 		selectDirectory,
 		selectFile,
@@ -269,7 +292,8 @@ export const useTauri = () =>
 		downloadManifest,
 		downloadConfigFiles,
 		readDirectoryRecursive,
-		validatePath
+		validatePath,
+		scanPackLibrary
 	}
 }
 
