@@ -150,12 +150,18 @@ wipe the configuration made alongside it. The screen says "Setup" rather than
 Switching sides that way clears any loaded manifest, exactly as switching from
 the rail does — a diff fetched as a player is not the admin's working set.
 
-### The library is a third destination, not a landing screen
+### The library leads the rail, but is not a landing screen
 
 **Your packs** reads the local CurseForge library and lists it as a card grid.
-It is a peer of Install and Publish in the rail, deliberately not the screen the
-app opens on: the job is still to ship or receive an update, and a library you
-pass through every launch is the interstitial this build already removed once.
+It sits **first** in the rail because it is where a task starts: it is the one
+destination with no mode, and choosing an action on a card is what sets the
+counter. Install and Publish follow it because they are where you end up — still
+reachable directly, for anyone who already knows which side they are on.
+
+Leading the rail is not the same as being the screen the app opens on, and it is
+not that: nothing routes here automatically. The job is still to ship or receive
+an update, and a library you must pass through on every launch would be the
+interstitial this build already removed once.
 
 Cards rather than the app's usual dense rows, because this is the one screen
 whose job is **recognition** rather than reading — you are picking one modpack

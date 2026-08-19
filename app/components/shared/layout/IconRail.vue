@@ -139,13 +139,21 @@ interface Destination
 	mode?: AppMode
 }
 
+/**
+ * The library leads because it is where a task starts: it is the one
+ * destination with no mode, and choosing an action on a card is what sets the
+ * counter. The two counters follow it because they are where you *end up* —
+ * still reachable directly, for anyone who already knows which side they are on
+ * and has a pack loaded.
+ *
+ * It leads without being a landing screen. Nothing routes here automatically;
+ * the job is still to ship or receive an update, and a library you must pass
+ * through on every launch would be the interstitial this build already removed.
+ */
 const destinations: Destination[] = [
+	{ label: 'Your packs', to: '/packs', icon: 'mdi:view-grid-outline' },
 	{ label: 'Install update', to: '/dashboard', icon: 'mdi:tray-arrow-down', mode: 'user' },
-	{ label: 'Publish update', to: '/dashboard', icon: 'mdi:tray-arrow-up', mode: 'admin' },
-	// A peer destination rather than a landing screen: the job is still to ship
-	// or receive an update, and a library you must pass through every launch is
-	// the interstitial this build already removed once.
-	{ label: 'Your packs', to: '/packs', icon: 'mdi:view-grid-outline' }
+	{ label: 'Publish update', to: '/dashboard', icon: 'mdi:tray-arrow-up', mode: 'admin' }
 ]
 
 const isSettings = computed(() => route.path === '/settings')
