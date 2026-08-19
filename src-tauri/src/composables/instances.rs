@@ -50,6 +50,11 @@ pub struct PackSummary {
     pub played_count: u64,
     /// A `data:` URI, or absent. See `read_icon` for why it is inlined.
     pub icon: Option<String>,
+    /// The pack's artwork on CurseForge's CDN, for a pack installed from there
+    /// and not yet cached locally. The scan never fetches it — that would put a
+    /// network round trip in front of a screen that must open offline — so the
+    /// caller asks for these separately and the card fills in when they land.
+    pub icon_url: Option<String>,
     pub project_id: Option<u64>,
 }
 
@@ -78,6 +83,12 @@ struct BaseModLoader {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct InstalledModpack {
+    thumbnail_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct InstanceHeader {
     name: Option<String>,
     game_version: Option<String>,
@@ -86,6 +97,10 @@ struct InstanceHeader {
     played_count: Option<u64>,
     last_played: Option<String>,
     profile_image_path: Option<String>,
+    /// The pack CurseForge installed, which is where its artwork lives. Only
+    /// the thumbnail is read; the rest of the entry is the modpack archive and
+    /// is deliberately kept out of the manifest (see `classify`).
+    installed_modpack: Option<InstalledModpack>,
     base_mod_loader: Option<BaseModLoader>,
     /// Counted, never materialised. Building 8382 addon structs to render 36
     /// cards is work no card uses; skipping them takes the whole 58 MB scan of
@@ -184,6 +199,192 @@ fn pretty_loader(raw: &str) -> Option<String> {
 
 const MAX_ICON_BYTES: u64 = 512 * 1024;
 
+/// The only host CurseForge serves pack artwork from. A `thumbnailUrl` comes out
+/// of a JSON file CEMM did not write, so it is treated as untrusted input: an
+/// allowlist here is what stops a doctored instance turning the library into a
+/// request to an arbitrary server.
+const ALLOWED_ICON_HOSTS: &[&str] = &["media.forgecdn.net"];
+
+fn validate_icon_url(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    if parsed.scheme() != "https" {
+        return None;
+    }
+    match parsed.host_str() {
+        Some(host) if ALLOWED_ICON_HOSTS.contains(&host) => Some(parsed.to_string()),
+        Some(host) => {
+            log::warn!("validate_icon_url: refusing icon host {host}");
+            None
+        }
+        None => None,
+    }
+}
+
+/// A stable filename for a cached icon, derived from its URL path.
+///
+/// Deliberately not a hash: the URL path is already unique per asset, and a
+/// readable name means the cache directory can be understood by looking at it.
+/// Every character outside the safe set becomes `-`, so nothing here can escape
+/// the cache directory.
+fn cache_file_name(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    let extension = Path::new(parsed.path())
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_lowercase())
+        .filter(|value| matches!(value.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif"))?;
+
+    let stem: String = parsed
+        .path()
+        .trim_matches('/')
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+
+    // Bounded so a pathological URL cannot produce a filename the OS rejects.
+    let stem: String = stem.chars().rev().take(96).collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+
+    Some(format!("{stem}.{extension}"))
+}
+
+fn icon_cache_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    use tauri::Manager;
+    let dir = app.path().app_cache_dir().ok()?.join("pack-icons");
+    fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+fn mime_for(path: &Path) -> Option<&'static str> {
+    Some(
+        match path.extension()?.to_str()?.to_lowercase().as_str() {
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            "webp" => "image/webp",
+            "gif" => "image/gif",
+            _ => return None,
+        },
+    )
+}
+
+fn as_data_uri(path: &Path) -> Option<String> {
+    let meta = fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() > MAX_ICON_BYTES {
+        return None;
+    }
+    let mime = mime_for(path)?;
+    let bytes = fs::read(path).ok()?;
+    Some(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+/// A cached CurseForge icon, already on disk from a previous run.
+fn cached_icon(cache_dir: Option<&Path>, url: &str) -> Option<String> {
+    let path = cache_dir?.join(cache_file_name(url)?);
+    as_data_uri(&path)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CachedIcon {
+    pub url: String,
+    /// A `data:` URI. Absent when the fetch failed, so the caller can stop
+    /// asking for that one without treating it as an error worth reporting.
+    pub icon: Option<String>,
+}
+
+/// Fetch pack artwork from CurseForge's CDN and keep it on disk.
+///
+/// This is the app's second network exception after GitHub, and it is bounded to
+/// make that acceptable: an allowlisted host, https only, a size cap, a short
+/// timeout, and a permanent on-disk cache so a given pack is fetched exactly
+/// once ever. Every subsequent launch — including offline ones — is served from
+/// that cache by `scan_pack_library`, which never touches the network itself.
+///
+/// Failures are reported per icon rather than failing the batch: an unreachable
+/// CDN should cost a card its picture, nothing more.
+#[tauri::command]
+pub async fn cache_pack_icons(
+    app: tauri::AppHandle,
+    urls: Vec<String>,
+) -> Result<Vec<CachedIcon>, String> {
+    let Some(cache_dir) = icon_cache_dir(&app) else {
+        return Err("Could not open the icon cache directory".to_string());
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("Could not create HTTP client: {e}"))?;
+
+    let mut results = Vec::new();
+    for url in urls {
+        let Some(valid) = validate_icon_url(&url) else {
+            results.push(CachedIcon { url, icon: None });
+            continue;
+        };
+        let Some(file_name) = cache_file_name(&valid) else {
+            results.push(CachedIcon { url, icon: None });
+            continue;
+        };
+        let path = cache_dir.join(&file_name);
+
+        // Someone else may have cached it since the scan read the directory.
+        if let Some(icon) = as_data_uri(&path) {
+            results.push(CachedIcon { url, icon: Some(icon) });
+            continue;
+        }
+
+        let icon = match fetch_icon(&client, &valid, &path).await {
+            Ok(icon) => Some(icon),
+            Err(error) => {
+                log::warn!("cache_pack_icons: {valid} failed: {error}");
+                None
+            }
+        };
+        results.push(CachedIcon { url, icon });
+    }
+
+    Ok(results)
+}
+
+async fn fetch_icon(
+    client: &reqwest::Client,
+    url: &str,
+    path: &Path,
+) -> Result<String, String> {
+    let response = client
+        .get(url)
+        .header("User-Agent", "cemm-app-tauri")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+
+    // Checked before reading as well as after: an honest Content-Length lets a
+    // oversized image be refused without pulling it into memory first.
+    if let Some(length) = response.content_length() {
+        if length > MAX_ICON_BYTES {
+            return Err(format!("icon is {length} bytes, over the cap"));
+        }
+    }
+
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_ICON_BYTES {
+        return Err(format!("icon is {} bytes, over the cap", bytes.len()));
+    }
+
+    fs::write(path, &bytes).map_err(|e| e.to_string())?;
+    as_data_uri(path).ok_or_else(|| "fetched icon was not a readable image".to_string())
+}
+
 /// The pack's icon, inlined as a `data:` URI.
 ///
 /// Inlined rather than served over the asset protocol because the alternative is
@@ -225,10 +426,16 @@ fn read_icon(instance_dir: &Path, raw: Option<&str>) -> Option<String> {
     ))
 }
 
-fn summarise(instance_dir: &Path) -> Result<PackSummary, String> {
+fn summarise(instance_dir: &Path, cache_dir: Option<&Path>) -> Result<PackSummary, String> {
     let instance_file = instance_dir.join("minecraftinstance.json");
     let text = fs::read_to_string(&instance_file).map_err(|e| e.to_string())?;
     let header: InstanceHeader = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+
+    let thumbnail = header
+        .installed_modpack
+        .and_then(|modpack| modpack.thumbnail_url)
+        .as_deref()
+        .and_then(validate_icon_url);
 
     let folder_name = instance_dir
         .file_name()
@@ -266,13 +473,30 @@ fn summarise(instance_dir: &Path) -> Result<PackSummary, String> {
             .unwrap_or(0),
         last_played: header.last_played,
         played_count: header.played_count.unwrap_or(0),
-        icon: read_icon(instance_dir, header.profile_image_path.as_deref()),
+        // A local image the user chose always wins: it is what CurseForge itself
+        // shows, and it needs no network. The CDN thumbnail is the fallback, and
+        // only ever as an already-cached file — the scan does not fetch.
+        icon: read_icon(instance_dir, header.profile_image_path.as_deref())
+            .or_else(|| cached_icon(cache_dir, thumbnail.as_deref()?)),
+        icon_url: thumbnail,
         project_id: header.project_id.filter(|id| *id > 0),
     })
 }
 
 #[command]
-pub fn scan_pack_library(instances_dir: Option<String>) -> Result<PackLibrary, String> {
+pub fn scan_pack_library(
+    app: tauri::AppHandle,
+    instances_dir: Option<String>,
+) -> Result<PackLibrary, String> {
+    // The cache directory is the only thing the command needs the app for, and
+    // splitting it out keeps the scan itself testable without a Tauri runtime.
+    scan_library(instances_dir, icon_cache_dir(&app).as_deref())
+}
+
+fn scan_library(
+    instances_dir: Option<String>,
+    cache_dir: Option<&Path>,
+) -> Result<PackLibrary, String> {
     let requested = instances_dir
         .as_deref()
         .map(str::trim)
@@ -314,7 +538,7 @@ pub fn scan_pack_library(instances_dir: Option<String>) -> Result<PackLibrary, S
             // worth telling the user about.
             continue;
         }
-        match summarise(&path) {
+        match summarise(&path, cache_dir) {
             Ok(pack) => packs.push(pack),
             Err(error) => {
                 log::warn!("scan_pack_library: skipping {}: {error}", path.display());
@@ -391,7 +615,7 @@ mod tests {
             }),
         );
 
-        let library = scan_pack_library(Some(temp.path().to_string_lossy().into_owned()))
+        let library = scan_library(Some(temp.path().to_string_lossy().into_owned()), None)
             .expect("scan should succeed");
 
         assert_eq!(library.source, "manual");
@@ -420,7 +644,7 @@ mod tests {
             }),
         );
 
-        let library = scan_pack_library(Some(temp.path().to_string_lossy().into_owned()))
+        let library = scan_library(Some(temp.path().to_string_lossy().into_owned()), None)
             .expect("scan should succeed");
 
         assert_eq!(library.packs.len(), 1);
@@ -443,7 +667,7 @@ mod tests {
         fs::create_dir_all(temp.path().join("FTB Evolution (1)")).expect("stray dir");
         fs::write(temp.path().join("FTB Evolution (1)/cemm-manifest.json"), "{}").expect("stray");
 
-        let library = scan_pack_library(Some(temp.path().to_string_lossy().into_owned()))
+        let library = scan_library(Some(temp.path().to_string_lossy().into_owned()), None)
             .expect("scan should succeed");
 
         assert_eq!(library.packs.len(), 1);
@@ -462,7 +686,7 @@ mod tests {
         fs::create_dir_all(&broken).expect("broken dir");
         fs::write(broken.join("minecraftinstance.json"), "{ not json").expect("write broken");
 
-        let library = scan_pack_library(Some(temp.path().to_string_lossy().into_owned()))
+        let library = scan_library(Some(temp.path().to_string_lossy().into_owned()), None)
             .expect("scan should succeed despite one bad instance");
 
         assert_eq!(library.packs.len(), 1);
@@ -475,7 +699,7 @@ mod tests {
     fn missing_directory_reports_rather_than_scanning() {
         let temp = tempfile::tempdir().expect("temp dir");
         let missing = temp.path().join("nope");
-        let result = scan_pack_library(Some(missing.to_string_lossy().into_owned()));
+        let result = scan_library(Some(missing.to_string_lossy().into_owned()), None);
         assert!(result.is_err(), "a missing folder is the caller's mistake");
     }
 
@@ -495,7 +719,7 @@ mod tests {
             }),
         );
 
-        let library = scan_pack_library(Some(temp.path().to_string_lossy().into_owned()))
+        let library = scan_library(Some(temp.path().to_string_lossy().into_owned()), None)
             .expect("scan should succeed");
 
         assert_eq!(library.packs.len(), 1);
@@ -503,6 +727,146 @@ mod tests {
             library.packs[0].icon, None,
             "an icon path escaping its instance must not be read"
         );
+    }
+
+    #[test]
+    fn icon_url_allowlist_refuses_anything_but_curseforge_over_https() {
+        for bad in [
+            "http://media.forgecdn.net/avatars/1/2.png",
+            "https://evil.example.com/avatars/1/2.png",
+            "https://media.forgecdn.net.evil.example.com/1.png",
+            "file:///etc/passwd",
+            "not a url",
+            "",
+        ] {
+            assert!(validate_icon_url(bad).is_none(), "expected '{bad}' refused");
+        }
+        assert!(validate_icon_url(
+            "https://media.forgecdn.net/avatars/thumbnails/1182/438/256/256/1.png"
+        )
+        .is_some());
+    }
+
+    #[test]
+    fn cache_file_name_is_stable_distinct_and_cannot_escape_the_cache_dir() {
+        let a = cache_file_name(
+            "https://media.forgecdn.net/avatars/thumbnails/1182/438/256/256/638755918649288941.png",
+        )
+        .expect("should name");
+        let b = cache_file_name(
+            "https://media.forgecdn.net/avatars/thumbnails/1182/438/256/256/638755918649288942.png",
+        )
+        .expect("should name");
+
+        assert_ne!(a, b, "different assets must not share a cache entry");
+        assert_eq!(
+            a,
+            cache_file_name(
+                "https://media.forgecdn.net/avatars/thumbnails/1182/438/256/256/638755918649288941.png"
+            )
+            .expect("should name"),
+            "the same asset must map to the same file every run"
+        );
+        assert!(a.ends_with(".png"));
+        // Nothing that could climb out of the cache directory survives.
+        assert!(!a.contains('/'));
+        assert!(!a.contains('\\'));
+        assert!(!a.contains(".."));
+
+        // A URL that is not an image at all has no cache entry.
+        assert_eq!(
+            cache_file_name("https://media.forgecdn.net/files/1/2.zip"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_cached_curseforge_thumbnail_is_used_without_any_fetch() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let cache = temp.path().join("cache");
+        fs::create_dir_all(&cache).expect("cache dir");
+        let url =
+            "https://media.forgecdn.net/avatars/thumbnails/1182/438/256/256/638755918649288941.png";
+        fs::write(
+            cache.join(cache_file_name(url).expect("name")),
+            b"pretend-png-bytes",
+        )
+        .expect("plant cached icon");
+
+        let instances = temp.path().join("instances");
+        write_instance(
+            &instances.join("All the Mods 10"),
+            serde_json::json!({
+                "name": "All the Mods 10",
+                "installedModpack": { "thumbnailUrl": url },
+                "installedAddons": []
+            }),
+        );
+
+        let library = scan_library(
+            Some(instances.to_string_lossy().into_owned()),
+            Some(cache.as_path()),
+        )
+        .expect("scan should succeed");
+
+        assert_eq!(library.packs.len(), 1);
+        assert!(
+            library.packs[0]
+                .icon
+                .as_deref()
+                .expect("cached icon should be used")
+                .starts_with("data:image/png;base64,"),
+            "a previously cached thumbnail must render with no network at all"
+        );
+        assert_eq!(library.packs[0].icon_url.as_deref(), Some(url));
+    }
+
+    #[test]
+    fn an_uncached_thumbnail_is_reported_but_never_fetched_by_the_scan() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let url =
+            "https://media.forgecdn.net/avatars/thumbnails/1182/438/256/256/638755918649288941.png";
+        write_instance(
+            &temp.path().join("All the Mods 10"),
+            serde_json::json!({
+                "name": "All the Mods 10",
+                "installedModpack": { "thumbnailUrl": url },
+                "installedAddons": []
+            }),
+        );
+
+        let library = scan_library(Some(temp.path().to_string_lossy().into_owned()), None)
+            .expect("scan should succeed");
+
+        // The scan opens a screen that must work offline, so it hands the URL
+        // back rather than going and getting it.
+        assert_eq!(library.packs[0].icon, None);
+        assert_eq!(library.packs[0].icon_url.as_deref(), Some(url));
+    }
+
+    #[test]
+    fn a_local_image_wins_over_the_curseforge_thumbnail() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let instance = temp.path().join("Pack");
+        fs::create_dir_all(instance.join("profileImage")).expect("image dir");
+        let icon = instance.join("profileImage").join("icon.png");
+        fs::write(&icon, b"local-bytes").expect("write icon");
+        write_instance(
+            &instance,
+            serde_json::json!({
+                "name": "Pack",
+                "profileImagePath": icon.to_string_lossy(),
+                "installedModpack": {
+                    "thumbnailUrl": "https://media.forgecdn.net/avatars/thumbnails/1/2/3/4/5.png"
+                },
+                "installedAddons": []
+            }),
+        );
+
+        let library = scan_library(Some(temp.path().to_string_lossy().into_owned()), None)
+            .expect("scan should succeed");
+
+        assert!(library.packs[0].icon.is_some(), "the local image is used");
     }
 
     #[test]
@@ -517,7 +881,7 @@ mod tests {
             }),
         );
 
-        let library = scan_pack_library(Some(temp.path().to_string_lossy().into_owned()))
+        let library = scan_library(Some(temp.path().to_string_lossy().into_owned()), None)
             .expect("scan should succeed");
 
         assert_eq!(library.packs[0].icon, None);
@@ -539,7 +903,7 @@ mod tests {
             }),
         );
 
-        let library = scan_pack_library(Some(temp.path().to_string_lossy().into_owned()))
+        let library = scan_library(Some(temp.path().to_string_lossy().into_owned()), None)
             .expect("scan should succeed");
 
         let icon = library.packs[0].icon.as_deref().expect("icon should inline");

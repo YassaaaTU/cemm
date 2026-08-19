@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { Addon, ConfigFileWithContent, Manifest, ManifestUpdateInfo, PackLibrary, UpdateDiff } from '~/types'
+import type { Addon, CachedIcon, ConfigFileWithContent, Manifest, ManifestUpdateInfo, PackLibrary, UpdateDiff } from '~/types'
 
 export const useTauri = () =>
 {
@@ -276,6 +276,28 @@ export const useTauri = () =>
 		}
 	}
 
+	/**
+	 * Fetch pack artwork from CurseForge's CDN and keep it on disk.
+	 *
+	 * Separate from the scan on purpose: the library must open instantly and
+	 * work offline, so it renders first and the pictures arrive afterwards.
+	 * Returns an empty list on failure — no artwork is a cosmetic outcome, not
+	 * something worth interrupting the user for.
+	 */
+	const cachePackIcons = async (urls: string[]): Promise<CachedIcon[]> =>
+	{
+		if (urls.length === 0) return []
+		try
+		{
+			return await invoke<CachedIcon[]>('cache_pack_icons', { urls })
+		}
+		catch (error)
+		{
+			logger.error({ count: urls.length, error }, '[useTauri] cachePackIcons failed')
+			return []
+		}
+	}
+
 	return {
 		selectDirectory,
 		selectFile,
@@ -293,7 +315,8 @@ export const useTauri = () =>
 		downloadConfigFiles,
 		readDirectoryRecursive,
 		validatePath,
-		scanPackLibrary
+		scanPackLibrary,
+		cachePackIcons
 	}
 }
 

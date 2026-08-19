@@ -67,6 +67,13 @@ export const usePacksStore = defineStore('packs', () =>
 	/** Keyed by normalised instance path. Persisted. */
 	const history = ref<Record<string, PackHistoryEntry>>({})
 	/**
+	 * CurseForge artwork fetched this session, keyed by its CDN URL. Not
+	 * persisted: the real cache is the one Rust keeps on disk, which every scan
+	 * reads without touching the network. This is only here so the cards that are
+	 * already on screen can fill in without a rescan.
+	 */
+	const fetchedIcons = ref<Record<string, string>>({})
+	/**
 	 * Overrides CurseForge auto-discovery. Set in Settings, and the only way to
 	 * use the library on a machine where CurseForge is not installed where CEMM
 	 * expects it — Linux, most obviously, which has no official build.
@@ -80,6 +87,10 @@ export const usePacksStore = defineStore('packs', () =>
 
 		const rows: PackRow[] = scanned.map((pack) => ({
 			...pack,
+			// The scan's own icon wins — it is either the user's local image or an
+			// already-cached thumbnail. This only fills the gap for artwork that
+			// arrived after the grid rendered.
+			icon: pack.icon ?? (pack.iconUrl !== null ? fetchedIcons.value[pack.iconUrl] ?? null : null),
 			history: history.value[normaliseKey(pack.instancePath)] ?? null,
 			missing: false
 		}))
@@ -108,6 +119,7 @@ export const usePacksStore = defineStore('packs', () =>
 				lastPlayed: null,
 				playedCount: 0,
 				icon: null,
+				iconUrl: null,
 				projectId: null,
 				history: entry,
 				missing: true
@@ -152,11 +164,41 @@ export const usePacksStore = defineStore('packs', () =>
 			}
 			library.value = result
 			scannedAt.value = Date.now()
+			// Deliberately not awaited. The grid is already correct without any
+			// artwork, and a slow or unreachable CDN must never be something the
+			// user waits behind to choose a modpack.
+			void fetchMissingIcons()
 		}
 		finally
 		{
 			scanning.value = false
 		}
+	}
+
+	/**
+	 * Fill in CurseForge artwork for packs whose thumbnail is not cached yet.
+	 *
+	 * Rust writes each one to disk as it arrives, so this happens once per pack
+	 * ever — every later launch, online or not, gets it straight from the scan.
+	 */
+	async function fetchMissingIcons(): Promise<void>
+	{
+		const wanted = (library.value?.packs ?? [])
+			.filter((pack) => pack.icon === null && pack.iconUrl !== null)
+			.map((pack) => pack.iconUrl as string)
+			.filter((url) => fetchedIcons.value[url] === undefined)
+
+		if (wanted.length === 0) return
+
+		const { cachePackIcons } = useTauri()
+		const results = await cachePackIcons([...new Set(wanted)])
+
+		const merged = { ...fetchedIcons.value }
+		for (const result of results)
+		{
+			if (result.icon !== null) merged[result.url] = result.icon
+		}
+		fetchedIcons.value = merged
 	}
 
 	function record(
@@ -206,6 +248,7 @@ export const usePacksStore = defineStore('packs', () =>
 		scanError,
 		scannedAt,
 		history,
+		fetchedIcons,
 		instancesDirOverride,
 		scan,
 		recordOpened,

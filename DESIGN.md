@@ -494,6 +494,12 @@ Binding, and carried over from the previous build's audit:
 - **DaisyUI 5 is the component layer.** Non-negotiable.
 - Authored CSS is limited to imports, theme/plugin directives, `@theme` tokens
   and `@font-face`. No component, layout, animation or interaction selectors.
-- Offline-first: no runtime network requests except explicit GitHub calls.
+- Offline-first. Two network exceptions, both explicit and bounded: GitHub, and
+  CurseForge pack artwork. The second is fetched only from `media.forgecdn.net`
+  over https, size-capped, and written to the app cache directory, so a given
+  pack is fetched **once ever** and every later launch — including offline ones
+  — is served from disk by a scan that never touches the network. A pack whose
+  artwork has not arrived shows its coloured initial, which is also what a
+  failed fetch leaves behind.
 - `data-theme` is written **only** for an explicit user override, so `system`
   resolves in pure CSS with no flash. This retires the `F-P2-6` hydration trap.

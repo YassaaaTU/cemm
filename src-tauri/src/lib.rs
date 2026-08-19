@@ -20,7 +20,9 @@ mod composables {
 }
 
 pub use composables::github::{download_config_files, download_manifest, upload_update};
-pub use composables::instances::{scan_pack_library, PackGroup, PackLibrary, PackSummary};
+pub use composables::instances::{
+    cache_pack_icons, scan_pack_library, CachedIcon, PackGroup, PackLibrary, PackSummary,
+};
 pub use composables::manifest::{
     compare_manifests, open_curseforge_url, open_url, parse_minecraft_instance, Addon, Manifest,
     UpdateInfo,
@@ -53,7 +55,8 @@ pub fn run() {
             read_directory_recursive,
             is_binary_file,
             validate_path,
-            scan_pack_library
+            scan_pack_library,
+            cache_pack_icons
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

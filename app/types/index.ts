@@ -120,7 +120,23 @@ export interface PackSummary
 	playedCount: number
 	/** A `data:` URI, or null. Never a remote URL. */
 	icon: string | null
+	/**
+	 * The pack's artwork on CurseForge's CDN, for a pack installed from there
+	 * whose image is not cached yet. Fetched separately from the scan so the
+	 * library still opens instantly and offline.
+	 */
+	iconUrl: string | null
 	projectId: number | null
+}
+
+/**
+ * Mirrored in Rust: src-tauri/src/composables/instances.rs (CachedIcon).
+ */
+export interface CachedIcon
+{
+	url: string
+	/** A `data:` URI, or null when the fetch failed. */
+	icon: string | null
 }
 
 /**

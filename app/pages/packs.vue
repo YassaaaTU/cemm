@@ -130,7 +130,14 @@
           </label>
         </div>
 
-        <div class="min-h-0 flex-1 overflow-y-auto">
+        <!--
+          `relative` is load-bearing, not decoration. A statically positioned
+          scroll container is clipped visually but its overflow is still counted
+          by the ROOT scroller, so the window grew a second scrollbar that
+          dragged the whole app up over blank space. Making it a containing
+          block is what stops that; `overflow: hidden` on html/body does not.
+        -->
+        <div class="relative min-h-0 flex-1 overflow-y-auto">
           <!-- Scanning, first time only. A refresh keeps the current list on
                screen rather than blanking a grid the user is reading. -->
           <div

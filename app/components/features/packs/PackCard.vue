@@ -193,8 +193,9 @@ const initial = computed(() => props.pack.name.trim().charAt(0).toUpperCase() ||
 /**
  * The same offline-safe coloured initial AddonThumb uses for addons without an
  * icon — derived from the name so a pack keeps its colour between launches.
- * Only 3 of the author's 36 instances have an icon CurseForge stored locally,
- * so this is the common case, not the fallback.
+ * It covers a custom instance with no artwork at all, a CurseForge pack whose
+ * thumbnail has not arrived yet, and one whose fetch failed. All three look the
+ * same on purpose: none of them is a problem the user has to act on.
  */
 const initialTone = computed(() =>
 {

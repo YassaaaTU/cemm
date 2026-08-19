@@ -26,8 +26,11 @@
          page. Used where a single list IS the screen, so a 500-row manifest
          fills the window and scrolls internally rather than sitting in a
          360px letterbox with dead space beneath it. -->
+    <!-- `relative` for the same reason the pack grid needs it: a static scroll
+         container's overflow is still counted by the root scroller, which puts
+         a phantom scrollbar on the window. -->
     <div
-      class="min-h-0 flex-1 px-6 pt-3.5 pb-5"
+      class="relative min-h-0 flex-1 px-6 pt-3.5 pb-5"
       :class="fillContent ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'"
     >
       <!-- The context bar scrolls WITH the content rather than being pinned.

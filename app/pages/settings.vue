@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-0 flex-1 overflow-y-auto">
+  <div class="relative min-h-0 flex-1 overflow-y-auto">
     <!--
       One scrolling page, no tabs. The tabbed build put four settings behind four
       tabs, so three quarters of them were always hidden and every pane except
