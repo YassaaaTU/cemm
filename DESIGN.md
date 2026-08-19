@@ -165,12 +165,15 @@ that departure is the reason.
 
 **History is expressed on the library, not as a second list.** A separate
 "recently used" list would be empty at the one moment it is most needed — first
-run. So packs CEMM has been used with sort to the front and carry a mark
-(`Published 3d ago`, `Updated 3d ago`), everything else falls back to how
-recently CurseForge says it was played, and a pack CEMM has used that the scan
-no longer finds stays listed as `Missing` rather than vanishing. Only
-timestamps are kept; a remembered update code sitting beside a pack that has
-since changed would be a lie waiting to happen.
+run. So packs CEMM has been used with sort to the front and carry a mark naming
+the most recent thing it did with them (`Published 3d ago`, `Updated 3d ago`,
+`Opened 3d ago`) — the latest fact, not the one the current mode cares about,
+because a card that leads the grid on a history it then declines to mention is
+the list keeping a secret. Everything else falls back to how recently CurseForge
+says it was played, and a pack CEMM has used that the scan no longer finds stays
+listed as `Missing` rather than vanishing. Only timestamps are kept; a
+remembered update code sitting beside a pack that has since changed would be a
+lie waiting to happen.
 
 Every card states its **folder** as well as its name, for the reason the install
 destination already does: in a real library the folder `All the Mods 10 - ATM10
@@ -183,9 +186,25 @@ are the ones the user already organised their library with — plus `Used in
 CEMM`, `Ungrouped`, and free-text search across name, folder, version and
 loader.
 
-Clicking a card does the mode's job: in Publish it loads the instance and goes
-to the diff; in Install it asks for the update code **on the card**, so choosing
-a pack and saying which update to put on it stay one gesture.
+**The library has no mode, and the card is not a control.** The first build made
+it one big button whose meaning came from whichever counter you had arrived
+from — the identical click installed or published depending on state set on
+another screen, and reaching the other behaviour meant leaving, switching
+counter, and coming back through a link. That is a mode error, and a bad one:
+two destructive-adjacent actions behind one indistinguishable gesture.
+
+Every card now names **both** actions outright, and picking one is what sets the
+counter rather than the counter deciding what the pick meant. Two is few enough
+to show rather than hide: a menu is for actions that are many or secondary, and
+these are neither — they are the only two things a pack is for. The buttons
+carry the rail's own icons, so a control and the destination it leads to look
+like the same thing.
+
+Install asks for the update code **on the card**, so choosing a pack and saying
+which update to put on it stay one gesture. Publish loads the instance and goes
+straight to the diff. Switching sides this way clears any loaded manifest, for
+the same reason the rail does — otherwise an admin would end up diffing against
+a manifest the player had downloaded.
 
 No virtualisation. The author's library is 36 packs and the scan behind it takes
 ~70ms warm (~400ms cold), because the Rust side deserializes a header struct
@@ -389,6 +408,10 @@ keep them from lying to the user:
   showing packs CEMM knows from its own history when a scan fails, with a strip
   saying why, rather than an empty state contradicting a footer that is still
   counting them.
+- **An action's meaning never comes from somewhere else on screen.** The pack
+  library's cards used to install or publish depending on which counter you had
+  come from, so the same click did two different things with nothing on the card
+  saying which. Where a surface offers more than one thing to do, it names them.
 - **"Missing" is only trusted when the scan was.** A pack absent from a failed
   scan, or from one that found no library at all, is not offered for removal —
   a wrong instances folder would otherwise make one click discard the history of

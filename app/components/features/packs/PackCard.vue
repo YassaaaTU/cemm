@@ -4,20 +4,21 @@
     rather than reading: you are picking a pack out of forty, and an icon plus a
     name is how both reference apps let you do that.
 
-    Explicit `flex flex-col` and `mt-auto`: a native <button> centres its own
+    The card is NOT a control. It used to be one big button whose meaning came
+    from whichever counter you happened to be in — the same click installed or
+    published depending on invisible state set on another screen. Both actions
+    are now named on the card itself, and choosing one is what decides the mode
+    rather than the other way round.
+
+    Explicit `flex flex-col` and `mt-auto`: a native button centres its own
     content whatever its display says, which is what made the setup cards look
-    crooked when their descriptions ran to different lengths. Cards here have
-    the same problem — a pack with no group and no CEMM history is two lines
-    shorter than one with both.
+    crooked. Cards here have the same problem — a pack with no group and no CEMM
+    history is two lines shorter than one with both — so the actions are pinned
+    to the floor and every card in a row ends level.
   -->
-  <button
-    type="button"
-    class="group flex h-full cursor-pointer flex-col gap-2.5 rounded-box border bg-base-200 p-3.5 text-left transition-colors duration-150 ease-(--ease-standard) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-    :class="pack.missing
-      ? 'border-base-300 opacity-70 hover:border-warning/60'
-      : 'border-base-300 hover:border-primary/60 hover:bg-base-300/50'"
-    :disabled="busy"
-    @click="emit('choose', pack)"
+  <div
+    class="flex h-full flex-col gap-2.5 rounded-box border bg-base-200 p-3.5 transition-colors duration-150 ease-(--ease-standard)"
+    :class="pack.missing ? 'border-base-300 opacity-80' : 'border-base-300'"
   >
     <div class="flex min-w-0 items-start gap-2.5">
       <span class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-box border border-base-300 bg-base-100">
@@ -40,10 +41,8 @@
           class="block truncate text-[0.9375rem] leading-snug font-semibold"
           :title="pack.name"
         >{{ pack.name }}</span>
-        <!-- A missing pack cannot be opened, so its click does the only useful
-             thing left and the card has to say so before it is pressed. -->
         <span class="mt-0.5 block truncate font-mono text-[0.6875rem] text-base-content/60">
-          <template v-if="pack.missing">click to remove from this list</template>
+          <template v-if="pack.missing">not found on disk</template>
           <template v-else>{{ pack.addonCount }} addons</template>
         </span>
       </span>
@@ -79,7 +78,10 @@
       {{ pack.folderName }}
     </div>
 
-    <div class="mt-auto flex flex-wrap items-center gap-1.5 pt-0.5">
+    <div
+      v-if="groupName !== null || historyLabel !== null || pack.missing"
+      class="flex flex-wrap items-center gap-1.5"
+    >
       <span
         v-if="groupName !== null"
         class="inline-flex max-w-full items-center truncate rounded-full border border-base-300 bg-base-100 px-2 py-px text-[0.6875rem] text-base-content/70"
@@ -95,21 +97,96 @@
         label="Missing"
       />
     </div>
-  </button>
+
+    <!--
+      Both actions, named, on every card. Two is few enough to show outright: a
+      menu is for when actions are many or secondary, and these are neither —
+      they are the only two things a pack is for. The icons are the rail's own,
+      so a button and the destination it leads to look like the same thing.
+    -->
+    <div class="mt-auto flex gap-1.5 pt-0.5">
+      <template v-if="pack.missing">
+        <button
+          type="button"
+          class="btn w-full cursor-pointer gap-1.5 border-base-300 btn-sm"
+          :disabled="busy"
+          @click="emit('forget', pack)"
+        >
+          <Icon
+            name="mdi:close"
+            size="0.9375rem"
+            aria-hidden="true"
+          />
+          Remove from list
+          <span class="sr-only">— {{ pack.name }}</span>
+        </button>
+      </template>
+
+      <template v-else>
+        <button
+          type="button"
+          class="btn flex-1 cursor-pointer gap-1.5 border-base-300 btn-sm"
+          :disabled="busy"
+          @click="emit('install', pack)"
+        >
+          <span
+            v-if="busy === 'install'"
+            class="loading loading-xs loading-spinner"
+            aria-hidden="true"
+          />
+          <Icon
+            v-else
+            name="mdi:tray-arrow-down"
+            size="0.9375rem"
+            aria-hidden="true"
+          />
+          Install
+          <span class="sr-only">an update into {{ pack.name }}</span>
+        </button>
+
+        <button
+          type="button"
+          class="btn flex-1 cursor-pointer gap-1.5 border-base-300 btn-sm"
+          :disabled="busy"
+          @click="emit('publish', pack)"
+        >
+          <span
+            v-if="busy === 'publish'"
+            class="loading loading-xs loading-spinner"
+            aria-hidden="true"
+          />
+          <Icon
+            v-else
+            name="mdi:tray-arrow-up"
+            size="0.9375rem"
+            aria-hidden="true"
+          />
+          Publish
+          <span class="sr-only">an update from {{ pack.name }}</span>
+        </button>
+      </template>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import type { PackRow } from '~/stores/packs'
 
-const props = defineProps<{
-	pack: PackRow
-	groupName: string | null
-	/** Which timestamp to surface — the two counters care about different ones. */
-	mode: 'admin' | 'user'
-	busy?: boolean
-}>()
+const props = withDefaults(
+	defineProps<{
+		pack: PackRow
+		groupName: string | null
+		/** Which action is in flight on this card, if any. */
+		busy?: 'install' | 'publish' | false
+	}>(),
+	{ busy: false }
+)
 
-const emit = defineEmits<{ choose: [pack: PackRow] }>()
+const emit = defineEmits<{
+	install: [pack: PackRow]
+	publish: [pack: PackRow]
+	forget: [pack: PackRow]
+}>()
 
 const initial = computed(() => props.pack.name.trim().charAt(0).toUpperCase() || '?')
 
@@ -135,9 +212,8 @@ const initialTone = computed(() =>
 	return tones[hash % tones.length]
 })
 
-const relative = (iso: string | undefined): string | null =>
+const relative = (iso: string): string | null =>
 {
-	if (iso === undefined) return null
 	const then = Date.parse(iso)
 	if (!Number.isFinite(then)) return null
 	const days = Math.floor((Date.now() - then) / 86_400_000)
@@ -149,36 +225,33 @@ const relative = (iso: string | undefined): string | null =>
 }
 
 /**
- * What CEMM has done with this pack, in the tense that matters to whoever is
- * looking: an admin wants to know when they last shipped from it, a player when
- * they last installed into it.
+ * The most recent thing CEMM did with this pack, whatever it was. This used to
+ * be chosen by the app's mode, which meant a pack could lead the grid — sorted
+ * there by a history the card then declined to mention — with nothing saying
+ * why. The card has no mode any more, so it simply reports the latest fact.
  */
 const historyLabel = computed(() =>
 {
 	const entry = props.pack.history
 	if (entry === null) return null
 
-	// Every one of these is tried, not just the mode's own — a pack sorts to the
-	// front of the library because CEMM has touched it, and a card that leads the
-	// grid with nothing saying why is the list keeping a secret. The mode only
-	// decides which reason is the most relevant one to show first.
-	const candidates: Array<[string, string | undefined]> = props.mode === 'admin'
-		? [
-			['Published', entry.lastPublishedAt],
-			['Installed', entry.lastInstalledAt],
-			['Opened', entry.lastOpenedAt]
-		]
-		: [
-			['Updated', entry.lastInstalledAt],
-			['Published', entry.lastPublishedAt],
-			['Opened', entry.lastOpenedAt]
-		]
+	const events: Array<[string, string | undefined]> = [
+		['Published', entry.lastPublishedAt],
+		['Updated', entry.lastInstalledAt],
+		['Opened', entry.lastOpenedAt]
+	]
 
-	for (const [verb, stamp] of candidates)
+	let latest: { verb: string, at: number, iso: string } | null = null
+	for (const [verb, iso] of events)
 	{
-		const when = relative(stamp)
-		if (when !== null) return `${verb} ${when}`
+		if (iso === undefined) continue
+		const at = Date.parse(iso)
+		if (!Number.isFinite(at)) continue
+		if (latest === null || at > latest.at) latest = { verb, at, iso }
 	}
-	return null
+	if (latest === null) return null
+
+	const when = relative(latest.iso)
+	return when === null ? null : `${latest.verb} ${when}`
 })
 </script>

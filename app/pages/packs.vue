@@ -8,13 +8,8 @@
       fill-content
     >
       <template #lede>
-        <template v-if="appStore.mode === 'admin'">
-          Pick the modpack you have been modifying. CEMM reads it straight from
-          your CurseForge library.
-        </template>
-        <template v-else>
-          Pick the modpack to update, then paste the code your admin sent you.
-        </template>
+        Your CurseForge library. Install an update into a pack, or publish one
+        from it — whichever you pick is what CEMM switches to.
       </template>
 
       <template #context>
@@ -192,9 +187,10 @@
               :key="pack.instancePath"
               :pack="pack"
               :group-name="groupNameFor(pack.groupId)"
-              :mode="appStore.mode"
-              :busy="loadingPath === pack.instancePath"
-              @choose="choosePack"
+              :busy="busyFor(pack)"
+              @install="installPack"
+              @publish="publishPack"
+              @forget="forgetPack"
             />
           </div>
         </div>
@@ -229,6 +225,7 @@
 </template>
 
 <script setup lang="ts">
+import type { AppMode } from '~/stores/app'
 import type { PackRow } from '~/stores/packs'
 
 definePageMeta({ layout: 'default' })
@@ -244,7 +241,9 @@ const { $logger: logger } = useNuxtApp()
 
 const search = ref('')
 const activeFilter = ref('all')
-const loadingPath = ref('')
+/** Which card is working, and on what — only one action runs at a time. */
+const busyPath = ref('')
+const busyAction = ref<'install' | 'publish' | false>(false)
 const pendingPack = ref<PackRow | null>(null)
 const fetching = ref(false)
 const fetchError = ref<string | null>(null)
@@ -255,6 +254,9 @@ const fetchError = ref<string | null>(null)
  * Everything below then filters and sorts against real types rather than any.
  */
 const allPacks = computed<PackRow[]>(() => packsStore.packs)
+
+const busyFor = (pack: PackRow): 'install' | 'publish' | false =>
+	busyPath.value === pack.instancePath ? busyAction.value : false
 
 const groupNameFor = (groupId: string | null): string | null =>
 {
@@ -421,41 +423,54 @@ const ignoreProgress = () =>
 	// Intentionally empty.
 }
 
-async function choosePack(pack: PackRow)
+function forgetPack(pack: PackRow)
 {
-	if (pack.missing)
+	// Only trust "missing" when the scan itself worked. A bad override folder
+	// makes every pack look gone, and forgetting them would throw away the
+	// history that is the only record of them.
+	if (!scanIsTrustworthy.value)
 	{
-		// Only trust "missing" when the scan itself worked. A bad override folder
-		// makes every pack look gone, and forgetting them all on a stray click
-		// would throw away the history that is the only record of them.
-		if (!scanIsTrustworthy.value)
-		{
-			notify(
-				`CEMM is not reading your library right now, so it cannot tell whether ${pack.name} is still there.`,
-				'warning'
-			)
-			return
-		}
-		packsStore.forget(pack.instancePath)
-		notify(`Removed ${pack.name} from your packs.`, 'success', `Nothing was found at ${pack.instancePath}. It will come back if you use it again.`)
+		notify(
+			`CEMM is not reading your library right now, so it cannot tell whether ${pack.name} is still there.`,
+			'warning'
+		)
 		return
 	}
+	packsStore.forget(pack.instancePath)
+	notify(
+		`Removed ${pack.name} from your packs.`,
+		'success',
+		`Nothing was found at ${pack.instancePath}. It will come back if you use it again.`
+	)
+}
 
-	if (appStore.mode === 'admin')
-	{
-		await loadForPublishing(pack)
-		return
-	}
+/**
+ * Choosing an action here is what sets the counter, rather than the counter
+ * deciding what the choice meant. Switching sides also drops whatever manifest
+ * was loaded, exactly as switching from the rail does — a diff fetched as a
+ * player is not the admin's working set, and loading an instance on top of one
+ * would leave the admin diffing against the player's download.
+ */
+function enterMode(next: AppMode)
+{
+	if (appStore.mode !== next) manifestStore.clearManifest()
+	appStore.setMode(next)
+}
 
+function installPack(pack: PackRow)
+{
+	enterMode('user')
 	fetchError.value = null
 	pendingPack.value = pack
 }
 
-async function loadForPublishing(pack: PackRow)
+async function publishPack(pack: PackRow)
 {
-	loadingPath.value = pack.instancePath
+	busyPath.value = pack.instancePath
+	busyAction.value = 'publish'
 	try
 	{
+		enterMode('admin')
 		const result = await loadInstance(
 			(message, type) =>
 			{
@@ -473,7 +488,8 @@ async function loadForPublishing(pack: PackRow)
 	}
 	finally
 	{
-		loadingPath.value = ''
+		busyPath.value = ''
+		busyAction.value = false
 	}
 }
 
