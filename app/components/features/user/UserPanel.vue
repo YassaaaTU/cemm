@@ -1,7 +1,10 @@
 <template>
   <WorkspacePage heading="Install update">
     <template #lede>
-      <template v-if="manifest !== null">
+      <template v-if="updateApplied">
+        This update has been applied. Paste another code to install a new one.
+      </template>
+      <template v-else-if="manifest !== null">
         Nothing is written to your modpack until you confirm.
       </template>
       <template v-else>
@@ -139,16 +142,19 @@
       </div>
     </template>
 
-    <!-- The content swaps between resting, diff and installing. That swap is a
-         real state change, so it gets the one transition on this screen. -->
+    <!-- The content swaps between resting and the diff. That swap is a real
+         state change, so it gets the one transition on this screen. Installing
+         is deliberately NOT one of these states: the diff stays put and the
+         work runs in a dialog over it. -->
     <Transition v-bind="paneTransition">
-      <!-- Installing / installed -->
+      <!-- The diff — the same screen, grown -->
       <div
-        v-if="installing || installComplete"
-        class="max-w-xl space-y-4"
+        v-if="manifest !== null"
+        class="space-y-4"
       >
         <div
-          v-if="installComplete"
+          v-if="updateApplied"
+          role="status"
           class="flex items-start gap-3 rounded-box border border-success/50 bg-success/10 px-4 py-3.5"
         >
           <Icon
@@ -162,39 +168,21 @@
               Update installed
             </p>
             <p class="mt-0.5 text-xs text-base-content/65">
-              Your modpack now matches the update. You can launch the game.
+              This is what was applied. Your modpack now matches it.
             </p>
           </div>
         </div>
 
-        <div v-else>
-          <div class="mb-1.5 flex items-baseline justify-between gap-3">
-            <p class="text-sm font-medium">
-              {{ progressLabel }}
-            </p>
-            <p class="font-mono text-xs text-base-content/60 tabular-nums">
-              {{ Math.round(smoothProgress) }}%
-            </p>
-          </div>
-          <progress
-            class="progress w-full"
-            :value="smoothProgress"
-            max="100"
-            :aria-label="progressLabel"
-          />
-        </div>
+        <UpdatePreview
+          :added="addedRows"
+          :updated="updatedRows"
+          :removed="removedRows"
+          :unchanged="unchangedRows"
+          :config-files="configFilesPreview"
+          :update-type="manifest.updateType"
+          :applied="updateApplied"
+        />
       </div>
-
-      <!-- The diff — the same screen, grown -->
-      <UpdatePreview
-        v-else-if="manifest !== null"
-        :added="addedRows"
-        :updated="updatedRows"
-        :removed="removedRows"
-        :unchanged="unchangedRows"
-        :config-files="configFilesPreview"
-        :update-type="manifest.updateType"
-      />
 
       <!-- Resting state -->
       <EmptyState
@@ -206,6 +194,16 @@
         updated and deleted before anything touches your modpack.
       </EmptyState>
     </Transition>
+
+    <InstallProgressDialog
+      :open="installPhase !== 'idle'"
+      :state="installPhase === 'idle' ? 'running' : installPhase"
+      :progress="smoothProgress"
+      :label="progressLabel"
+      :error="installError"
+      :summary="installSummary"
+      @close="dismissInstallDialog"
+    />
 
     <template #actions>
       <label
@@ -229,7 +227,7 @@
       </p>
 
       <p
-        v-else-if="installComplete"
+        v-else-if="updateApplied"
         class="text-sm text-base-content/60"
       >
         Done — you can close CEMM or install another update.
@@ -266,7 +264,7 @@
       </button>
 
       <button
-        v-else-if="installComplete"
+        v-else-if="updateApplied"
         type="button"
         class="btn btn-primary btn-sm"
         @click="startOver"
@@ -310,9 +308,19 @@ const downloading = ref(false)
 const installing = ref(false)
 const configFilesDownloaded = ref(false)
 const downloadedConfigFiles = ref<ConfigFileWithContent[]>([])
-const installComplete = ref(false)
 const acknowledged = ref(false)
 const editingDestination = ref(false)
+
+/**
+ * The install dialog's own lifecycle, separate from `updateApplied` so that
+ * dismissing the dialog does not discard the outcome it reported. `idle` means
+ * no dialog; the other three are its three faces.
+ */
+const installPhase = ref<'idle' | 'running' | 'done' | 'failed'>('idle')
+/** Shown inside the dialog. A toast would be behind the modal's own backdrop. */
+const installError = ref<string | null>(null)
+/** Survives dismissal: the diff on screen has been written to disk. */
+const updateApplied = ref(false)
 
 const manifest = computed(() => manifestStore.manifest)
 const previousManifest = computed(() => manifestStore.previousManifest)
@@ -335,7 +343,7 @@ const canFetch = computed(() => !downloading.value && uuid.value.trim().length >
 
 /** The diff is on screen and actionable. */
 const showDiffActions = computed(
-	() => manifest.value !== null && !installing.value && !installComplete.value
+	() => manifest.value !== null && !installing.value && !updateApplied.value
 )
 
 const previewData = computed(() =>
@@ -491,9 +499,16 @@ const progressLabel = computed(() =>
 	if (progressMessage.value.length > 0) return progressMessage.value
 	if (downloading.value) return 'Downloading from GitHub…'
 	if (installing.value) return 'Installing addons and config files…'
-	if (installComplete.value) return 'Done'
+	if (updateApplied.value) return 'Done'
 	return 'Waiting to start'
 })
+
+/** The three figures the dialog reports back once the write has finished. */
+const installSummary = computed(() => ({
+	added: addedRows.value.length,
+	updated: updatedRows.value.length,
+	removed: removedRows.value.length
+}))
 
 const clearStatus = () =>
 {
@@ -512,6 +527,15 @@ const setStatus = (message: string, type: 'success' | 'error' | 'info' | 'warnin
 	if (type === 'info' && busy.value)
 	{
 		progressMessage.value = message
+		return
+	}
+	// The install dialog is a native modal and therefore in the top layer, so a
+	// toast raised while it is open would be announced from behind its own
+	// backdrop. Failures go into the dialog, which is where the user is looking;
+	// its success wording is better than the callback's, so that one is dropped.
+	if (installPhase.value !== 'idle' && (type === 'error' || type === 'success'))
+	{
+		if (type === 'error') installError.value = message
 		return
 	}
 	notify(message, type)
@@ -567,8 +591,11 @@ async function handleFetch()
 		{
 			progress.value = 100
 			// Consent resets for every fetched update: acknowledging one diff is
-			// not consent to a different one.
+			// not consent to a different one. The applied flag goes with it, or a
+			// freshly fetched diff would inherit the previous one's "installed"
+			// banner and claim to already be on disk.
 			acknowledged.value = false
+			updateApplied.value = false
 			editingDestination.value = false
 		}
 	}
@@ -586,16 +613,31 @@ const clearFetched = () =>
 	configFilesDownloaded.value = false
 	downloadedConfigFiles.value = []
 	progress.value = 0
-	// Clearing after a finished install used to leave installComplete set, which
+	// Clearing after a finished install used to leave the applied flag set, which
 	// held the "Update installed" panel on screen above an empty code field —
 	// the app reporting success for something the user had just cleared away.
-	installComplete.value = false
+	updateApplied.value = false
+	installPhase.value = 'idle'
+	installError.value = null
+	clearStatus()
+}
+
+/**
+ * Dismissal closes the dialog and nothing else. The outcome it reported lives
+ * in `updateApplied`, so the screen behind it keeps the diff that was installed
+ * rather than resetting out from under the user.
+ */
+const dismissInstallDialog = () =>
+{
+	installPhase.value = 'idle'
 	clearStatus()
 }
 
 async function handleApply()
 {
 	if (!canApply.value) return
+	installError.value = null
+	installPhase.value = 'running'
 	await confirmInstall()
 }
 
@@ -635,6 +677,7 @@ async function confirmInstall()
 				`Could not download the config files: ${error instanceof Error ? error.message : 'unknown error'}`,
 				'error'
 			)
+			installPhase.value = 'failed'
 			return
 		}
 		finally
@@ -651,7 +694,7 @@ async function performInstall()
 	if (manifest.value === null) return
 
 	installing.value = true
-	installComplete.value = false
+	updateApplied.value = false
 	progress.value = 0
 	let unlisten: UnlistenFn | null = null
 
@@ -683,14 +726,21 @@ async function performInstall()
 			},
 			setStatus
 		)
-		installComplete.value = installed
+		updateApplied.value = installed
+		installPhase.value = installed ? 'done' : 'failed'
 	}
 	finally
 	{
 		installing.value = false
-		if (installComplete.value)
+		if (updateApplied.value)
 		{
 			progress.value = 100
+		}
+		// A throw on the way in — setting up the progress listener, say — would
+		// otherwise leave the dialog spinning on work that is not running.
+		if (installPhase.value === 'running')
+		{
+			installPhase.value = 'failed'
 		}
 		if (typeof unlisten === 'function')
 		{

@@ -29,7 +29,11 @@
         size="1.1rem"
         aria-hidden="true"
       />
-      <span>
+      <span v-if="applied">
+        <strong>Config-only update.</strong>
+        Only configuration files changed — none of your addons were touched.
+      </span>
+      <span v-else>
         <strong>Config-only update.</strong>
         Only configuration files change — none of your addons will be touched.
       </span>
@@ -52,17 +56,17 @@
         </span>
         <div class="min-w-0">
           <p class="text-sm font-semibold text-error">
-            {{ removed.length }} {{ removed.length === 1 ? 'addon' : 'addons' }} will be deleted from your modpack
+            {{ deletionHeadline }}
           </p>
           <p class="mt-0.5 text-xs text-base-content/65">
-            These files are removed from disk permanently. This cannot be undone.
+            {{ deletionNote }}
           </p>
         </div>
       </div>
 
       <AddonTable
         id="preview-removed"
-        title="Being deleted"
+        :title="applied ? 'Deleted' : 'Being deleted'"
         :rows="removed"
         :max-height="200"
         noun="addons"
@@ -134,14 +138,46 @@
 <script setup lang="ts">
 import type { AddonRow } from '~/components/domains/addons/AddonTable.vue'
 
-const props = defineProps<{
-	added: AddonRow[]
-	updated: AddonRow[]
-	removed: AddonRow[]
-	unchanged: AddonRow[]
-	configFiles: Array<{ relativePath: string, badge: 'BIN' | 'CFG' | null }>
-	updateType?: 'full' | 'config'
-}>()
+const props = withDefaults(
+	defineProps<{
+		added: AddonRow[]
+		updated: AddonRow[]
+		removed: AddonRow[]
+		unchanged: AddonRow[]
+		configFiles: Array<{ relativePath: string, badge: 'BIN' | 'CFG' | null }>
+		updateType?: 'full' | 'config'
+		/**
+		 * The same diff, after it has been written to disk. The screen stays up
+		 * as the record of what was installed, so every sentence on it that
+		 * described something about to happen has to stop claiming that.
+		 */
+		applied?: boolean
+	}>(),
+	{ updateType: undefined, applied: false }
+)
+
+const deletionHeadline = computed(() =>
+{
+	const noun = props.removed.length === 1 ? 'addon' : 'addons'
+	const verb = props.removed.length === 1
+		? (props.applied ? 'was deleted' : 'will be deleted')
+		: (props.applied ? 'were deleted' : 'will be deleted')
+	return `${props.removed.length} ${noun} ${verb} from your modpack`
+})
+
+const deletionNote = computed(() =>
+{
+	const single = props.removed.length === 1
+	if (props.applied)
+	{
+		return single
+			? 'That file was removed from disk permanently.'
+			: 'Those files were removed from disk permanently.'
+	}
+	return single
+		? 'That file is removed from disk permanently. This cannot be undone.'
+		: 'Those files are removed from disk permanently. This cannot be undone.'
+})
 
 type FilterKey = 'all' | 'new' | 'updated' | 'same'
 
