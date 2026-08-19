@@ -166,7 +166,7 @@
         >
           <template #actions>
             <button
-              v-if="excludedCount > 0"
+              v-if="manualExcludedCount > 0"
               type="button"
               class="btn gap-1.5 btn-ghost btn-xs"
               @click="manifestStore.clearExclusions()"
@@ -199,6 +199,12 @@
         <p class="shrink-0 text-[0.8125rem] leading-relaxed text-base-content/55">
           Excluded addons stay installed on your machine — they are simply left out
           of what you publish. Use this for server-side or private mods.
+          <template v-if="disabledExcludedCount > 0">
+            {{ disabledExcludedCount }}
+            {{ disabledExcludedCount === 1 ? 'addon is' : 'addons are' }}
+            switched off in CurseForge and start excluded; switch one back on here
+            to publish it anyway.
+          </template>
         </p>
       </div>
     </Transition>
@@ -258,8 +264,8 @@
         v-else
         class="text-sm text-base-content/60"
       >
-        {{ shippingCount }} of {{ totalAddons }} addons ship<template v-if="excludedCount > 0">
-          · {{ excludedCount }} excluded
+        {{ shippingCount }} of {{ totalAddons }} addons ship<template v-if="excludedSummary.length > 0">
+          · {{ excludedSummary }}
         </template><template v-if="selectedConfigFiles.length > 0">
           · {{ selectedConfigFiles.length }} config files
         </template>
@@ -314,6 +320,39 @@ const activePane = ref('mods')
 const manifest = computed(() => manifestStore.manifest)
 const excludedCount = computed(() => manifestStore.excludedAddons.length)
 
+/** Addons the loaded instance reports as switched off, by name. */
+const disabledNames = computed(() =>
+{
+	const current = manifest.value
+	if (current === null) return new Set<string>()
+	return new Set(
+		[current.mods, current.resourcepacks, current.shaderpacks, current.datapacks]
+			.flat()
+			.filter((addon) => addon.disabled === true)
+			.map((addon) => addon.addon_name)
+	)
+})
+
+/** Still switched off in CurseForge and still left out — the default state. */
+const disabledExcludedCount = computed(
+	() => manifestStore.excludedAddons.filter((name) => disabledNames.value.has(name)).length
+)
+
+/**
+ * Exclusions the admin made themselves. "Include all" is offered against this
+ * rather than the whole set, or it would be a live control on a screen where it
+ * can do nothing — clearing exclusions never re-includes a disabled addon.
+ */
+const manualExcludedCount = computed(() => excludedCount.value - disabledExcludedCount.value)
+
+/** Action-bar tally. The disabled figure is stated as a subset, not an addend. */
+const excludedSummary = computed(() =>
+{
+	if (excludedCount.value === 0) return ''
+	if (disabledExcludedCount.value === 0) return `${excludedCount.value} excluded`
+	return `${excludedCount.value} excluded (${disabledExcludedCount.value} disabled)`
+})
+
 const instanceLabel = computed(() =>
 {
 	const name = customModpackName.value.trim()
@@ -328,6 +367,23 @@ const instanceLabel = computed(() =>
 	return 'Loaded instance'
 })
 
+/**
+ * The `manage` variant of AddonTable renders no status chip, so everything a
+ * row has to say about why it is or is not shipping has to land in the subtitle.
+ * "Disabled" and "excluded" are separate facts and a row can carry both, so all
+ * four combinations are spelled out rather than collapsed.
+ */
+const rowSubtitle = (addon: Addon, excluded: boolean): string =>
+{
+	if (addon.disabled === true)
+	{
+		return excluded
+			? 'Disabled in CurseForge — not published'
+			: 'Disabled in CurseForge — published anyway'
+	}
+	return excluded ? 'Excluded — stays on your machine' : addon.fileNameOnDisk
+}
+
 const toRows = (addons: Addon[]): AddonRow[] =>
 	addons.map((addon) =>
 	{
@@ -335,13 +391,13 @@ const toRows = (addons: Addon[]): AddonRow[] =>
 		return {
 			key: `${addon.addon_project_id}-${addon.version}`,
 			name: addon.addon_name,
-			subtitle: excluded ? 'Excluded — stays on your machine' : addon.fileNameOnDisk,
+			subtitle: rowSubtitle(addon, excluded),
 			version: addon.version,
 			// Deliberately empty: the filename already sits under the project name,
 			// and repeating it here made the version column carry no information.
 			versionNote: '',
 			tone: excluded ? 'excluded' as const : 'shipping' as const,
-			label: excluded ? 'Excluded' : 'Ships',
+			label: excluded ? (addon.disabled === true ? 'Disabled' : 'Excluded') : 'Ships',
 			struck: excluded,
 			dimmed: excluded,
 			thumbnailUrl: addon.thumbnailUrl

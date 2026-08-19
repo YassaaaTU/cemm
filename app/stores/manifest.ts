@@ -2,6 +2,19 @@ import { defineStore } from 'pinia'
 
 import type { Manifest, ManifestUpdateInfo } from '~/types'
 
+/**
+ * Addons the instance itself reports as switched off — CurseForge's own
+ * enable/disable toggle, or a file renamed to `.disabled` by hand.
+ */
+function disabledAddonNames(source: Manifest | null): string[]
+{
+	if (source === null) return []
+	return [source.mods, source.resourcepacks, source.shaderpacks, source.datapacks]
+		.flat()
+		.filter((addon) => addon.disabled === true)
+		.map((addon) => addon.addon_name)
+}
+
 export const useManifestStore = defineStore('manifest', () =>
 {
 	const manifest = ref<Manifest | null>(null)
@@ -17,8 +30,13 @@ export const useManifestStore = defineStore('manifest', () =>
 			previousManifest.value = manifest.value
 		}
 		manifest.value = newManifest
-		// Clear exclusions when loading a new manifest
-		excludedAddons.value = []
+		// Exclusions belong to the manifest they were made against, so a new one
+		// starts from the instance's own state rather than from nothing. An addon
+		// CurseForge has switched off is already a decision not to run it;
+		// publishing it regardless pushed a mod onto every player that the admin
+		// had deliberately turned off. It is still a starting point, not a lock —
+		// the row's toggle puts it back in.
+		excludedAddons.value = disabledAddonNames(newManifest)
 	}
 
 	function loadInstalledManifest(installedManifest: Manifest | null)
@@ -55,9 +73,16 @@ export const useManifestStore = defineStore('manifest', () =>
 		return excludedAddons.value.includes(addonName)
 	}
 
+	/**
+	 * Drops the exclusions the admin made by hand and returns to the instance's
+	 * own state. It deliberately does NOT re-include addons switched off in
+	 * CurseForge: a bulk "include everything" that quietly undid that would
+	 * reintroduce the exact thing this floor exists to prevent. Those rows are
+	 * put back one at a time, by their own toggle.
+	 */
 	function clearExclusions()
 	{
-		excludedAddons.value = []
+		excludedAddons.value = disabledAddonNames(manifest.value)
 	}
 
 	/**
