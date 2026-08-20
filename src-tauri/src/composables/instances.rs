@@ -242,10 +242,11 @@ fn cache_file_name(url: &str) -> Option<String> {
         .collect();
 
     // Bounded so a pathological URL cannot produce a filename the OS rejects.
-    let stem: String = stem.chars().rev().take(96).collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
+    // The tail rather than the head, because what distinguishes two CurseForge
+    // assets is the last segment of their path — truncating from the front is
+    // what keeps them from colliding. Byte indexing is safe here: the map above
+    // leaves nothing but ASCII alphanumerics and `-`.
+    let stem = stem[stem.len().saturating_sub(96)..].to_string();
 
     Some(format!("{stem}.{extension}"))
 }
@@ -269,9 +270,24 @@ fn mime_for(path: &Path) -> Option<&'static str> {
     )
 }
 
+/// Read an image off disk as a `data:` URI, or nothing.
+///
+/// The single place the size cap and the format table are applied, so a card
+/// that declines to show a picture declines for the same reasons wherever the
+/// picture came from. Every refusal returns `None` because none of them is
+/// something the user has to act on — but the oversize one is logged, since it
+/// is the only one where the file is right there and looks fine.
 fn as_data_uri(path: &Path) -> Option<String> {
     let meta = fs::metadata(path).ok()?;
-    if !meta.is_file() || meta.len() > MAX_ICON_BYTES {
+    if !meta.is_file() {
+        return None;
+    }
+    if meta.len() > MAX_ICON_BYTES {
+        log::debug!(
+            "as_data_uri: {} is {} bytes, over the {MAX_ICON_BYTES} cap",
+            path.display(),
+            meta.len()
+        );
         return None;
     }
     let mime = mime_for(path)?;
@@ -470,24 +486,7 @@ fn read_icon(instance_dir: &Path, raw: Option<&str>) -> Option<String> {
         return None;
     }
 
-    let meta = fs::metadata(&candidate).ok()?;
-    if !meta.is_file() || meta.len() > MAX_ICON_BYTES {
-        return None;
-    }
-
-    let mime = match candidate.extension()?.to_str()?.to_lowercase().as_str() {
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "webp" => "image/webp",
-        "gif" => "image/gif",
-        _ => return None,
-    };
-
-    let bytes = fs::read(&candidate).ok()?;
-    Some(format!(
-        "data:{mime};base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(bytes)
-    ))
+    as_data_uri(&candidate)
 }
 
 fn summarise(instance_dir: &Path, cache_dir: Option<&Path>) -> Result<PackSummary, String> {
