@@ -170,13 +170,28 @@ export const usePacksStore = defineStore('packs', () =>
 
 	const groups = computed(() => library.value?.groups ?? [])
 
+	/**
+	 * Which scan is the current one. A forced scan answers a question the last
+	 * one was not asked — a different folder, or a Refresh after the user changed
+	 * something on disk — so a slower earlier scan must not be allowed to land on
+	 * top of it. Compared rather than cancelled, because the IPC call cannot be
+	 * called back.
+	 */
+	let generation = 0
+
 	async function scan(force = false): Promise<void>
 	{
 		// Re-scanning on every visit costs ~400ms of disk for a list that rarely
 		// changes within a session. Refresh is a button; this is the guard.
 		if (!force && library.value !== null && Date.now() - scannedAt.value < 30_000) return
-		if (scanning.value) return
+		// A forced scan supersedes one already running rather than being dropped.
+		// Dropping it meant picking a new folder while the first scan was still
+		// out returned instantly and did nothing, and the original then wrote the
+		// OLD folder's packs under a header naming the new one — with the
+		// freshness guard above blocking any correction for the next 30 seconds.
+		if (scanning.value && !force) return
 
+		const mine = ++generation
 		const { scanPackLibrary } = useTauri()
 		scanning.value = true
 		scanError.value = null
@@ -185,6 +200,9 @@ export const usePacksStore = defineStore('packs', () =>
 			const result = await scanPackLibrary(
 				instancesDirOverride.value.trim().length > 0 ? instancesDirOverride.value : null
 			)
+			// A newer scan has taken over; this one's answer is about a question
+			// nobody is asking any more, including its error.
+			if (mine !== generation) return
 			if (result === null)
 			{
 				scanError.value = 'Could not read your modpack folder. Check the location in Settings.'
@@ -202,9 +220,21 @@ export const usePacksStore = defineStore('packs', () =>
 		}
 		finally
 		{
-			scanning.value = false
+			// Left set if a newer scan is still running — it owns the flag now.
+			if (mine === generation) scanning.value = false
 		}
 	}
+
+	/**
+	 * URLs a batch is currently out for. `fetchedIcons` cannot serve as this
+	 * record, because a URL only lands there once its batch resolves — so two
+	 * scans a few hundred milliseconds apart both saw an empty map and both asked
+	 * for the same sixteen thumbnails. Nothing could corrupt, since a URL always
+	 * maps to the same image, but the fetches are sequential with a 15s timeout
+	 * apiece, so a bad network turned repeated Refreshes into stacked batches
+	 * that took minutes to drain.
+	 */
+	const iconsInFlight = new Set<string>()
 
 	/**
 	 * Fill in CurseForge artwork for packs whose thumbnail is not cached yet.
@@ -214,22 +244,37 @@ export const usePacksStore = defineStore('packs', () =>
 	 */
 	async function fetchMissingIcons(): Promise<void>
 	{
-		const wanted = (library.value?.packs ?? [])
-			.filter((pack) => pack.icon === null && pack.iconUrl !== null)
-			.map((pack) => pack.iconUrl as string)
-			.filter((url) => fetchedIcons.value[url] === undefined)
+		const wanted = [...new Set(
+			(library.value?.packs ?? [])
+				.filter((pack): pack is PackSummary & { iconUrl: string } =>
+					pack.icon === null && pack.iconUrl !== null)
+				.map((pack) => pack.iconUrl)
+				.filter((url) => fetchedIcons.value[url] === undefined && !iconsInFlight.has(url))
+		)]
 
 		if (wanted.length === 0) return
 
 		const { cachePackIcons } = useTauri()
-		const results = await cachePackIcons([...new Set(wanted)])
-
-		const merged = { ...fetchedIcons.value }
-		for (const result of results)
+		for (const url of wanted) iconsInFlight.add(url)
+		try
 		{
-			if (result.icon !== null) merged[result.url] = result.icon
+			const results = await cachePackIcons(wanted)
+
+			const merged = { ...fetchedIcons.value }
+			for (const result of results)
+			{
+				if (result.icon !== null) merged[result.url] = result.icon
+			}
+			fetchedIcons.value = merged
 		}
-		fetchedIcons.value = merged
+		finally
+		{
+			// Released whatever happened. A URL that failed is left out of
+			// `fetchedIcons`, so the next scan asks for it again — a thumbnail that
+			// is 404 today may not be tomorrow, and a card with no picture is not a
+			// state anyone has to act on.
+			for (const url of wanted) iconsInFlight.delete(url)
+		}
 	}
 
 	/**
