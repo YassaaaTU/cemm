@@ -1,6 +1,7 @@
 use crate::composables::manifest::Manifest;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs as async_fs;
@@ -292,6 +293,250 @@ pub struct InstallProgress {
 
 pub type InstallProgressCallback = Arc<dyn Fn(InstallProgress) + Send + Sync>;
 
+const INSTALL_TRANSACTION_DIR: &str = ".cemm-transaction";
+const INSTALL_JOURNAL_FILE: &str = "journal.json";
+const INSTALL_COMMITTED_FILE: &str = "committed";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct InstallTransactionEntry {
+    relative_path: String,
+    had_original: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct InstallTransactionJournal {
+    entries: Vec<InstallTransactionEntry>,
+}
+
+async fn remove_file_if_present(path: &Path) -> Result<(), String> {
+    match async_fs::remove_file(path).await {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("Failed to remove {}: {error}", path.display())),
+    }
+}
+
+async fn rollback_install_transaction(
+    modpack_path: &Path,
+    transaction_dir: &Path,
+    journal: &InstallTransactionJournal,
+) -> Result<(), String> {
+    let backup_dir = transaction_dir.join("backup");
+
+    for (index, entry) in journal.entries.iter().enumerate().rev() {
+        let final_path = validate_path_within_base(modpack_path, &entry.relative_path)?;
+        let backup_path = backup_dir.join(index.to_string());
+
+        if backup_path.exists() {
+            remove_file_if_present(&final_path).await?;
+            if let Some(parent) = final_path.parent() {
+                async_fs::create_dir_all(parent).await.map_err(|error| {
+                    format!(
+                        "Failed to recreate rollback directory {}: {error}",
+                        parent.display()
+                    )
+                })?;
+            }
+            async_fs::rename(&backup_path, &final_path)
+                .await
+                .map_err(|error| {
+                    format!(
+                        "Failed to restore {} from transaction backup: {error}",
+                        final_path.display()
+                    )
+                })?;
+        } else if !entry.had_original {
+            remove_file_if_present(&final_path).await?;
+        }
+    }
+
+    async_fs::remove_dir_all(transaction_dir)
+        .await
+        .map_err(|error| {
+            format!(
+                "Files were restored, but transaction cleanup failed at {}: {error}",
+                transaction_dir.display()
+            )
+        })
+}
+
+async fn recover_interrupted_install(modpack_path: &Path) -> Result<(), String> {
+    let transaction_dir = modpack_path.join(INSTALL_TRANSACTION_DIR);
+    if !transaction_dir.exists() {
+        return Ok(());
+    }
+
+    if transaction_dir.join(INSTALL_COMMITTED_FILE).exists() {
+        return async_fs::remove_dir_all(&transaction_dir)
+            .await
+            .map_err(|error| {
+                format!(
+                    "Failed to clean committed install transaction {}: {error}",
+                    transaction_dir.display()
+                )
+            });
+    }
+
+    let journal_path = transaction_dir.join(INSTALL_JOURNAL_FILE);
+    if !journal_path.exists() {
+        return async_fs::remove_dir_all(&transaction_dir)
+            .await
+            .map_err(|error| {
+                format!(
+                    "Failed to clean incomplete install staging {}: {error}",
+                    transaction_dir.display()
+                )
+            });
+    }
+
+    let journal_bytes = async_fs::read(&journal_path).await.map_err(|error| {
+        format!(
+            "Failed to read interrupted install journal {}: {error}",
+            journal_path.display()
+        )
+    })?;
+    let journal: InstallTransactionJournal =
+        serde_json::from_slice(&journal_bytes).map_err(|error| {
+            format!(
+                "Interrupted install journal is invalid at {}: {error}",
+                journal_path.display()
+            )
+        })?;
+
+    rollback_install_transaction(modpack_path, &transaction_dir, &journal).await
+}
+
+async fn finalize_install_transaction<F>(
+    modpack_path: &Path,
+    transaction_dir: &Path,
+    cleanup_paths: Vec<PathBuf>,
+    staged_moves: Vec<(PathBuf, PathBuf)>,
+    before_promotion: F,
+) -> Result<(), String>
+where
+    F: Fn(usize, &Path) -> Result<(), String>,
+{
+    let mut relative_paths = Vec::new();
+    let mut seen = HashSet::new();
+
+    for final_path in cleanup_paths
+        .iter()
+        .chain(staged_moves.iter().map(|(_, final_path)| final_path))
+    {
+        let relative = final_path.strip_prefix(modpack_path).map_err(|_| {
+            format!(
+                "Install destination escaped the modpack directory: {}",
+                final_path.display()
+            )
+        })?;
+        let relative = relative.to_str().ok_or_else(|| {
+            format!(
+                "Install destination is not valid Unicode: {}",
+                final_path.display()
+            )
+        })?;
+        let validated = validate_path_within_base(modpack_path, relative)?;
+        let key = validated.to_string_lossy().to_string();
+        if seen.insert(key) {
+            relative_paths.push(relative.to_string());
+        }
+    }
+
+    let entries = relative_paths
+        .into_iter()
+        .map(|relative_path| {
+            let final_path = modpack_path.join(&relative_path);
+            InstallTransactionEntry {
+                relative_path,
+                had_original: final_path.exists(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let journal = InstallTransactionJournal { entries };
+    let journal_path = transaction_dir.join(INSTALL_JOURNAL_FILE);
+    let journal_temp_path = transaction_dir.join("journal.tmp");
+    let journal_bytes = serde_json::to_vec_pretty(&journal)
+        .map_err(|error| format!("Failed to encode install journal: {error}"))?;
+
+    async_fs::create_dir_all(transaction_dir)
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to create install transaction directory {}: {error}",
+                transaction_dir.display()
+            )
+        })?;
+    async_fs::write(&journal_temp_path, journal_bytes)
+        .await
+        .map_err(|error| format!("Failed to write install journal: {error}"))?;
+    async_fs::rename(&journal_temp_path, &journal_path)
+        .await
+        .map_err(|error| format!("Failed to publish install journal: {error}"))?;
+
+    let mutation_result = async {
+        let backup_dir = transaction_dir.join("backup");
+        async_fs::create_dir_all(&backup_dir)
+            .await
+            .map_err(|error| format!("Failed to create install backup directory: {error}"))?;
+
+        for (index, entry) in journal.entries.iter().enumerate() {
+            if !entry.had_original {
+                continue;
+            }
+            let final_path = validate_path_within_base(modpack_path, &entry.relative_path)?;
+            let backup_path = backup_dir.join(index.to_string());
+            async_fs::rename(&final_path, &backup_path)
+                .await
+                .map_err(|error| {
+                    format!(
+                        "Failed to back up {} before install: {error}",
+                        final_path.display()
+                    )
+                })?;
+        }
+
+        for (index, (staged_path, final_path)) in staged_moves.iter().enumerate() {
+            before_promotion(index, final_path)?;
+            if let Some(parent) = final_path.parent() {
+                async_fs::create_dir_all(parent).await.map_err(|error| {
+                    format!(
+                        "Failed to create install directory {}: {error}",
+                        parent.display()
+                    )
+                })?;
+            }
+            async_fs::rename(staged_path, final_path)
+                .await
+                .map_err(|error| {
+                    format!(
+                        "Failed to promote {} into place: {error}",
+                        final_path.display()
+                    )
+                })?;
+        }
+
+        async_fs::write(transaction_dir.join(INSTALL_COMMITTED_FILE), b"committed")
+            .await
+            .map_err(|error| format!("Failed to mark install transaction committed: {error}"))?;
+        Ok::<(), String>(())
+    }
+    .await;
+
+    if let Err(error) = mutation_result {
+        return match rollback_install_transaction(modpack_path, transaction_dir, &journal).await {
+            Ok(()) => Err(format!("{error}. The previous installation was restored.")),
+            Err(rollback_error) => Err(format!(
+                "{error}. Automatic rollback also failed: {rollback_error}"
+            )),
+        };
+    }
+
+    // The committed marker makes a leftover directory safe: recovery will only
+    // clean it, never restore backups over the successful installation.
+    let _ = async_fs::remove_dir_all(transaction_dir).await;
+    Ok(())
+}
+
 /// Unified install service operation that handles all installation scenarios.
 pub async fn install_update_with_progress(
     modpack_path: String,
@@ -326,12 +571,31 @@ pub async fn install_update_with_progress(
     // up front, before any download or write is attempted.
     validate_all_addons(&manifest)?;
 
+    let modpack_path_buf = PathBuf::from(&modpack_path);
+    recover_interrupted_install(&modpack_path_buf).await?;
+    let transaction_dir = modpack_path_buf.join(INSTALL_TRANSACTION_DIR);
+    let staging_dir = transaction_dir.join("staging");
+
     // Config destinations and binary payloads are also attacker-controlled.
     // Resolve and decode every one before addon cleanup or promotion begins so
     // a malformed final config cannot fail only after destructive work.
-    let modpack_path_buf = PathBuf::from(&modpack_path);
     let mut prepared_configs = Vec::with_capacity(config_files.len());
     for config in config_files {
+        let first_component = Path::new(&config.relative_path)
+            .components()
+            .next()
+            .and_then(|component| component.as_os_str().to_str());
+        if first_component
+            .is_some_and(|component| component.eq_ignore_ascii_case(INSTALL_TRANSACTION_DIR))
+            || config
+                .relative_path
+                .eq_ignore_ascii_case("cemm-manifest.json")
+        {
+            return Err(format!(
+                "Config file path uses a CEMM-reserved install path: {}",
+                config.relative_path
+            ));
+        }
         let dest = validate_path_within_base(&modpack_path_buf, &config.relative_path)?;
         let bytes = if config
             .content
@@ -385,11 +649,8 @@ pub async fn install_update_with_progress(
         None
     };
 
-    // Cleanup used to run here, before any download — a network failure partway
-    // through downloading meant old files were already gone with nothing to
-    // replace them (F-P1-1). It now runs after every download below has staged
-    // successfully; see the promotion step following the addon loops.
-    let staging_dir = Path::new(&modpack_path).join(".cemm-staging");
+    // Every payload is staged in the transaction directory before live files
+    // are touched. If the process stops, the journal is recovered next time.
     let mut staged_moves: Vec<(PathBuf, PathBuf)> = Vec::new();
 
     let mut current = 0usize;
@@ -671,70 +932,75 @@ pub async fn install_update_with_progress(
                 log::info!("Skipping unchanged datapack: {}", addon.addon_name);
             }
         }
-
-        // Every download above succeeded — only now is it safe to run the
-        // destructive step. cleanup_old deletes files; promoting staged
-        // downloads is a same-filesystem rename, the fastest and least
-        // failure-prone part of the whole operation.
-        if options.cleanup_old {
-            if let (Some(old_manifest), Some(ref diff)) = (options.old_manifest.as_ref(), &diff) {
-                remove_old_files(&modpack_path, old_manifest, diff).await?;
-            }
-        }
-
-        emit_progress(
-            &progress_callback,
-            current,
-            files_to_download,
-            "Finalizing installed files...",
-        );
-        for (staged_path, final_path) in staged_moves {
-            if let Some(parent) = final_path.parent() {
-                async_fs::create_dir_all(parent).await.map_err(|e| {
-                    format!("Failed to create directory {}: {}", parent.display(), e)
-                })?;
-            }
-            async_fs::rename(&staged_path, &final_path)
-                .await
-                .map_err(|e| {
-                    format!("Failed to move {} into place: {}", final_path.display(), e)
-                })?;
-        }
-
-        // Best-effort: leftover staging files are harmless and get overwritten
-        // by the next install, so a failure here is not itself an install failure.
-        let _ = async_fs::remove_dir_all(&staging_dir).await;
     }
 
-    // Config paths and payloads were fully prepared before any destructive work.
-    for (dest, bytes) in prepared_configs {
-        if let Some(parent) = dest.parent() {
-            async_fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create directory {}: {}", parent.display(), e))?;
+    // Configs and the installed manifest participate in the same transaction as
+    // add-ons. Nothing is written directly into the live instance yet.
+    for (index, (dest, bytes)) in prepared_configs.into_iter().enumerate() {
+        let staged_path = staging_dir.join("configs").join(index.to_string());
+        if let Some(parent) = staged_path.parent() {
+            async_fs::create_dir_all(parent).await.map_err(|error| {
+                format!(
+                    "Failed to create config staging directory {}: {error}",
+                    parent.display()
+                )
+            })?;
         }
-        async_fs::write(&dest, bytes)
+        async_fs::write(&staged_path, bytes)
             .await
-            .map_err(|e| format!("Failed to write config file {}: {}", dest.display(), e))?;
+            .map_err(|error| {
+                format!(
+                    "Failed to stage config file for {}: {error}",
+                    dest.display()
+                )
+            })?;
+        staged_moves.push((staged_path, dest.clone()));
 
         current += 1;
         emit_progress(
             &progress_callback,
             current,
             files_to_download,
-            &format!("Installed config: {}", dest.display()),
+            &format!("Prepared config: {}", dest.display()),
         );
     }
 
     let manifest_path = validate_path_within_base(&modpack_path_buf, "cemm-manifest.json")?;
-    async_fs::write(&manifest_path, installed_manifest)
+    let staged_manifest_path = staging_dir.join("cemm-manifest.json");
+    if let Some(parent) = staged_manifest_path.parent() {
+        async_fs::create_dir_all(parent)
+            .await
+            .map_err(|error| format!("Failed to create manifest staging directory: {error}"))?;
+    }
+    async_fs::write(&staged_manifest_path, installed_manifest)
         .await
-        .map_err(|error| {
-            format!(
-                "Files were installed, but the installed manifest could not be recorded at {}: {error}",
-                manifest_path.display()
-            )
-        })?;
+        .map_err(|error| format!("Failed to stage installed manifest: {error}"))?;
+    staged_moves.push((staged_manifest_path, manifest_path));
+
+    let cleanup_paths = if options.cleanup_old {
+        if let (Some(old_manifest), Some(ref diff)) = (options.old_manifest.as_ref(), &diff) {
+            collect_old_file_paths(&modpack_path_buf, old_manifest, diff)?
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    emit_progress(
+        &progress_callback,
+        current,
+        files_to_download,
+        "Finalizing installed files...",
+    );
+    finalize_install_transaction(
+        &modpack_path_buf,
+        &transaction_dir,
+        cleanup_paths,
+        staged_moves,
+        |_, _| Ok(()),
+    )
+    .await?;
 
     emit_progress(
         &progress_callback,
@@ -840,108 +1106,85 @@ fn calculate_update_diff(
     Ok(diff)
 }
 
+fn collect_old_file_paths(
+    modpack_path: &Path,
+    old_manifest: &Manifest,
+    diff: &UpdateDiff,
+) -> Result<Vec<PathBuf>, String> {
+    fn collect_category_files(
+        modpack_path: &Path,
+        category_dir: &str,
+        old_addons: &[crate::composables::manifest::Addon],
+        diff: &UpdateDiff,
+    ) -> Result<Vec<PathBuf>, String> {
+        let mut paths = Vec::new();
+        for old_addon in old_addons {
+            let is_removed = diff.removed_addons.contains(&old_addon.addon_name);
+            let is_updated = diff.updated_addon_ids.contains(&old_addon.addon_project_id);
+            if !is_removed && !is_updated {
+                continue;
+            }
+
+            validate_addon_file_name(&old_addon.addon_name, &old_addon.file_name_on_disk)?;
+            for filename in [
+                old_addon.file_name_on_disk.clone(),
+                format!("{}.disabled", old_addon.file_name_on_disk),
+            ] {
+                let relative_path = Path::new(category_dir).join(filename);
+                let relative_path = relative_path.to_str().ok_or_else(|| {
+                    format!(
+                        "Old addon path is not valid Unicode for '{}'",
+                        old_addon.addon_name
+                    )
+                })?;
+                let path = validate_path_within_base(modpack_path, relative_path)?;
+                if path.exists() {
+                    paths.push(path);
+                }
+            }
+        }
+        Ok(paths)
+    }
+
+    let mut paths = Vec::new();
+    paths.extend(collect_category_files(
+        modpack_path,
+        "mods",
+        &old_manifest.mods,
+        diff,
+    )?);
+    paths.extend(collect_category_files(
+        modpack_path,
+        "resourcepacks",
+        &old_manifest.resourcepacks,
+        diff,
+    )?);
+    paths.extend(collect_category_files(
+        modpack_path,
+        "shaderpacks",
+        &old_manifest.shaderpacks,
+        diff,
+    )?);
+    paths.extend(collect_category_files(
+        modpack_path,
+        "datapacks",
+        &old_manifest.datapacks,
+        diff,
+    )?);
+    Ok(paths)
+}
+
+#[cfg(test)]
 async fn remove_old_files(
     modpack_path: &str,
     old_manifest: &Manifest,
     diff: &UpdateDiff,
 ) -> Result<(), String> {
-    log::info!(
-        "remove_old_files: Starting removal for {} removed, {} updated addons",
-        diff.removed_addons.len(),
-        diff.updated_addon_ids.len()
-    );
-
-    async fn remove_category_files(
-        modpack_path: &str,
-        category_dir: &str,
-        old_addons: &[crate::composables::manifest::Addon],
-        diff: &UpdateDiff,
-    ) -> Result<(), String> {
-        let category_path = Path::new(modpack_path).join(category_dir);
-
-        if !category_path.exists() {
-            return Ok(());
-        }
-
-        let mut dir_entries = async_fs::read_dir(&category_path).await.map_err(|e| {
-            format!(
-                "Failed to read directory {}: {}",
-                category_path.display(),
-                e
-            )
-        })?;
-
-        while let Some(entry) = dir_entries.next_entry().await.map_err(|e| e.to_string())? {
-            let file_path = entry.path();
-            let file_name = file_path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("");
-
-            // Check for removed addons
-            for removed_addon in &diff.removed_addons {
-                if let Some(old_addon) = old_addons.iter().find(|a| &a.addon_name == removed_addon)
-                {
-                    let exact_filename = &old_addon.file_name_on_disk;
-                    let disabled_filename = format!("{}.disabled", exact_filename);
-
-                    if file_name == exact_filename || file_name == disabled_filename {
-                        log::info!(
-                            "Removing file for addon '{}': {}",
-                            removed_addon,
-                            file_path.display()
-                        );
-                        async_fs::remove_file(&file_path).await.map_err(|e| {
-                            format!("Failed to remove file {}: {}", file_path.display(), e)
-                        })?;
-                        break;
-                    }
-                }
-            }
-
-            // Check for updated addons (match by project_id for reliable identification)
-            for old_addon in old_addons {
-                // Check if this addon has an update by matching project_id
-                let is_updated = diff.updated_addon_ids.contains(&old_addon.addon_project_id);
-                if is_updated {
-                    // Use exact filename matching for safety
-                    let exact_filename = &old_addon.file_name_on_disk;
-                    let disabled_filename = format!("{}.disabled", exact_filename);
-
-                    if file_name == exact_filename || file_name == disabled_filename {
-                        log::info!(
-                            "Removing old version of '{}': {}",
-                            old_addon.addon_name,
-                            file_path.display()
-                        );
-                        async_fs::remove_file(&file_path).await.map_err(|e| {
-                            format!(
-                                "Failed to remove old version {}: {}",
-                                file_path.display(),
-                                e
-                            )
-                        })?;
-                        break;
-                    }
-                }
-            }
-        }
-
-        Ok(())
+    for path in collect_old_file_paths(Path::new(modpack_path), old_manifest, diff)? {
+        async_fs::remove_file(&path)
+            .await
+            .map_err(|error| format!("Failed to remove {}: {error}", path.display()))?;
     }
-
-    remove_category_files(modpack_path, "mods", &old_manifest.mods, diff).await?;
-    remove_category_files(
-        modpack_path,
-        "resourcepacks",
-        &old_manifest.resourcepacks,
-        diff,
-    )
-    .await?;
-    remove_category_files(modpack_path, "shaderpacks", &old_manifest.shaderpacks, diff).await?;
-    remove_category_files(modpack_path, "datapacks", &old_manifest.datapacks, diff).await?;
-
-    log::info!("remove_old_files: Removal complete");
     Ok(())
 }
 
@@ -1435,5 +1678,175 @@ mod tests {
             !temp.path().join("cemm-manifest.json").exists(),
             "failed installation must not record a new manifest"
         );
+    }
+
+    #[tokio::test]
+    async fn finalization_failure_restores_every_original_file() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        let transaction_dir = temp.path().join(INSTALL_TRANSACTION_DIR);
+        let staging_dir = transaction_dir.join("staging");
+        async_fs::create_dir_all(staging_dir.join("mods"))
+            .await
+            .expect("failed to create addon staging");
+        async_fs::create_dir_all(staging_dir.join("configs"))
+            .await
+            .expect("failed to create config staging");
+        async_fs::create_dir_all(temp.path().join("mods"))
+            .await
+            .expect("failed to create mods dir");
+        async_fs::create_dir_all(temp.path().join("config"))
+            .await
+            .expect("failed to create config dir");
+
+        let old_addon = temp.path().join("mods/old.jar");
+        let new_addon = temp.path().join("mods/new.jar");
+        let config = temp.path().join("config/settings.toml");
+        let manifest = temp.path().join("cemm-manifest.json");
+        async_fs::write(&old_addon, b"old addon")
+            .await
+            .expect("failed to seed old addon");
+        async_fs::write(&config, b"old config")
+            .await
+            .expect("failed to seed old config");
+        async_fs::write(&manifest, b"old manifest")
+            .await
+            .expect("failed to seed old manifest");
+
+        let staged_addon = staging_dir.join("mods/new.jar");
+        let staged_config = staging_dir.join("configs/0");
+        let staged_manifest = staging_dir.join("cemm-manifest.json");
+        async_fs::write(&staged_addon, b"new addon")
+            .await
+            .expect("failed to stage addon");
+        async_fs::write(&staged_config, b"new config")
+            .await
+            .expect("failed to stage config");
+        async_fs::write(&staged_manifest, b"new manifest")
+            .await
+            .expect("failed to stage manifest");
+
+        let result = finalize_install_transaction(
+            temp.path(),
+            &transaction_dir,
+            vec![old_addon.clone()],
+            vec![
+                (staged_addon, new_addon.clone()),
+                (staged_config, config.clone()),
+                (staged_manifest, manifest.clone()),
+            ],
+            |index, _| {
+                if index == 2 {
+                    Err("simulated manifest promotion failure".to_string())
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .await;
+
+        let error = result.expect_err("injected finalization failure should propagate");
+        assert!(error.contains("previous installation was restored"));
+        assert_eq!(async_fs::read(&old_addon).await.unwrap(), b"old addon");
+        assert!(!new_addon.exists(), "new addon should be rolled back");
+        assert_eq!(async_fs::read(&config).await.unwrap(), b"old config");
+        assert_eq!(async_fs::read(&manifest).await.unwrap(), b"old manifest");
+        assert!(!transaction_dir.exists());
+    }
+
+    #[tokio::test]
+    async fn interrupted_transaction_is_recovered_on_the_next_install() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        let transaction_dir = temp.path().join(INSTALL_TRANSACTION_DIR);
+        let backup_dir = transaction_dir.join("backup");
+        async_fs::create_dir_all(&backup_dir)
+            .await
+            .expect("failed to create backup dir");
+        async_fs::create_dir_all(temp.path().join("mods"))
+            .await
+            .expect("failed to create mods dir");
+        async_fs::create_dir_all(temp.path().join("config"))
+            .await
+            .expect("failed to create config dir");
+
+        async_fs::write(temp.path().join("config/settings.toml"), b"new config")
+            .await
+            .expect("failed to seed promoted config");
+        async_fs::write(temp.path().join("mods/new.jar"), b"new addon")
+            .await
+            .expect("failed to seed promoted addon");
+        async_fs::write(backup_dir.join("0"), b"old config")
+            .await
+            .expect("failed to seed config backup");
+        async_fs::write(backup_dir.join("2"), b"old addon")
+            .await
+            .expect("failed to seed addon backup");
+
+        let journal = InstallTransactionJournal {
+            entries: vec![
+                InstallTransactionEntry {
+                    relative_path: "config/settings.toml".to_string(),
+                    had_original: true,
+                },
+                InstallTransactionEntry {
+                    relative_path: "mods/new.jar".to_string(),
+                    had_original: false,
+                },
+                InstallTransactionEntry {
+                    relative_path: "mods/old.jar".to_string(),
+                    had_original: true,
+                },
+            ],
+        };
+        async_fs::write(
+            transaction_dir.join(INSTALL_JOURNAL_FILE),
+            serde_json::to_vec_pretty(&journal).unwrap(),
+        )
+        .await
+        .expect("failed to seed journal");
+
+        recover_interrupted_install(temp.path())
+            .await
+            .expect("recovery should succeed");
+
+        assert_eq!(
+            async_fs::read(temp.path().join("config/settings.toml"))
+                .await
+                .unwrap(),
+            b"old config"
+        );
+        assert!(!temp.path().join("mods/new.jar").exists());
+        assert_eq!(
+            async_fs::read(temp.path().join("mods/old.jar"))
+                .await
+                .unwrap(),
+            b"old addon"
+        );
+        assert!(!transaction_dir.exists());
+    }
+
+    #[tokio::test]
+    async fn config_cannot_target_reserved_transaction_or_manifest_paths() {
+        for relative_path in [
+            ".cemm-transaction/journal.json",
+            ".CEMM-TRANSACTION/backup/0",
+            "cemm-manifest.json",
+        ] {
+            let temp = tempfile::tempdir().expect("failed to create temp dir");
+            let result = install_update_with_progress(
+                temp.path().to_string_lossy().into_owned(),
+                make_manifest(Some("config"), Vec::new()),
+                vec![ConfigFile {
+                    filename: "reserved".to_string(),
+                    relative_path: relative_path.to_string(),
+                    content: "blocked".to_string(),
+                }],
+                None,
+                Arc::new(|_| {}),
+            )
+            .await;
+            assert!(result
+                .expect_err("reserved path should be rejected")
+                .contains("CEMM-reserved install path"));
+        }
     }
 }
