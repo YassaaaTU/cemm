@@ -348,17 +348,6 @@ const libraryNotice = computed(() =>
 	return null
 })
 
-/**
- * Whether a pack's absence from the scan actually means it is gone. False when
- * the scan failed or found no library at all, where "missing" only means CEMM
- * did not look in the right place.
- */
-const scanIsTrustworthy = computed(() =>
-	packsStore.scanError === null
-	&& packsStore.library !== null
-	&& packsStore.library.source !== 'none'
-)
-
 /** Instances the scan found but could not parse, so they are not in the grid. */
 const warningNote = computed(() =>
 {
@@ -432,13 +421,15 @@ const ignoreProgress = () =>
 
 function forgetPack(pack: PackRow)
 {
-	// Only trust "missing" when the scan itself worked. A bad override folder
-	// makes every pack look gone, and forgetting them would throw away the
-	// history that is the only record of them.
-	if (!scanIsTrustworthy.value)
+	// Forgetting is only offered for a pack whose folder was checked for and is
+	// not there, and the card only renders the control in that case. This is the
+	// same rule stated twice on purpose: history is the sole record of a pack
+	// outside the library, and a wrong instances folder must not be able to
+	// discard it.
+	if (pack.presence !== 'missing')
 	{
 		notify(
-			`CEMM is not reading your library right now, so it cannot tell whether ${pack.name} is still there.`,
+			`CEMM has not confirmed that ${pack.name} is gone, so it is keeping it.`,
 			'warning'
 		)
 		return

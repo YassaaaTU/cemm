@@ -23,14 +23,28 @@ export interface PackHistoryEntry
 }
 
 /**
- * A library row: a scanned pack, plus whatever CEMM remembers about it.
- * `missing` marks a pack CEMM has used that the scan no longer finds — moved,
- * renamed or deleted. It stays listed rather than vanishing silently.
+ * Where a pack CEMM remembers actually is.
+ *
+ * - `library`   — the scan returned it.
+ * - `outside`   — not in the scanned folder, but the folder is there on disk.
+ *                 An ordinary thing to have: anything picked by hand through
+ *                 the install destination or "Choose a file instead" gets
+ *                 recorded, and none of those live in the CurseForge library.
+ * - `missing`   — CEMM looked, and the folder is not there.
+ * - `unchecked` — absent from the scan, and not looked for yet. Also what a
+ *                 failed scan leaves behind, because a scan that could not read
+ *                 the library is in no position to say what is missing from it.
+ */
+export type PackPresence = 'library' | 'outside' | 'missing' | 'unchecked'
+
+/**
+ * A library row: a scanned pack, plus whatever CEMM remembers about it. A pack
+ * the scan no longer returns stays listed rather than vanishing silently.
  */
 export interface PackRow extends PackSummary
 {
 	history: PackHistoryEntry | null
-	missing: boolean
+	presence: PackPresence
 }
 
 /**
@@ -83,6 +97,14 @@ export const usePacksStore = defineStore('packs', () =>
 	 * expects it — Linux, most obviously, which has no official build.
 	 */
 	const instancesDirOverride = ref('')
+	/**
+	 * What became of the packs CEMM remembers but the scan did not return, once
+	 * their folders have actually been looked at. Keyed by normalised path, and
+	 * only ever written after a scan that worked — absent means unchecked, which
+	 * is a different thing from gone and must not be shown as one. Not persisted:
+	 * it describes the disk as it was this session.
+	 */
+	const absence = ref<Record<string, 'outside' | 'missing'>>({})
 
 	const packs = computed<PackRow[]>(() =>
 	{
@@ -96,13 +118,15 @@ export const usePacksStore = defineStore('packs', () =>
 			// arrived after the grid rendered.
 			icon: pack.icon ?? (pack.iconUrl !== null ? fetchedIcons.value[pack.iconUrl] ?? null : null),
 			history: history.value[normaliseKey(pack.instancePath)] ?? null,
-			missing: false
+			presence: 'library'
 		}))
 
 		// Packs CEMM has used that the scan did not turn up. Most will be folders
 		// picked by hand from outside the CurseForge library; some will have been
 		// moved or deleted. Either way, dropping them would quietly lose the one
-		// list that knows about them.
+		// list that knows about them — and calling them all gone would be a claim
+		// about a filesystem nobody had looked at, so which of the two it is comes
+		// from `absence`, filled in by a real check after the scan.
 		for (const [key, entry] of Object.entries(history.value))
 		{
 			if (seen.has(key)) continue
@@ -126,7 +150,7 @@ export const usePacksStore = defineStore('packs', () =>
 				iconUrl: null,
 				projectId: null,
 				history: entry,
-				missing: true
+				presence: absence.value[key] ?? 'unchecked'
 			})
 		}
 
@@ -172,6 +196,9 @@ export const usePacksStore = defineStore('packs', () =>
 			// artwork, and a slow or unreachable CDN must never be something the
 			// user waits behind to choose a modpack.
 			void fetchMissingIcons()
+			// Only from here, inside the success path: a scan that could not read
+			// the library has no standing to say what is absent from it.
+			void verifyRemembered()
 		}
 		finally
 		{
@@ -203,6 +230,39 @@ export const usePacksStore = defineStore('packs', () =>
 			if (result.icon !== null) merged[result.url] = result.icon
 		}
 		fetchedIcons.value = merged
+	}
+
+	/**
+	 * Look at the packs CEMM remembers but the scan did not return.
+	 *
+	 * Being absent from the scan was previously reported to the user as "not
+	 * found on disk", and the card then dropped both its actions on the strength
+	 * of it. That was a claim about a filesystem CEMM had never looked at, and it
+	 * was wrong for the commonest case: a pack picked by hand from outside the
+	 * CurseForge library is recorded in history and is never in the scan, yet is
+	 * sitting there perfectly intact.
+	 *
+	 * So the folders get checked. One `validate_path` per remembered pack that
+	 * the scan did not account for, which on a real library is a handful.
+	 */
+	async function verifyRemembered(): Promise<void>
+	{
+		const scanned = new Set((library.value?.packs ?? []).map((pack) => normaliseKey(pack.instancePath)))
+		const pending = Object.entries(history.value).filter(([key]) => !scanned.has(key))
+		if (pending.length === 0) return
+
+		const { validatePath } = useTauri()
+		const checked: Record<string, 'outside' | 'missing'> = {}
+		for (const [key, entry] of pending)
+		{
+			const path = entry.path ?? key
+			const result = await validatePath(path)
+			checked[key] = result.exists ? 'outside' : 'missing'
+		}
+
+		// Replaced wholesale rather than merged: a pack that has come back, or one
+		// the scan now accounts for, should not keep an answer from last time.
+		absence.value = checked
 	}
 
 	function record(
@@ -254,6 +314,7 @@ export const usePacksStore = defineStore('packs', () =>
 		history,
 		fetchedIcons,
 		instancesDirOverride,
+		absence,
 		scan,
 		recordOpened,
 		recordPublished,

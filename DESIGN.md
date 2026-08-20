@@ -177,9 +177,22 @@ the most recent thing it did with them (`Published 3d ago`, `Updated 3d ago`,
 because a card that leads the grid on a history it then declines to mention is
 the list keeping a secret. Everything else falls back to how recently CurseForge
 says it was played, and a pack CEMM has used that the scan no longer finds stays
-listed as `Missing` rather than vanishing. Only timestamps are kept; a
-remembered update code sitting beside a pack that has since changed would be a
-lie waiting to happen.
+listed rather than vanishing. Only timestamps are kept; a remembered update code
+sitting beside a pack that has since changed would be a lie waiting to happen.
+
+**Absent from the scan is not the same as gone**, and the card is only allowed
+to say the second one after CEMM has looked. The commonest reason a remembered
+pack is not in the scan is that it was never in the library to begin with —
+every folder picked by hand, through the install destination or "Choose a file
+instead", gets recorded, and none of them live where CurseForge keeps its
+instances. Calling those `Missing`, over the words "not found on disk", was a
+statement about a filesystem CEMM had not read; stripping their Install and
+Publish buttons on the strength of it made the guess expensive. So each
+remembered pack the scan did not account for gets its folder checked, and the
+card says only what came back: `outside your library` for one that is there,
+`not found on disk` for one that is not, and `not in the scanned folder` — the
+one fact actually in evidence — for one that has not been checked, which is
+every such pack after a scan that failed.
 
 Every card states its **folder** as well as its name, for the reason the install
 destination already does: in a real library the folder `All the Mods 10 - ATM10
@@ -433,10 +446,13 @@ keep them from lying to the user:
   library's cards used to install or publish depending on which counter you had
   come from, so the same click did two different things with nothing on the card
   saying which. Where a surface offers more than one thing to do, it names them.
-- **"Missing" is only trusted when the scan was.** A pack absent from a failed
-  scan, or from one that found no library at all, is not offered for removal —
-  a wrong instances folder would otherwise make one click discard the history of
-  every pack at once.
+- **"Missing" is a checked fact, not an inference.** A remembered pack absent
+  from the scan has its folder looked at before the card says anything about it,
+  and only a pack that was looked for and not found is offered for removal. The
+  control is not rendered otherwise — offering it and then refusing the click is
+  the same dead control this build removed elsewhere. A wrong instances folder
+  therefore cannot discard the history of every pack at once, and neither can a
+  scan that failed: both leave every pack unchecked, and unchecked is not gone.
 
 The faintest text tier (`base-content/45`) was raised to `/60`. At 12px on
 `base-200` it was the one step in the muted scale that was hard to read in both

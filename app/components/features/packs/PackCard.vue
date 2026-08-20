@@ -18,7 +18,7 @@
   -->
   <div
     class="flex h-full flex-col gap-2.5 rounded-box border bg-base-200 p-3.5 transition-colors duration-150 ease-(--ease-standard)"
-    :class="pack.missing ? 'border-base-300 opacity-80' : 'border-base-300'"
+    :class="pack.presence === 'missing' ? 'border-base-300 opacity-80' : 'border-base-300'"
   >
     <div class="flex min-w-0 items-start gap-2.5">
       <span class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-box border border-base-300 bg-base-100">
@@ -42,7 +42,7 @@
           :title="pack.name"
         >{{ pack.name }}</span>
         <span class="mt-0.5 block truncate font-mono text-[0.6875rem] text-base-content/60">
-          <template v-if="pack.missing">not found on disk</template>
+          <template v-if="presenceNote !== null">{{ presenceNote }}</template>
           <template v-else>{{ pack.addonCount }} addons</template>
         </span>
       </span>
@@ -79,7 +79,7 @@
     </div>
 
     <div
-      v-if="groupName !== null || historyLabel !== null || pack.missing"
+      v-if="groupName !== null || historyLabel !== null || pack.presence === 'missing'"
       class="flex flex-wrap items-center gap-1.5"
     >
       <span
@@ -91,8 +91,11 @@
         tone="unchanged"
         :label="historyLabel"
       />
+      <!-- Only for a pack that was actually looked for and not found. A pack
+           living outside the scanned folder is not a problem to flag; it is
+           just a pack the user chose from somewhere else. -->
       <StatusChip
-        v-if="pack.missing"
+        v-if="pack.presence === 'missing'"
         tone="removed"
         label="Missing"
       />
@@ -105,7 +108,14 @@
       so a button and the destination it leads to look like the same thing.
     -->
     <div class="mt-auto flex gap-1.5 pt-0.5">
-      <template v-if="pack.missing">
+      <!--
+        Removal is offered only where the folder was checked for and is not
+        there. A pack that is merely outside the scanned library still works, so
+        it keeps both its actions; and an unchecked pack — which is every
+        remembered pack after a scan that failed — is not offered a control that
+        would only ever be refused.
+      -->
+      <template v-if="pack.presence === 'missing'">
         <button
           type="button"
           class="btn w-full cursor-pointer gap-1.5 border-base-300 btn-sm"
@@ -189,6 +199,20 @@ const emit = defineEmits<{
 }>()
 
 const initial = computed(() => props.pack.name.trim().charAt(0).toUpperCase() || '?')
+
+/**
+ * What to say instead of an addon count for a pack the scan did not return.
+ * Each case says only what CEMM actually knows: `unchecked` has not been looked
+ * at yet, so it reports the one fact in evidence — the scan did not list it —
+ * rather than guessing at why.
+ */
+const presenceNote = computed<string | null>(() =>
+{
+	if (props.pack.presence === 'missing') return 'not found on disk'
+	if (props.pack.presence === 'outside') return 'outside your library'
+	if (props.pack.presence === 'unchecked') return 'not in the scanned folder'
+	return null
+})
 
 /**
  * The same offline-safe coloured initial AddonThumb uses for addons without an
