@@ -21,6 +21,7 @@ impl ServiceContext {
 }
 
 type SharedOutput = Arc<Mutex<BufWriter<io::Stdout>>>;
+type EventCallback = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
 fn write_message(output: &SharedOutput, message: &ServiceMessage) -> Result<(), String> {
     let encoded = serde_json::to_string(message)
@@ -35,7 +36,11 @@ fn write_message(output: &SharedOutput, message: &ServiceMessage) -> Result<(), 
         .map_err(|error| format!("Failed to write sidecar message: {error}"))
 }
 
-async fn dispatch(request: &ServiceRequest, context: &ServiceContext) -> Result<Value, String> {
+async fn dispatch(
+    request: &ServiceRequest,
+    context: &ServiceContext,
+    event_callback: &EventCallback,
+) -> Result<Value, String> {
     match request.method.as_str() {
         "ping" => Ok(serde_json::json!({
             "protocolVersion": SERVICE_PROTOCOL_VERSION,
@@ -81,6 +86,53 @@ async fn dispatch(request: &ServiceRequest, context: &ServiceContext) -> Result<
                 params.old, params.new,
             ))
         }
+        "github.upload_update" => {
+            let params: UploadUpdateParams = decode_params(request)?;
+            let events = Arc::clone(event_callback);
+            let progress_callback = Arc::new(
+                move |progress: crate::composables::github::UploadProgress| {
+                    events(
+                        "upload_progress",
+                        serde_json::to_value(progress).unwrap_or(Value::Null),
+                    );
+                },
+            );
+            encode_result(
+                crate::composables::github::upload_update_with_progress(
+                    params.repo,
+                    params.token,
+                    params.uuid,
+                    params.modpack_key,
+                    params.manifest,
+                    params.config_files,
+                    progress_callback,
+                )
+                .await,
+            )
+        }
+        "github.download_manifest" => {
+            let params: DownloadManifestParams = decode_params(request)?;
+            encode_result(
+                crate::composables::github::download_manifest(
+                    params.repo,
+                    params.uuid,
+                    params.modpack_key,
+                )
+                .await,
+            )
+        }
+        "github.download_config_files" => {
+            let params: DownloadConfigFilesParams = decode_params(request)?;
+            encode_result(
+                crate::composables::github::download_config_files(
+                    params.repo,
+                    params.uuid,
+                    params.modpack_key,
+                    params.manifest,
+                )
+                .await,
+            )
+        }
         method => Err(format!("Unknown sidecar service method: {method}")),
     }
 }
@@ -124,6 +176,34 @@ struct ReadDirectoryParams {
 struct CompareManifestParams {
     old: crate::composables::manifest::Manifest,
     new: crate::composables::manifest::Manifest,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UploadUpdateParams {
+    repo: String,
+    token: String,
+    uuid: String,
+    modpack_key: Option<String>,
+    manifest: crate::composables::manifest::Manifest,
+    config_files: Vec<crate::composables::github::ConfigFileWithContent>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadManifestParams {
+    repo: String,
+    uuid: String,
+    modpack_key: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadConfigFilesParams {
+    repo: String,
+    uuid: String,
+    modpack_key: Option<String>,
+    manifest: crate::composables::manifest::Manifest,
 }
 
 pub fn run_stdio_service() -> i32 {
@@ -173,7 +253,20 @@ pub fn run_stdio_service() -> i32 {
             }
         };
 
-        let response = match runtime.block_on(dispatch(&request, &context)) {
+        let request_id = request.id;
+        let event_output = Arc::clone(&output);
+        let event_callback: EventCallback = Arc::new(move |name, payload| {
+            let _ = write_message(
+                &event_output,
+                &ServiceMessage::Event {
+                    id: request_id,
+                    name: name.to_string(),
+                    payload,
+                },
+            );
+        });
+
+        let response = match runtime.block_on(dispatch(&request, &context, &event_callback)) {
             Ok(result) => ServiceMessage::Response {
                 id: request.id,
                 result,
@@ -201,6 +294,10 @@ mod tests {
         ServiceContext { cache_dir: None }
     }
 
+    fn no_events() -> EventCallback {
+        Arc::new(|_, _| {})
+    }
+
     #[tokio::test]
     async fn ping_reports_the_protocol_version() {
         let request = ServiceRequest {
@@ -209,7 +306,7 @@ mod tests {
             params: Value::Null,
         };
 
-        let result = dispatch(&request, &context())
+        let result = dispatch(&request, &context(), &no_events())
             .await
             .expect("ping should succeed");
         assert_eq!(result["protocolVersion"], SERVICE_PROTOCOL_VERSION);
@@ -223,7 +320,7 @@ mod tests {
             params: Value::Null,
         };
 
-        let error = dispatch(&request, &context())
+        let error = dispatch(&request, &context(), &no_events())
             .await
             .expect_err("unknown method should fail");
         assert!(error.contains("Unknown sidecar service method"));

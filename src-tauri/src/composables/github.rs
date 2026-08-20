@@ -1,5 +1,6 @@
+use std::sync::Arc;
+
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use tauri::{command, AppHandle, Emitter};
 
 use crate::composables::manifest::Manifest;
 
@@ -46,15 +47,14 @@ pub struct UploadProgress {
     pub message: String,
 }
 
-/// Helper to emit progress events
-fn emit_progress(app: &AppHandle, progress: u8, message: &str) {
-    let _ = app.emit(
-        "upload_progress",
-        UploadProgress {
-            progress,
-            message: message.to_string(),
-        },
-    );
+pub type UploadProgressCallback = Arc<dyn Fn(UploadProgress) + Send + Sync>;
+
+/// Reports upload progress without coupling the GitHub service to Tauri.
+fn emit_progress(callback: &UploadProgressCallback, progress: u8, message: &str) {
+    callback(UploadProgress {
+        progress,
+        message: message.to_string(),
+    });
 }
 
 #[derive(Deserialize)]
@@ -234,22 +234,21 @@ fn parse_and_validate_repo(repo: &str) -> Result<(&str, &str), String> {
     Ok((owner, repo_name))
 }
 
-#[command]
-pub async fn upload_update(
-    app: AppHandle,
+pub async fn upload_update_with_progress(
     repo: String,
     token: String,
     uuid: String,
     modpack_key: Option<String>,
     manifest: Manifest,
     config_files: Vec<ConfigFileWithContent>,
+    progress_callback: UploadProgressCallback,
 ) -> Result<(), String> {
     use base64::engine::general_purpose::STANDARD;
     use base64::Engine;
     use reqwest::Client;
     use serde_json::json;
 
-    emit_progress(&app, 5, "Preparing upload...");
+    emit_progress(&progress_callback, 5, "Preparing upload...");
 
     let uuid = normalize_update_uuid_arg(uuid)?;
 
@@ -261,7 +260,7 @@ pub async fn upload_update(
     let user_agent = "cemm-app-tauri";
 
     // Step 1: Get the current commit SHA of main branch
-    emit_progress(&app, 10, "Getting branch reference...");
+    emit_progress(&progress_callback, 10, "Getting branch reference...");
     let refs_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/refs/heads/main");
     let refs_response = client
         .get(&refs_url)
@@ -278,7 +277,7 @@ pub async fn upload_update(
         .ok_or("Could not find main branch SHA")?;
 
     // Step 2: Get the base tree SHA
-    emit_progress(&app, 15, "Getting tree structure...");
+    emit_progress(&progress_callback, 15, "Getting tree structure...");
     let commit_url =
         format!("https://api.github.com/repos/{owner}/{repo_name}/git/commits/{base_commit_sha}");
     let commit_response = client
@@ -296,7 +295,7 @@ pub async fn upload_update(
         .ok_or("Could not find base tree SHA")?;
 
     // Step 3: Create blobs for all files
-    emit_progress(&app, 20, "Uploading manifest...");
+    emit_progress(&progress_callback, 20, "Uploading manifest...");
     let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
 
     // Create blob for manifest
@@ -326,7 +325,7 @@ pub async fn upload_update(
         // Calculate progress: 20-70% for config files
         let progress = 20 + ((index + 1) as f32 / total_config_files as f32 * 50.0) as u8;
         emit_progress(
-            &app,
+            &progress_callback,
             progress,
             &format!(
                 "Uploading config file {}/{}...",
@@ -375,7 +374,7 @@ pub async fn upload_update(
     let update_base_path = primary_update_base_path(modpack_key.as_deref(), &uuid);
 
     // Step 4: Create a new tree with all files
-    emit_progress(&app, 75, "Creating file tree...");
+    emit_progress(&progress_callback, 75, "Creating file tree...");
     // Note: This will automatically overwrite any existing files at the same paths
     // because Git tree creation replaces the entire directory structure
     let mut tree_items = vec![json!({
@@ -415,7 +414,7 @@ pub async fn upload_update(
         .ok_or("Could not get new tree SHA")?;
 
     // Step 5: Create a commit
-    emit_progress(&app, 85, "Creating commit...");
+    emit_progress(&progress_callback, 85, "Creating commit...");
     let config_count = config_files.len();
     let commit_message = if config_count > 0 {
         format!(
@@ -447,7 +446,7 @@ pub async fn upload_update(
         .ok_or("Could not get new commit SHA")?;
 
     // Step 6: Update the main branch reference
-    emit_progress(&app, 95, "Finalizing...");
+    emit_progress(&progress_callback, 95, "Finalizing...");
     let update_ref_response = client
         .patch(&refs_url)
         .header("Authorization", format!("token {}", token))
@@ -463,11 +462,10 @@ pub async fn upload_update(
     let _: serde_json::Value =
         decode_github_response("update main branch reference", update_ref_response).await?;
 
-    emit_progress(&app, 100, "Upload complete");
+    emit_progress(&progress_callback, 100, "Upload complete");
     Ok(())
 }
 
-#[command]
 pub async fn download_manifest(
     repo: String,
     uuid: String,
@@ -579,7 +577,6 @@ pub async fn download_manifest(
     })
 }
 
-#[command]
 pub async fn download_config_files(
     repo: String,
     uuid: String,

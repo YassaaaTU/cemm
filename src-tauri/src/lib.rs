@@ -24,7 +24,7 @@ mod composables {
     pub mod manifest;
 }
 
-pub use composables::github::{download_config_files, download_manifest, upload_update};
+pub use composables::github::{download_config_files, download_manifest};
 pub use composables::instances::{
     cache_pack_icons, scan_pack_library, CachedIcon, PackGroup, PackLibrary, PackSummary,
 };
@@ -52,9 +52,9 @@ pub fn run() {
             service_commands::compare_manifests,
             open_curseforge_url,
             open_url,
-            upload_update,
-            download_manifest,
-            download_config_files,
+            service_commands::upload_update,
+            service_commands::download_manifest,
+            service_commands::download_config_files,
             install_update,
             select_multiple_files,
             service_commands::read_directory_recursive,
