@@ -144,10 +144,16 @@
             v-if="packsStore.scanning && packsStore.library === null"
             class="grid grid-cols-[repeat(auto-fill,minmax(13.5rem,1fr))] gap-3"
           >
+            <!-- Through the same gate as every other transition in the app.
+                 A pulse that never stops is the one kind of motion reduced-motion
+                 is most clearly about, and this was the only animation in the
+                 codebase reaching the screen ungated. Without it the skeletons
+                 are still skeletons — they just hold still. -->
             <div
               v-for="n in 8"
               :key="n"
-              class="h-33 animate-pulse rounded-box border border-base-300 bg-base-200"
+              class="h-33 rounded-box border border-base-300 bg-base-200"
+              :class="anim('animate-pulse')"
             />
           </div>
 
@@ -244,6 +250,7 @@ const { notify } = useNotify()
 const { loadInstance } = useAdminApi()
 const { downloadFromGithub } = useUserApi()
 const { selectDirectory } = useTauri()
+const { anim } = useMotion()
 const { $logger: logger } = useNuxtApp()
 
 const search = ref('')
