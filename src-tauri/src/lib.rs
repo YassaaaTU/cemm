@@ -1,5 +1,9 @@
 use std::fs;
+use std::sync::Arc;
+use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
+
+pub mod service;
 
 // Helper function to normalize Windows extended paths
 fn normalize_path(path: &str) -> String {
@@ -59,6 +63,20 @@ pub fn run() {
             cache_pack_icons
         ])
         .setup(|app| {
+            let app_handle = app.handle().clone();
+            let event_sink = Arc::new(move |event: service::ServiceEvent| {
+                let _ = app_handle.emit(&event.name, event.payload);
+            });
+            let cache_dir = app.path().app_cache_dir().ok();
+            let executable = std::env::current_exe().map_err(|error| {
+                std::io::Error::other(format!(
+                    "Failed to locate CEMM executable for local service: {error}"
+                ))
+            })?;
+            let service = service::ServiceClient::spawn(&executable, cache_dir, event_sink)
+                .map_err(std::io::Error::other)?;
+            app.manage(service);
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
