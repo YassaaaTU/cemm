@@ -1,6 +1,6 @@
 # Sidecar Release Hardening Plan
 
-**Status:** In progress
+**Status:** Implemented; manual release gates remain
 **Target:** CEMM 2.0.0
 **Branch:** `master`
 **Date:** 2026-08-20
@@ -75,3 +75,17 @@ gates rather than implied coverage.
 Final gate: lint, typecheck, Nuxt generation, rustfmt, clippy with warnings
 denied, all Rust tests, production Tauri build, optimized sidecar smoke test,
 clean working tree.
+
+## Completion record
+
+All four implementation slices are complete. The final automated gate passed
+on Windows: frontend lint, typecheck, and static generation; Rust formatting,
+all-target Clippy with warnings denied, 80 unit tests, and 3 compiled-process
+integration tests; an optimized no-bundle Tauri build; and a release-binary
+protocol smoke covering ready, ping, correlated progress, controlled failure,
+and stdin-driven shutdown.
+
+The cross-platform lifecycle matrix is committed for GitHub Actions but has not
+run locally on macOS or Linux. Signing, updater artifacts, authenticated GitHub
+flows, native-window interaction, and disposable-instance recovery remain the
+explicit human gates in `docs/release/2.0.0-validation.md`.
