@@ -210,7 +210,7 @@
 
     <InstallProgressDialog
       :open="installPhase !== 'idle'"
-      :state="installPhase === 'idle' ? 'running' : installPhase"
+      :state="dialogFace"
       :progress="smoothProgress"
       :label="progressLabel"
       :error="installError"
@@ -342,6 +342,21 @@ const editingDestination = ref(false)
  * no dialog; the other three are its three faces.
  */
 const installPhase = ref<'idle' | 'running' | 'done' | 'failed'>('idle')
+/**
+ * The face the dialog wears, held one step behind `installPhase`.
+ *
+ * Deriving it straight from the phase meant dismissing flipped both props in
+ * the same tick — open to false, and state back to `running` for want of a
+ * fourth face. DaisyUI gives `.modal-box` a ~300ms close transition, so the
+ * user pressed the button under "Update installed" and then watched
+ * "Installing update", a progress bar and a disabled spinner fade out. Holding
+ * the last real face means the dialog leaves saying what it said.
+ */
+const dialogFace = ref<'running' | 'done' | 'failed'>('running')
+watch(installPhase, (phase) =>
+{
+	if (phase !== 'idle') dialogFace.value = phase
+})
 /** Shown inside the dialog. A toast would be behind the modal's own backdrop. */
 const installError = ref<string | null>(null)
 /** Survives dismissal: the diff on screen has been written to disk. */
