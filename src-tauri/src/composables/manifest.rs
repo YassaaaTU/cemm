@@ -2,7 +2,6 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::command;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -156,7 +155,6 @@ fn classify(category_name: Option<&str>, mod_folder_path: &str) -> Option<Catego
     }
 }
 
-#[command]
 pub fn parse_minecraft_instance(path: String) -> Result<Manifest, String> {
     log::info!("parse_minecraft_instance: reading {path}");
     let content = fs::read_to_string(&path).map_err(|e| {
@@ -294,7 +292,6 @@ fn find_disabled_files(dir: PathBuf) -> Vec<String> {
     result
 }
 
-#[command]
 pub fn compare_manifests(old: Manifest, new: Manifest) -> Result<UpdateInfo, String> {
     log::info!("compare_manifests: comparing manifests");
 

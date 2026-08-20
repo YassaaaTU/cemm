@@ -2,6 +2,7 @@ use std::io::{self, BufRead, BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use serde::Deserialize;
 use serde_json::Value;
 
 use super::protocol::{ServiceMessage, ServiceRequest, SERVICE_PROTOCOL_VERSION};
@@ -40,8 +41,89 @@ async fn dispatch(request: &ServiceRequest, context: &ServiceContext) -> Result<
             "protocolVersion": SERVICE_PROTOCOL_VERSION,
             "cacheDirectoryConfigured": context.cache_dir.is_some()
         })),
+        "file.read" => {
+            let params: PathParams = decode_params(request)?;
+            encode_result(crate::read_file(params.path))
+        }
+        "file.write" => {
+            let params: WriteFileParams = decode_params(request)?;
+            encode_result(crate::write_file(
+                params.path,
+                params.content,
+                params.dir,
+                params.files,
+            ))
+        }
+        "config.read_directory" => {
+            let params: ReadDirectoryParams = decode_params(request)?;
+            encode_result(crate::read_directory_recursive(
+                params.dir_path,
+                params.base_path,
+            ))
+        }
+        "path.is_binary" => {
+            let params: PathParams = decode_params(request)?;
+            encode_result(crate::is_binary_file(params.path))
+        }
+        "path.validate" => {
+            let params: PathParams = decode_params(request)?;
+            crate::validate_path(params.path)
+        }
+        "manifest.parse_instance" => {
+            let params: PathParams = decode_params(request)?;
+            encode_result(crate::composables::manifest::parse_minecraft_instance(
+                params.path,
+            ))
+        }
+        "manifest.compare" => {
+            let params: CompareManifestParams = decode_params(request)?;
+            encode_result(crate::composables::manifest::compare_manifests(
+                params.old, params.new,
+            ))
+        }
         method => Err(format!("Unknown sidecar service method: {method}")),
     }
+}
+
+fn decode_params<T: for<'de> Deserialize<'de>>(request: &ServiceRequest) -> Result<T, String> {
+    serde_json::from_value(request.params.clone()).map_err(|error| {
+        format!(
+            "Invalid parameters for sidecar method '{}': {error}",
+            request.method
+        )
+    })
+}
+
+fn encode_result<T: serde::Serialize>(result: Result<T, String>) -> Result<Value, String> {
+    let value = result?;
+    serde_json::to_value(value)
+        .map_err(|error| format!("Failed to encode sidecar service result: {error}"))
+}
+
+#[derive(Deserialize)]
+struct PathParams {
+    path: String,
+}
+
+#[derive(Deserialize)]
+struct WriteFileParams {
+    path: Option<String>,
+    content: Option<String>,
+    dir: Option<String>,
+    files: Option<Vec<(String, String)>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadDirectoryParams {
+    dir_path: String,
+    base_path: String,
+}
+
+#[derive(Deserialize)]
+struct CompareManifestParams {
+    old: crate::composables::manifest::Manifest,
+    new: crate::composables::manifest::Manifest,
 }
 
 pub fn run_stdio_service() -> i32 {

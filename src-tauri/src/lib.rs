@@ -4,6 +4,7 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
 pub mod service;
+mod service_commands;
 
 // Helper function to normalize Windows extended paths
 fn normalize_path(path: &str) -> String {
@@ -45,10 +46,10 @@ pub fn run() {
             select_directory,
             select_file,
             select_save_file,
-            read_file,
-            write_file,
-            parse_minecraft_instance,
-            compare_manifests,
+            service_commands::read_file,
+            service_commands::write_file,
+            service_commands::parse_minecraft_instance,
+            service_commands::compare_manifests,
             open_curseforge_url,
             open_url,
             upload_update,
@@ -56,9 +57,9 @@ pub fn run() {
             download_config_files,
             install_update,
             select_multiple_files,
-            read_directory_recursive,
-            is_binary_file,
-            validate_path,
+            service_commands::read_directory_recursive,
+            service_commands::is_binary_file,
+            service_commands::validate_path,
             scan_pack_library,
             cache_pack_icons
         ])
@@ -242,7 +243,6 @@ async fn async_file_dialog(app: tauri::AppHandle) -> Result<String, String> {
     }
 }
 
-#[tauri::command]
 fn read_file(path: String) -> Result<String, String> {
     log::info!("read_file: attempting to read {path}");
 
@@ -295,7 +295,6 @@ fn read_file(path: String) -> Result<String, String> {
     }
 }
 
-#[tauri::command]
 fn write_file(
     path: Option<String>,
     content: Option<String>,
@@ -420,7 +419,6 @@ async fn select_multiple_files(window: tauri::Window) -> Result<Vec<String>, Str
     }
 }
 
-#[tauri::command]
 fn read_directory_recursive(
     dir_path: String,
     base_path: String,
@@ -762,7 +760,6 @@ fn read_directory_recursive_with_limits(
     Ok(config_files)
 }
 
-#[tauri::command]
 fn is_binary_file(path: String) -> Result<bool, String> {
     log::info!("is_binary_file: checking {path}");
 
@@ -800,7 +797,6 @@ fn is_binary_file(path: String) -> Result<bool, String> {
     }
 }
 
-#[tauri::command]
 fn validate_path(path: String) -> Result<serde_json::Value, String> {
     log::info!("validate_path: checking path {}", path);
 
