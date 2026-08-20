@@ -120,7 +120,7 @@
         <button
           type="button"
           class="btn w-full cursor-pointer gap-1.5 border-base-300 btn-sm"
-          :disabled="busy"
+          :disabled="isBusy"
           @click="emit('forget', pack)"
         >
           <Icon
@@ -137,7 +137,7 @@
         <button
           type="button"
           class="btn flex-1 cursor-pointer gap-1.5 border-base-300 btn-sm"
-          :disabled="busy"
+          :disabled="isBusy"
           @click="emit('install', pack)"
         >
           <Icon
@@ -152,7 +152,7 @@
         <button
           type="button"
           class="btn flex-1 cursor-pointer gap-1.5 border-base-300 btn-sm"
-          :disabled="busy"
+          :disabled="isBusy"
           @click="emit('publish', pack)"
         >
           <span
@@ -195,6 +195,14 @@ const emit = defineEmits<{
 	publish: [pack: PackRow]
 	forget: [pack: PackRow]
 }>()
+
+/**
+ * `busy` names *which* action is running, because the spinner has to sit on that
+ * button and no other. Every `disabled` binding only wants to know whether one
+ * is — and handing a string union straight to `disabled`, which takes a boolean,
+ * is a type error under a template check strict enough to look.
+ */
+const isBusy = computed(() => props.busy !== false)
 
 const initial = computed(() => props.pack.name.trim().charAt(0).toUpperCase() || '?')
 
