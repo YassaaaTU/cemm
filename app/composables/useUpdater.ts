@@ -30,10 +30,42 @@ export const useUpdater = () =>
 		isUpdateDialogVisible
 	} = storeToRefs(updaterStore)
 
+	async function closeUpdateResource(update: Update): Promise<void>
+	{
+		try
+		{
+			await update.close()
+		}
+		catch (error)
+		{
+			logger.warn({ error }, 'Failed to close updater resource')
+		}
+	}
+
+	async function replacePendingUpdate(update: Update | null): Promise<void>
+	{
+		const previous = pendingUpdate
+		pendingUpdate = update
+		if (previous !== null && previous !== update)
+		{
+			await closeUpdateResource(previous)
+		}
+	}
+
+	async function clearPendingUpdate(): Promise<void>
+	{
+		const update = pendingUpdate
+		pendingUpdate = null
+		if (update !== null)
+		{
+			await closeUpdateResource(update)
+		}
+	}
+
 	async function runCheck(): Promise<AppUpdateInfo | null>
 	{
 		const update = await check()
-		pendingUpdate = update
+		await replacePendingUpdate(update)
 
 		if (update === null)
 		{
@@ -87,6 +119,9 @@ export const useUpdater = () =>
 		{
 			throw new Error('No update available')
 		}
+		// Detach this handle before starting so a concurrent check cannot close a
+		// resource that is actively downloading and installing.
+		pendingUpdate = null
 		try
 		{
 			isDownloading.value = true
@@ -131,6 +166,7 @@ export const useUpdater = () =>
 		{
 			isDownloading.value = false
 			isInstalling.value = false
+			await closeUpdateResource(update)
 		}
 	}
 
@@ -150,9 +186,10 @@ export const useUpdater = () =>
 		}
 	}
 
-	const handleUpdateCancel = () =>
+	const handleUpdateCancel = async () =>
 	{
 		isUpdateDialogVisible.value = false
+		await clearPendingUpdate()
 	}
 
 	const formatBytes = (bytes: number): string =>
