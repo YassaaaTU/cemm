@@ -12,6 +12,7 @@ CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes
 - **Easy Sharing**: Generate update codes for simple modpack distribution
 - **GitHub Integration**: Secure distribution via GitHub repositories
 - **Automatic Installation**: Users can install modifications with a single update code
+- **Recoverable Installation**: Add-ons, configs, and manifests finalize through a journaled transaction that rolls back interrupted or failed updates
 - **Cross-Platform**: Works on Windows *AND SHOULD* work on macOS and Linux, never tested on these platforms
 
 ## Usage

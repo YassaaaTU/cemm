@@ -115,10 +115,10 @@ failure modes without a measured need.
 - Unexpected child exit or malformed output closes the client and rejects every
   pending request instead of leaving the UI waiting indefinitely.
 - Installation validates all add-on URLs, destinations, config paths, and binary
-  payloads before cleanup. Downloads stage before old add-ons are removed.
-- The sidecar records `cemm-manifest.json` only after installed files are written.
-  Full filesystem rollback is not claimed; errors after promotion report the
-  partial completion explicitly.
+  payloads before finalization. Add-ons, configs, and the installed manifest are
+  staged together. A journal backs up every affected live file, rolls back any
+  failed finalization, and recovers an interrupted transaction on the next
+  install attempt.
 - The Tauri host owns the child handle, closes its stdin, terminates the child,
   and waits for it when the application shuts down.
 
@@ -142,3 +142,4 @@ failure modes without a measured need.
 5. [x] Add protocol, dispatch-contract, domain safety, and temporary-install tests.
 6. [x] Keep lint, typecheck, generation, rustfmt, clippy, and Rust tests in CI.
 7. [ ] Validate a native Tauri window and live GitHub publish manually before release.
+8. [x] Exercise the compiled sidecar lifecycle in CI on Windows, macOS, and Linux.
