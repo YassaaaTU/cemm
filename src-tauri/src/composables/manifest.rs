@@ -661,7 +661,10 @@ mod tests {
             classify(Some("Data Packs"), r"D:\somewhere"),
             Some(Category::DataPacks)
         );
-        assert_eq!(classify(Some("Mods"), r"D:\somewhere"), Some(Category::Mods));
+        assert_eq!(
+            classify(Some("Mods"), r"D:\somewhere"),
+            Some(Category::Mods)
+        );
         assert_eq!(classify(None, r"D:\somewhere"), None);
     }
 

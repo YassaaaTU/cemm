@@ -187,7 +187,10 @@ fn read_groups() -> Vec<PackGroup> {
     let Some(config) = curseforge_config_dir() else {
         return Vec::new();
     };
-    let path = config.join("agent").join("GameInstances").join("groups.json");
+    let path = config
+        .join("agent")
+        .join("GameInstances")
+        .join("groups.json");
     let Ok(text) = fs::read_to_string(&path) else {
         return Vec::new();
     };
@@ -212,10 +215,8 @@ fn pretty_loader(raw: &str) -> Option<String> {
         "quilt" => "Quilt".to_string(),
         _ => {
             let mut chars = family.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => return None,
-            }
+            let first = chars.next()?;
+            first.to_uppercase().collect::<String>() + chars.as_str()
         }
     })
 }
@@ -282,15 +283,13 @@ fn icon_cache_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
 }
 
 fn mime_for(path: &Path) -> Option<&'static str> {
-    Some(
-        match path.extension()?.to_str()?.to_lowercase().as_str() {
-            "png" => "image/png",
-            "jpg" | "jpeg" => "image/jpeg",
-            "webp" => "image/webp",
-            "gif" => "image/gif",
-            _ => return None,
-        },
-    )
+    Some(match path.extension()?.to_str()?.to_lowercase().as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => return None,
+    })
 }
 
 /// Read an image off disk as a `data:` URI, or nothing.
@@ -380,7 +379,10 @@ pub async fn cache_pack_icons(
 
         // Someone else may have cached it since the scan read the directory.
         if let Some(icon) = as_data_uri(&path) {
-            results.push(CachedIcon { url, icon: Some(icon) });
+            results.push(CachedIcon {
+                url,
+                icon: Some(icon),
+            });
             continue;
         }
 
@@ -397,11 +399,7 @@ pub async fn cache_pack_icons(
     Ok(results)
 }
 
-async fn fetch_icon(
-    client: &reqwest::Client,
-    url: &str,
-    path: &Path,
-) -> Result<String, String> {
+async fn fetch_icon(client: &reqwest::Client, url: &str, path: &Path) -> Result<String, String> {
     let response = client
         .get(url)
         .header("User-Agent", "cemm-app-tauri")
@@ -640,7 +638,7 @@ fn scan_library(
 
     // A stable default order. The UI re-sorts by CEMM's own history, which this
     // side knows nothing about.
-    packs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    packs.sort_by_key(|pack| pack.name.to_lowercase());
 
     log::info!(
         "scan_pack_library: {} packs in {} ({source})",
@@ -663,7 +661,10 @@ mod tests {
 
     #[test]
     fn pretty_loader_names_the_family_and_drops_the_build() {
-        assert_eq!(pretty_loader("neoforge-21.1.228").as_deref(), Some("NeoForge"));
+        assert_eq!(
+            pretty_loader("neoforge-21.1.228").as_deref(),
+            Some("NeoForge")
+        );
         assert_eq!(pretty_loader("forge-47.4.13").as_deref(), Some("Forge"));
         assert_eq!(
             pretty_loader("fabric-0.18.2-1.21.10").as_deref(),
@@ -751,7 +752,11 @@ mod tests {
         fs::create_dir_all(temp.path().join(".cemm_backups")).expect("backups dir");
         fs::write(temp.path().join(".cemm_backups/backup_registry.json"), "[]").expect("registry");
         fs::create_dir_all(temp.path().join("FTB Evolution (1)")).expect("stray dir");
-        fs::write(temp.path().join("FTB Evolution (1)/cemm-manifest.json"), "{}").expect("stray");
+        fs::write(
+            temp.path().join("FTB Evolution (1)/cemm-manifest.json"),
+            "{}",
+        )
+        .expect("stray");
 
         let library = scan_library(Some(temp.path().to_string_lossy().into_owned()), None)
             .expect("scan should succeed");
@@ -901,8 +906,14 @@ mod tests {
         assert_eq!(
             groups,
             vec![
-                PackGroup { id: "a1".into(), name: "Modded".into() },
-                PackGroup { id: "d4".into(), name: "Servers".into() },
+                PackGroup {
+                    id: "a1".into(),
+                    name: "Modded".into()
+                },
+                PackGroup {
+                    id: "d4".into(),
+                    name: "Servers".into()
+                },
             ]
         );
 
@@ -914,7 +925,9 @@ mod tests {
 
     #[test]
     fn only_real_image_signatures_are_accepted_into_the_cache() {
-        assert!(looks_like_image(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00]));
+        assert!(looks_like_image(&[
+            0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00
+        ]));
         assert!(looks_like_image(&[0xFF, 0xD8, 0xFF, 0xE0]));
         assert!(looks_like_image(b"GIF89a....."));
         assert!(looks_like_image(b"RIFF\x00\x00\x00\x00WEBPVP8 "));
@@ -1111,7 +1124,10 @@ mod tests {
         let library = scan_library(Some(temp.path().to_string_lossy().into_owned()), None)
             .expect("scan should succeed");
 
-        let icon = library.packs[0].icon.as_deref().expect("icon should inline");
+        let icon = library.packs[0]
+            .icon
+            .as_deref()
+            .expect("icon should inline");
         assert!(icon.starts_with("data:image/png;base64,"));
     }
 }
