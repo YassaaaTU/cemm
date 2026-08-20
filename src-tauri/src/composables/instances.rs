@@ -318,6 +318,12 @@ pub async fn cache_pack_icons(
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
+        // The allowlist is the bounding control on this exception, and reqwest's
+        // default policy follows up to ten redirects — so a 302 out of an
+        // allowlisted host would have carried the request to one that is not,
+        // with `validate_icon_url` having checked only the address it started
+        // from. An artwork URL is not worth following anywhere.
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("Could not create HTTP client: {e}"))?;
 
@@ -381,8 +387,66 @@ async fn fetch_icon(
         return Err(format!("icon is {} bytes, over the cap", bytes.len()));
     }
 
-    fs::write(path, &bytes).map_err(|e| e.to_string())?;
+    // The MIME comes from the URL's file extension, so a 200 carrying something
+    // that is not an image would be written to the cache and inlined as a
+    // well-formed `data:image/png` — a card showing a broken tile, permanently,
+    // because the cache is never revisited. Refused here instead, which leaves
+    // the coloured initial and a URL that can be asked for again later.
+    if !looks_like_image(&bytes) {
+        return Err("response body is not an image".to_string());
+    }
+
+    write_atomically(path, &bytes)?;
     as_data_uri(path).ok_or_else(|| "fetched icon was not a readable image".to_string())
+}
+
+/// Whether the bytes open with the signature of a format this cache serves.
+///
+/// Not a full decode — just enough that a captive-portal login page or an error
+/// document cannot be filed away as a PNG.
+fn looks_like_image(bytes: &[u8]) -> bool {
+    const PNG: &[u8] = &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    const JPEG: &[u8] = &[0xFF, 0xD8, 0xFF];
+    const GIF87: &[u8] = b"GIF87a";
+    const GIF89: &[u8] = b"GIF89a";
+
+    if bytes.starts_with(PNG) || bytes.starts_with(JPEG) {
+        return true;
+    }
+    if bytes.starts_with(GIF87) || bytes.starts_with(GIF89) {
+        return true;
+    }
+    // RIFF....WEBP — the four size bytes in between are not fixed.
+    bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP"
+}
+
+/// Write via a temporary file in the same directory, then rename over the target.
+///
+/// `rename` is atomic on both NTFS and POSIX, so a reader never sees a partial
+/// file. It matters here because two batches can be caching the same URL at
+/// once, and a truncated read would be inlined as a broken image that survives
+/// every later launch — the cache is written once and never checked again.
+fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| "icon cache path has no directory".to_string())?;
+    let temp = parent.join(format!(
+        ".{}.{}.tmp",
+        std::process::id(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+
+    fs::write(&temp, bytes).map_err(|e| e.to_string())?;
+    if let Err(error) = fs::rename(&temp, path) {
+        // Best effort: a leftover temp file is harmless, but it should not
+        // outlive the failure that produced it.
+        let _ = fs::remove_file(&temp);
+        return Err(error.to_string());
+    }
+    Ok(())
 }
 
 /// The pack's icon, inlined as a `data:` URI.
@@ -745,6 +809,46 @@ mod tests {
             "https://media.forgecdn.net/avatars/thumbnails/1182/438/256/256/1.png"
         )
         .is_some());
+    }
+
+    #[test]
+    fn only_real_image_signatures_are_accepted_into_the_cache() {
+        assert!(looks_like_image(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00]));
+        assert!(looks_like_image(&[0xFF, 0xD8, 0xFF, 0xE0]));
+        assert!(looks_like_image(b"GIF89a....."));
+        assert!(looks_like_image(b"RIFF\x00\x00\x00\x00WEBPVP8 "));
+
+        // The cases this exists for: the MIME is taken from the URL's extension,
+        // so anything served under a .png that is not one would otherwise be
+        // cached and inlined as a permanently broken tile.
+        assert!(!looks_like_image(b"<!DOCTYPE html><html>login</html>"));
+        assert!(!looks_like_image(b"{\"error\":\"not found\"}"));
+        assert!(!looks_like_image(b"RIFF\x00\x00\x00\x00WAVEfmt "));
+        assert!(!looks_like_image(b""));
+        assert!(!looks_like_image(b"RIFF"));
+    }
+
+    #[test]
+    fn an_interrupted_cache_write_leaves_no_partial_file_behind() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let target = dir.path().join("icon.png");
+
+        write_atomically(&target, b"first").expect("should write");
+        assert_eq!(fs::read(&target).expect("read"), b"first");
+
+        // Overwriting is the concurrent case: a second batch caching the same URL
+        // must not be observable as a truncated file.
+        write_atomically(&target, b"second-and-longer").expect("should overwrite");
+        assert_eq!(fs::read(&target).expect("read"), b"second-and-longer");
+
+        // Nothing left in the cache directory but the icon itself.
+        let leftovers: Vec<_> = fs::read_dir(dir.path())
+            .expect("list")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name())
+            .filter(|name| name != "icon.png")
+            .collect();
+        assert!(leftovers.is_empty(), "temp files remained: {leftovers:?}");
     }
 
     #[test]

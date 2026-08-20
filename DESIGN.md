@@ -533,9 +533,13 @@ Binding, and carried over from the previous build's audit:
   and `@font-face`. No component, layout, animation or interaction selectors.
 - Offline-first. Two network exceptions, both explicit and bounded: GitHub, and
   CurseForge pack artwork. The second is fetched only from `media.forgecdn.net`
-  over https, size-capped, and written to the app cache directory, so a given
-  pack is fetched **once ever** and every later launch — including offline ones
-  — is served from disk by a scan that never touches the network. A pack whose
+  over https, **never redirected off it**, size-capped, checked to actually be an
+  image before it is kept, and written to the app cache directory, so a pack
+  whose artwork arrives is fetched **once ever** and every later launch —
+  including offline ones — is served from disk by a scan that never touches the
+  network. One that does not arrive is asked for again on a later scan, since a
+  thumbnail that 404s today may not tomorrow; batches are deduplicated so a
+  second scan cannot re-ask for what the first is still waiting on. A pack whose
   artwork has not arrived shows its coloured initial, which is also what a
   failed fetch leaves behind.
 - `data-theme` is written **only** for an explicit user override, so `system`
