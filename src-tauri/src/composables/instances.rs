@@ -138,30 +138,38 @@ fn curseforge_config_dir() -> Option<PathBuf> {
 /// `storage.json` is a flat map whose values are themselves JSON *documents
 /// encoded as strings* — `minecraft-settings` has to be parsed a second time to
 /// reach `minecraftRoot`.
+/// Pull the Minecraft root out of the text of CurseForge's `storage.json`.
+///
+/// Split out from the file reading because it is the most fragile guess in the
+/// module and the only part of discovery that can be tested: CurseForge stores
+/// the entire minecraft settings *document* as a JSON string under
+/// `minecraft-settings`, so this is two parses deep and neither layer is a
+/// format CEMM has any claim on. An update to CurseForge that reshapes either
+/// one breaks discovery silently — which is the reason the manual folder picker
+/// is a first-class path rather than an error handler.
+fn minecraft_root_from_storage(storage: &str) -> Option<String> {
+    let root: serde_json::Value = serde_json::from_str(storage).ok()?;
+    let settings_raw = root.get("minecraft-settings")?.as_str()?;
+    let settings: serde_json::Value = serde_json::from_str(settings_raw).ok()?;
+    let minecraft_root = settings.get("minecraftRoot")?.as_str()?.trim();
+    (!minecraft_root.is_empty()).then(|| minecraft_root.to_string())
+}
+
 fn discover_instances_dir() -> Option<PathBuf> {
     let config = curseforge_config_dir()?;
     let storage = fs::read_to_string(config.join("storage.json")).ok()?;
-    let root: serde_json::Value = serde_json::from_str(&storage).ok()?;
-    let settings_raw = root.get("minecraft-settings")?.as_str()?;
-    let settings: serde_json::Value = serde_json::from_str(settings_raw).ok()?;
-    let minecraft_root = settings.get("minecraftRoot")?.as_str()?;
-    if minecraft_root.trim().is_empty() {
-        return None;
-    }
-    let dir = Path::new(minecraft_root).join("Instances");
+    let minecraft_root = minecraft_root_from_storage(&storage)?;
+    let dir = Path::new(&minecraft_root).join("Instances");
     dir.is_dir().then_some(dir)
 }
 
-fn read_groups() -> Vec<PackGroup> {
-    let Some(config) = curseforge_config_dir() else {
-        return Vec::new();
-    };
-    let path = config.join("agent").join("GameInstances").join("groups.json");
-    let Ok(text) = fs::read_to_string(&path) else {
-        return Vec::new();
-    };
-    let Ok(raw) = serde_json::from_str::<Vec<RawGroup>>(&text) else {
-        log::warn!("read_groups: {} did not parse as a group list", path.display());
+/// The groups CurseForge records, from the text of its `groups.json`.
+///
+/// A group with no id or no name cannot be a filter pill, so it is dropped
+/// rather than shown as a blank one. A file that does not parse at all costs the
+/// library its pills and nothing else.
+fn parse_groups(text: &str) -> Vec<PackGroup> {
+    let Ok(raw) = serde_json::from_str::<Vec<RawGroup>>(text) else {
         return Vec::new();
     };
     raw.into_iter()
@@ -173,6 +181,21 @@ fn read_groups() -> Vec<PackGroup> {
         })
         .filter(|group| !group.id.is_empty() && !group.name.is_empty())
         .collect()
+}
+
+fn read_groups() -> Vec<PackGroup> {
+    let Some(config) = curseforge_config_dir() else {
+        return Vec::new();
+    };
+    let path = config.join("agent").join("GameInstances").join("groups.json");
+    let Ok(text) = fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    let groups = parse_groups(&text);
+    if groups.is_empty() {
+        log::warn!("read_groups: {} yielded no usable groups", path.display());
+    }
+    groups
 }
 
 /// `neoforge-21.1.228` -> `NeoForge`. Unrecognised families keep whatever
@@ -808,6 +831,85 @@ mod tests {
             "https://media.forgecdn.net/avatars/thumbnails/1182/438/256/256/1.png"
         )
         .is_some());
+    }
+
+    #[test]
+    fn the_minecraft_root_is_read_from_a_json_document_stored_as_a_json_string() {
+        let storage = serde_json::json!({
+            "minecraft-settings": serde_json::to_string(&serde_json::json!({
+                "minecraftRoot": "D:\\Games\\curseforge\\minecraft",
+                "allocatedMemory": 8192
+            }))
+            .expect("inner document"),
+            "something-else": { "unrelated": true }
+        })
+        .to_string();
+
+        assert_eq!(
+            minecraft_root_from_storage(&storage).as_deref(),
+            Some("D:\\Games\\curseforge\\minecraft")
+        );
+    }
+
+    #[test]
+    fn a_reshaped_storage_file_reports_nothing_rather_than_guessing() {
+        // Each of these is a shape a CurseForge update could plausibly move to,
+        // and every one of them has to end at the manual folder picker rather
+        // than at a wrong path or a panic.
+        let settings = |body: serde_json::Value| {
+            serde_json::json!({ "minecraft-settings": body.to_string() }).to_string()
+        };
+
+        for storage in [
+            // Not JSON at all.
+            "".to_string(),
+            "not json".to_string(),
+            // The key is gone.
+            serde_json::json!({ "other": "{}" }).to_string(),
+            // Nested as a real object instead of a string — the likeliest change.
+            serde_json::json!({ "minecraft-settings": { "minecraftRoot": "D:\\x" } }).to_string(),
+            // The inner string is not a JSON document.
+            serde_json::json!({ "minecraft-settings": "still not json" }).to_string(),
+            // The root is missing, the wrong type, empty, or only whitespace.
+            settings(serde_json::json!({ "allocatedMemory": 8192 })),
+            settings(serde_json::json!({ "minecraftRoot": 42 })),
+            settings(serde_json::json!({ "minecraftRoot": "" })),
+            settings(serde_json::json!({ "minecraftRoot": "   " })),
+        ] {
+            assert_eq!(
+                minecraft_root_from_storage(&storage),
+                None,
+                "expected no root from {storage}"
+            );
+        }
+    }
+
+    #[test]
+    fn groups_without_an_id_or_a_name_are_dropped_rather_than_shown_blank() {
+        let groups = parse_groups(
+            &serde_json::json!([
+                { "id": "a1", "name": "Modded" },
+                { "id": "b2", "name": null },
+                { "name": "No id at all" },
+                { "id": "", "name": "Empty id" },
+                { "id": "c3", "name": "" },
+                { "id": "d4", "name": "Servers" }
+            ])
+            .to_string(),
+        );
+
+        assert_eq!(
+            groups,
+            vec![
+                PackGroup { id: "a1".into(), name: "Modded".into() },
+                PackGroup { id: "d4".into(), name: "Servers".into() },
+            ]
+        );
+
+        // A file of the wrong shape costs the library its pills and nothing more.
+        assert!(parse_groups("{}").is_empty());
+        assert!(parse_groups("not json").is_empty());
+        assert!(parse_groups("[]").is_empty());
     }
 
     #[test]
