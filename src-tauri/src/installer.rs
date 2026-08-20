@@ -1,10 +1,8 @@
 use crate::composables::manifest::Manifest;
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use tauri::command;
-use tauri::Emitter;
-use tauri::Window;
+use std::sync::Arc;
 use tokio::fs as async_fs;
 use tokio::io::AsyncWriteExt;
 
@@ -268,7 +266,7 @@ fn validate_all_addons(manifest: &Manifest) -> Result<(), String> {
 /// - TypeScript: app/types/index.ts (ConfigFile and ConfigFileWithContent interfaces)
 ///
 /// When modifying this struct, ensure all definitions remain consistent.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigFile {
     pub filename: String,
     pub relative_path: String,
@@ -277,7 +275,7 @@ pub struct ConfigFile {
 
 /// Options for install_update function. Only ever deserialized (received from
 /// the frontend as a command argument) — never serialized back out.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct InstallOptions {
     /// Old manifest for cleanup of removed/updated addons
     pub old_manifest: Option<Manifest>,
@@ -286,14 +284,21 @@ pub struct InstallOptions {
     pub cleanup_old: bool,
 }
 
-/// Unified install function that handles all installation scenarios
-#[command]
-pub async fn install_update(
-    window: Window,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstallProgress {
+    pub progress: f64,
+    pub message: String,
+}
+
+pub type InstallProgressCallback = Arc<dyn Fn(InstallProgress) + Send + Sync>;
+
+/// Unified install service operation that handles all installation scenarios.
+pub async fn install_update_with_progress(
     modpack_path: String,
     manifest: Manifest,
     config_files: Vec<ConfigFile>,
     options: Option<InstallOptions>,
+    progress_callback: InstallProgressCallback,
 ) -> Result<(), String> {
     let options = options.unwrap_or_default();
     // Addon files can legitimately be large (resource/shader packs run to hundreds
@@ -321,21 +326,53 @@ pub async fn install_update(
     // up front, before any download or write is attempted.
     validate_all_addons(&manifest)?;
 
+    // Config destinations and binary payloads are also attacker-controlled.
+    // Resolve and decode every one before addon cleanup or promotion begins so
+    // a malformed final config cannot fail only after destructive work.
+    let modpack_path_buf = PathBuf::from(&modpack_path);
+    let mut prepared_configs = Vec::with_capacity(config_files.len());
+    for config in config_files {
+        let dest = validate_path_within_base(&modpack_path_buf, &config.relative_path)?;
+        let bytes = if config
+            .content
+            .starts_with("data:application/octet-stream;base64,")
+        {
+            let base64_content = config
+                .content
+                .strip_prefix("data:application/octet-stream;base64,")
+                .unwrap_or(&config.content);
+            use base64::engine::general_purpose::STANDARD;
+            use base64::Engine;
+            STANDARD.decode(base64_content).map_err(|error| {
+                format!(
+                    "Failed to decode binary config file {}: {error}",
+                    dest.display()
+                )
+            })?
+        } else {
+            config.content.into_bytes()
+        };
+        prepared_configs.push((dest, bytes));
+    }
+
+    let installed_manifest = serde_json::to_vec_pretty(&manifest)
+        .map_err(|error| format!("Failed to encode installed manifest: {error}"))?;
+
     // Helper to emit progress
-    fn emit_progress(window: &Window, progress: usize, total: usize, msg: &str) {
+    fn emit_progress(callback: &InstallProgressCallback, progress: usize, total: usize, msg: &str) {
         let safe_progress = if total > 0 {
             progress.min(total)
         } else {
             progress
         };
-        let _ = Emitter::emit(
-            window,
-            "install-progress",
-            Some(serde_json::json!({
-                "progress": if total > 0 { (safe_progress as f64) / (total as f64) * 100.0 } else { 100.0 },
-                "message": msg
-            })),
-        );
+        callback(InstallProgress {
+            progress: if total > 0 {
+                (safe_progress as f64) / (total as f64) * 100.0
+            } else {
+                100.0
+            },
+            message: msg.to_string(),
+        });
     }
 
     // Calculate diff once for both cleanup and selective downloads.
@@ -389,7 +426,7 @@ pub async fn install_update(
     // Count files that actually need downloading for accurate progress.
     // Config-only updates install config files only.
     let files_to_download = if is_config_only {
-        config_files.len()
+        prepared_configs.len()
     } else {
         let mut count = 0usize;
 
@@ -471,7 +508,7 @@ pub async fn install_update(
         }
 
         // Config files are always installed
-        count + config_files.len()
+        count + prepared_configs.len()
     };
 
     // Install addons — entirely skipped for config-only updates so no addon in
@@ -507,7 +544,7 @@ pub async fn install_update(
                 staged_moves.push((staged_dest, final_dest));
                 current += 1;
                 emit_progress(
-                    &window,
+                    &progress_callback,
                     current,
                     files_to_download,
                     &format!("Downloaded mod: {}", addon.addon_name),
@@ -547,7 +584,7 @@ pub async fn install_update(
                 staged_moves.push((staged_dest, final_dest));
                 current += 1;
                 emit_progress(
-                    &window,
+                    &progress_callback,
                     current,
                     files_to_download,
                     &format!("Downloaded resourcepack: {}", addon.addon_name),
@@ -587,7 +624,7 @@ pub async fn install_update(
                 staged_moves.push((staged_dest, final_dest));
                 current += 1;
                 emit_progress(
-                    &window,
+                    &progress_callback,
                     current,
                     files_to_download,
                     &format!("Downloaded shaderpack: {}", addon.addon_name),
@@ -625,7 +662,7 @@ pub async fn install_update(
                 staged_moves.push((staged_dest, final_dest));
                 current += 1;
                 emit_progress(
-                    &window,
+                    &progress_callback,
                     current,
                     files_to_download,
                     &format!("Downloaded datapack: {}", addon.addon_name),
@@ -646,7 +683,7 @@ pub async fn install_update(
         }
 
         emit_progress(
-            &window,
+            &progress_callback,
             current,
             files_to_download,
             "Finalizing installed files...",
@@ -669,60 +706,38 @@ pub async fn install_update(
         let _ = async_fs::remove_dir_all(&staging_dir).await;
     }
 
-    // Install config files (with path traversal protection)
-    let modpack_path_buf = PathBuf::from(&modpack_path);
-    for config in config_files {
-        // Validate the path to prevent path traversal attacks
-        let dest = validate_path_within_base(&modpack_path_buf, &config.relative_path)?;
-
+    // Config paths and payloads were fully prepared before any destructive work.
+    for (dest, bytes) in prepared_configs {
         if let Some(parent) = dest.parent() {
             async_fs::create_dir_all(parent)
                 .await
                 .map_err(|e| format!("Failed to create directory {}: {}", parent.display(), e))?;
         }
-
-        // Handle binary files that are base64-encoded
-        if config
-            .content
-            .starts_with("data:application/octet-stream;base64,")
-        {
-            let base64_content = config
-                .content
-                .strip_prefix("data:application/octet-stream;base64,")
-                .unwrap_or(&config.content);
-            use base64::engine::general_purpose::STANDARD;
-            use base64::Engine;
-            let binary_data = STANDARD.decode(base64_content).map_err(|e| {
-                format!(
-                    "Failed to decode base64 config file {}: {}",
-                    dest.display(),
-                    e
-                )
-            })?;
-            async_fs::write(&dest, binary_data).await.map_err(|e| {
-                format!(
-                    "Failed to write binary config file {}: {}",
-                    dest.display(),
-                    e
-                )
-            })?;
-        } else {
-            async_fs::write(&dest, config.content.as_bytes())
-                .await
-                .map_err(|e| format!("Failed to write config file {}: {}", dest.display(), e))?;
-        }
+        async_fs::write(&dest, bytes)
+            .await
+            .map_err(|e| format!("Failed to write config file {}: {}", dest.display(), e))?;
 
         current += 1;
         emit_progress(
-            &window,
+            &progress_callback,
             current,
             files_to_download,
             &format!("Installed config: {}", dest.display()),
         );
     }
 
+    let manifest_path = validate_path_within_base(&modpack_path_buf, "cemm-manifest.json")?;
+    async_fs::write(&manifest_path, installed_manifest)
+        .await
+        .map_err(|error| {
+            format!(
+                "Files were installed, but the installed manifest could not be recorded at {}: {error}",
+                manifest_path.display()
+            )
+        })?;
+
     emit_progress(
-        &window,
+        &progress_callback,
         files_to_download,
         files_to_download,
         "Installation complete!",
@@ -1324,5 +1339,101 @@ mod tests {
                 "{new_file} should be present after promotion"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn service_install_writes_config_and_records_installed_manifest() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        let manifest = make_manifest(Some("config"), Vec::new());
+        let progress_events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured_events = Arc::clone(&progress_events);
+        let progress: InstallProgressCallback = Arc::new(move |event| {
+            captured_events
+                .lock()
+                .expect("progress lock should not be poisoned")
+                .push(event);
+        });
+
+        install_update_with_progress(
+            temp.path().to_string_lossy().into_owned(),
+            manifest.clone(),
+            vec![ConfigFile {
+                filename: "settings.toml".to_string(),
+                relative_path: "config/settings.toml".to_string(),
+                content: "enabled = true".to_string(),
+            }],
+            None,
+            progress,
+        )
+        .await
+        .expect("config-only installation should succeed");
+
+        assert_eq!(
+            async_fs::read_to_string(temp.path().join("config/settings.toml"))
+                .await
+                .expect("installed config should be readable"),
+            "enabled = true"
+        );
+        let installed_manifest: Manifest = serde_json::from_slice(
+            &async_fs::read(temp.path().join("cemm-manifest.json"))
+                .await
+                .expect("installed manifest should be readable"),
+        )
+        .expect("installed manifest should be valid JSON");
+        assert_eq!(installed_manifest, manifest);
+
+        let events = progress_events
+            .lock()
+            .expect("progress lock should not be poisoned");
+        assert_eq!(events.last().map(|event| event.progress), Some(100.0));
+        assert_eq!(
+            events.last().map(|event| event.message.as_str()),
+            Some("Installation complete!")
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_config_is_rejected_before_existing_addon_cleanup() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        let mods_dir = temp.path().join("mods");
+        async_fs::create_dir_all(&mods_dir)
+            .await
+            .expect("failed to create mods dir");
+        let existing_addon = mods_dir.join("old.jar");
+        async_fs::write(&existing_addon, b"existing jar")
+            .await
+            .expect("failed to seed existing addon");
+
+        let old_manifest = make_manifest(Some("full"), vec![make_addon(1, "Old", "old.jar")]);
+        let new_manifest = make_manifest(Some("full"), Vec::new());
+        let result = install_update_with_progress(
+            temp.path().to_string_lossy().into_owned(),
+            new_manifest,
+            vec![ConfigFile {
+                filename: "broken.bin".to_string(),
+                relative_path: "config/broken.bin".to_string(),
+                content: "data:application/octet-stream;base64,%%%invalid%%%".to_string(),
+            }],
+            Some(InstallOptions {
+                old_manifest: Some(old_manifest),
+                cleanup_old: true,
+            }),
+            Arc::new(|_| {}),
+        )
+        .await;
+
+        let error = result.expect_err("invalid base64 should reject the install");
+        assert!(
+            error.contains("Failed to decode binary config file"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            existing_addon.exists(),
+            "existing addon must remain when prevalidation fails"
+        );
+        assert!(
+            !temp.path().join("cemm-manifest.json").exists(),
+            "failed installation must not record a new manifest"
+        );
     }
 }

@@ -4,6 +4,7 @@ use tauri::State;
 use crate::composables::github::ConfigFileWithContent;
 use crate::composables::instances::{CachedIcon, PackLibrary};
 use crate::composables::manifest::{Manifest, UpdateInfo};
+use crate::installer::{ConfigFile as InstallerConfigFile, InstallOptions};
 use crate::service::ServiceClient;
 
 #[tauri::command]
@@ -167,5 +168,26 @@ pub async fn cache_pack_icons(
 ) -> Result<Vec<CachedIcon>, String> {
     service
         .call_typed("library.cache_icons", json!({ "urls": urls }))
+        .await
+}
+
+#[tauri::command]
+pub async fn install_update(
+    service: State<'_, ServiceClient>,
+    modpack_path: String,
+    manifest: Manifest,
+    config_files: Vec<InstallerConfigFile>,
+    options: Option<InstallOptions>,
+) -> Result<(), String> {
+    service
+        .call_typed(
+            "install.apply_update",
+            json!({
+                "modpackPath": modpack_path,
+                "manifest": manifest,
+                "configFiles": config_files,
+                "options": options
+            }),
+        )
         .await
 }

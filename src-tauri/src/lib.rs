@@ -31,7 +31,7 @@ pub use composables::manifest::{
     UpdateInfo,
 };
 mod installer;
-pub use installer::{install_update, ConfigFile as InstallerConfigFile, InstallOptions};
+pub use installer::{ConfigFile as InstallerConfigFile, InstallOptions};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -53,7 +53,7 @@ pub fn run() {
             service_commands::upload_update,
             service_commands::download_manifest,
             service_commands::download_config_files,
-            install_update,
+            service_commands::install_update,
             select_multiple_files,
             service_commands::read_directory_recursive,
             service_commands::is_binary_file,

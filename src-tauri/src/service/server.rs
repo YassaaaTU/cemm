@@ -152,6 +152,26 @@ async fn dispatch(
                 crate::composables::instances::cache_pack_icons_in(cache_dir, params.urls).await,
             )
         }
+        "install.apply_update" => {
+            let params: InstallUpdateParams = decode_params(request)?;
+            let events = Arc::clone(event_callback);
+            let progress_callback = Arc::new(move |progress: crate::installer::InstallProgress| {
+                events(
+                    "install-progress",
+                    serde_json::to_value(progress).unwrap_or(Value::Null),
+                );
+            });
+            encode_result(
+                crate::installer::install_update_with_progress(
+                    params.modpack_path,
+                    params.manifest,
+                    params.config_files,
+                    params.options,
+                    progress_callback,
+                )
+                .await,
+            )
+        }
         method => Err(format!("Unknown sidecar service method: {method}")),
     }
 }
@@ -234,6 +254,15 @@ struct ScanLibraryParams {
 #[derive(Deserialize)]
 struct CacheIconsParams {
     urls: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallUpdateParams {
+    modpack_path: String,
+    manifest: crate::composables::manifest::Manifest,
+    config_files: Vec<crate::installer::ConfigFile>,
+    options: Option<crate::installer::InstallOptions>,
 }
 
 pub fn run_stdio_service() -> i32 {

@@ -11,7 +11,7 @@ export function useUserApi()
 	const { downloadManifest, downloadConfigFiles: apiDownloadConfigFiles } = useGithubApi()
 	const appStore = useAppStore()
 	const manifestStore = useManifestStore()
-	const { writeFile, readFile, parseMinecraftInstance, installUpdate: installUpdateTauri } = useTauri()
+	const { readFile, parseMinecraftInstance, installUpdate: installUpdateTauri } = useTauri()
 	const { $logger: logger } = useNuxtApp()
 
 	/**
@@ -217,23 +217,6 @@ export function useUserApi()
 				}
 			)
 
-			// Only now — after the install has actually succeeded — does the new
-			// manifest become the on-disk record of what's installed. A failure
-			// here doesn't undo the install that just succeeded, so it's reported
-			// as a warning rather than turning the whole operation into a failure —
-			// its only consequence is a stale diff baseline for the *next* update.
-			try
-			{
-				await writeNewManifest(appStore.modpackPath, manifest)
-			}
-			catch (manifestWriteError)
-			{
-				logger.error(
-					{ error: manifestWriteError },
-					'Install succeeded but failed to write cemm-manifest.json; next update\'s diff may use a stale baseline'
-				)
-			}
-
 			setStatus(
 				previousManifest !== null ? 'Update installation complete!' : 'Fresh installation complete!',
 				'success'
@@ -258,7 +241,7 @@ export function useUserApi()
 	{
 		try
 		{
-			onProgress(60, 'Generating cemm-manifest_old.json from current installation...')
+			onProgress(60, 'Reading the current installation...')
 
 			const minecraftInstancePath = `${modpackPath}/minecraftinstance.json`
 			const minecraftInstanceContent = await readFile(minecraftInstancePath)
@@ -269,18 +252,6 @@ export function useUserApi()
 
 				if (parsedManifest !== null)
 				{
-					const oldManifestPath = `${modpackPath}/cemm-manifest_old.json`
-					const manifestContent = JSON.stringify(parsedManifest, null, 2)
-					const writeSuccess = await writeFile(oldManifestPath, manifestContent)
-
-					if (!writeSuccess)
-					{
-						const errorMsg = 'Failed to write cemm-manifest_old.json from minecraftinstance.json'
-						logger.error(errorMsg)
-						manifestStore.loadInstalledManifest(null)
-						return { success: false, error: errorMsg }
-					}
-
 					manifestStore.loadInstalledManifest(parsedManifest)
 					return { success: true }
 				}
@@ -308,36 +279,10 @@ export function useUserApi()
 		}
 	}
 
-	/**
-   * Write new manifest to disk
-   */
-	async function writeNewManifest(modpackPath: string, newManifest: Manifest): Promise<boolean>
-	{
-		try
-		{
-			const manifestPath = `${modpackPath}/cemm-manifest.json`
-			const writeSuccess = await writeFile(manifestPath, JSON.stringify(newManifest, null, 2))
-
-			if (!writeSuccess)
-			{
-				throw new Error('Failed to write new cemm-manifest.json')
-			}
-
-			logger.info('Successfully wrote new cemm-manifest.json')
-			return true
-		}
-		catch (err)
-		{
-			logger.error({ error: err }, 'Failed to write new cemm-manifest.json')
-			throw err
-		}
-	}
-
 	return {
 		downloadFromGithub,
 		downloadConfigFiles,
 		installUpdate,
-		generatePreviousManifest,
-		writeNewManifest
+		generatePreviousManifest
 	}
 }
