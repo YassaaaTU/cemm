@@ -126,19 +126,119 @@ fn validate_addon_file_name(addon_name: &str, file_name: &str) -> Result<(), Str
     }
 }
 
-/// Only accept the schemes a real download URL can use. This does not pin to a
-/// specific CDN host — CurseForge serves addons from multiple mirror hosts, and
-/// enforcing a host allowlist without auditing already-published manifests risks
-/// breaking legitimate installs (see audit F-P0-2 compatibility note).
+const MAX_ADDON_FILE_BYTES: u64 = 500 * 1024 * 1024;
+
+fn is_trusted_addon_url(url: &reqwest::Url) -> bool {
+    url.scheme() == "https"
+        && url
+            .host_str()
+            .is_some_and(|host| host == "forgecdn.net" || host.ends_with(".forgecdn.net"))
+}
+
+/// Addon files are executable content once Minecraft loads them. Only accept
+/// encrypted CurseForge CDN URLs, and apply the same rule to redirects below.
 fn validate_addon_download_url(addon_name: &str, url: &str) -> Result<(), String> {
-    if url.starts_with("https://") || url.starts_with("http://") {
+    let parsed = reqwest::Url::parse(url).map_err(|error| {
+        format!(
+            "Refusing to install addon '{}': cdn_download_url '{}' is invalid: {}",
+            addon_name, url, error
+        )
+    })?;
+
+    if is_trusted_addon_url(&parsed) {
         Ok(())
     } else {
         Err(format!(
-            "Refusing to install addon '{}': cdn_download_url '{}' is not an http(s) URL",
+            "Refusing to install addon '{}': cdn_download_url '{}' must use HTTPS on forgecdn.net",
             addon_name, url
         ))
     }
+}
+
+async fn download_and_save(
+    client: &Client,
+    url: &str,
+    dest_path: &Path,
+    max_bytes: u64,
+) -> Result<(), String> {
+    let mut response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| format!("Failed to download {}: {}", url, error))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Failed to download {}: HTTP {}",
+            url,
+            response.status()
+        ));
+    }
+
+    if let Some(len) = response.content_length() {
+        if len > max_bytes {
+            return Err(format!(
+                "Refusing to download {}: reported size {} bytes exceeds the {} byte limit",
+                url, len, max_bytes
+            ));
+        }
+    }
+
+    if let Some(parent) = dest_path.parent() {
+        async_fs::create_dir_all(parent).await.map_err(|error| {
+            format!("Failed to create directory {}: {}", parent.display(), error)
+        })?;
+    }
+
+    let mut file = async_fs::File::create(dest_path)
+        .await
+        .map_err(|error| format!("Failed to create file {}: {}", dest_path.display(), error))?;
+    let mut downloaded = 0u64;
+
+    loop {
+        let chunk = match response.chunk().await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => break,
+            Err(error) => {
+                drop(file);
+                let _ = async_fs::remove_file(dest_path).await;
+                return Err(format!("Failed to read bytes from {}: {}", url, error));
+            }
+        };
+
+        downloaded = match downloaded.checked_add(chunk.len() as u64) {
+            Some(total) => total,
+            None => {
+                drop(file);
+                let _ = async_fs::remove_file(dest_path).await;
+                return Err(format!("Refusing to download {}: byte count overflow", url));
+            }
+        };
+        if downloaded > max_bytes {
+            drop(file);
+            let _ = async_fs::remove_file(dest_path).await;
+            return Err(format!(
+                "Refusing to save {}: downloaded {} bytes exceeds the {} byte limit",
+                url, downloaded, max_bytes
+            ));
+        }
+
+        if let Err(error) = file.write_all(&chunk).await {
+            drop(file);
+            let _ = async_fs::remove_file(dest_path).await;
+            return Err(format!(
+                "Failed to write file {}: {}",
+                dest_path.display(),
+                error
+            ));
+        }
+    }
+
+    file.flush()
+        .await
+        .map_err(|error| format!("Failed to flush file {}: {}", dest_path.display(), error))?;
+
+    Ok(())
 }
 
 /// Validates every addon in the manifest before any network call or file write
@@ -201,6 +301,13 @@ pub async fn install_update(
     // connection to something finite, not to cap normal downloads.
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(300))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if is_trusted_addon_url(attempt.url()) {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
@@ -229,67 +336,6 @@ pub async fn install_update(
                 "message": msg
             })),
         );
-    }
-
-    // A single addon file is never legitimately larger than this. Checked against
-    // the declared Content-Length before reading the body into memory, so a
-    // misbehaving or malicious CDN response can't force an unbounded allocation.
-    const MAX_ADDON_FILE_BYTES: u64 = 500 * 1024 * 1024;
-
-    // Helper to download and save a file
-    async fn download_and_save(client: &Client, url: &str, dest_path: &Path) -> Result<(), String> {
-        let resp = client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to download {}: {}", url, e))?;
-
-        if !resp.status().is_success() {
-            return Err(format!(
-                "Failed to download {}: HTTP {}",
-                url,
-                resp.status()
-            ));
-        }
-
-        if let Some(len) = resp.content_length() {
-            if len > MAX_ADDON_FILE_BYTES {
-                return Err(format!(
-                    "Refusing to download {}: reported size {} bytes exceeds the {} byte limit",
-                    url, len, MAX_ADDON_FILE_BYTES
-                ));
-            }
-        }
-
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| format!("Failed to read bytes from {}: {}", url, e))?;
-
-        if bytes.len() as u64 > MAX_ADDON_FILE_BYTES {
-            return Err(format!(
-                "Refusing to save {}: downloaded {} bytes exceeds the {} byte limit",
-                url,
-                bytes.len(),
-                MAX_ADDON_FILE_BYTES
-            ));
-        }
-
-        if let Some(parent) = dest_path.parent() {
-            async_fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create directory {}: {}", parent.display(), e))?;
-        }
-
-        let mut file = async_fs::File::create(dest_path)
-            .await
-            .map_err(|e| format!("Failed to create file {}: {}", dest_path.display(), e))?;
-
-        file.write_all(&bytes)
-            .await
-            .map_err(|e| format!("Failed to write file {}: {}", dest_path.display(), e))?;
-
-        Ok(())
     }
 
     // Calculate diff once for both cleanup and selective downloads.
@@ -451,7 +497,13 @@ pub async fn install_update(
 
             if needs_download {
                 let staged_dest = staging_dir.join("mods").join(&addon.file_name_on_disk);
-                download_and_save(&client, &addon.cdn_download_url, &staged_dest).await?;
+                download_and_save(
+                    &client,
+                    &addon.cdn_download_url,
+                    &staged_dest,
+                    MAX_ADDON_FILE_BYTES,
+                )
+                .await?;
                 staged_moves.push((staged_dest, final_dest));
                 current += 1;
                 emit_progress(
@@ -485,7 +537,13 @@ pub async fn install_update(
                 let staged_dest = staging_dir
                     .join("resourcepacks")
                     .join(&addon.file_name_on_disk);
-                download_and_save(&client, &addon.cdn_download_url, &staged_dest).await?;
+                download_and_save(
+                    &client,
+                    &addon.cdn_download_url,
+                    &staged_dest,
+                    MAX_ADDON_FILE_BYTES,
+                )
+                .await?;
                 staged_moves.push((staged_dest, final_dest));
                 current += 1;
                 emit_progress(
@@ -519,7 +577,13 @@ pub async fn install_update(
                 let staged_dest = staging_dir
                     .join("shaderpacks")
                     .join(&addon.file_name_on_disk);
-                download_and_save(&client, &addon.cdn_download_url, &staged_dest).await?;
+                download_and_save(
+                    &client,
+                    &addon.cdn_download_url,
+                    &staged_dest,
+                    MAX_ADDON_FILE_BYTES,
+                )
+                .await?;
                 staged_moves.push((staged_dest, final_dest));
                 current += 1;
                 emit_progress(
@@ -551,7 +615,13 @@ pub async fn install_update(
 
             if needs_download {
                 let staged_dest = staging_dir.join("datapacks").join(&addon.file_name_on_disk);
-                download_and_save(&client, &addon.cdn_download_url, &staged_dest).await?;
+                download_and_save(
+                    &client,
+                    &addon.cdn_download_url,
+                    &staged_dest,
+                    MAX_ADDON_FILE_BYTES,
+                )
+                .await?;
                 staged_moves.push((staged_dest, final_dest));
                 current += 1;
                 emit_progress(
@@ -864,6 +934,7 @@ async fn remove_old_files(
 mod tests {
     use super::*;
     use crate::composables::manifest::Addon;
+    use tokio::io::AsyncReadExt;
 
     fn make_addon(project_id: u64, name: &str, file_name: &str) -> Addon {
         Addon {
@@ -923,11 +994,14 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_http_download_urls() {
+    fn rejects_untrusted_or_unencrypted_download_urls() {
         for bad in [
             "file:///etc/passwd",
             "javascript:alert(1)",
             "ftp://example.com/x",
+            "http://edge.forgecdn.net/files/mod.jar",
+            "https://example.com/mod.jar",
+            "https://evilforgecdn.net/mod.jar",
             "",
         ] {
             assert!(
@@ -935,6 +1009,62 @@ mod tests {
                 "expected '{bad}' to be rejected as a download URL"
             );
         }
+    }
+
+    #[test]
+    fn accepts_curseforge_cdn_hosts_over_https() {
+        for good in [
+            "https://edge.forgecdn.net/files/mod.jar",
+            "https://mediafilez.forgecdn.net/files/mod.jar",
+            "https://forgecdn.net/files/mod.jar",
+        ] {
+            assert!(
+                validate_addon_download_url("Good Addon", good).is_ok(),
+                "expected '{good}' to be accepted as a download URL"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn streaming_download_removes_partial_file_when_limit_is_exceeded() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("test listener should bind");
+        let address = listener
+            .local_addr()
+            .expect("listener should have an address");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("request should connect");
+            let mut request = [0u8; 1024];
+            let _ = stream
+                .read(&mut request)
+                .await
+                .expect("request should be readable");
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n6\r\nabcdef\r\n0\r\n\r\n",
+                )
+                .await
+                .expect("response should be writable");
+        });
+
+        let temp = tempfile::tempdir().expect("temp dir should be available");
+        let destination = temp.path().join("oversized.jar");
+        let client = Client::builder().build().expect("client should build");
+        let result = download_and_save(
+            &client,
+            &format!("http://{address}/oversized.jar"),
+            &destination,
+            5,
+        )
+        .await;
+
+        server.await.expect("test server should finish");
+        assert!(result.is_err(), "oversized response should be rejected");
+        assert!(
+            !destination.exists(),
+            "partial oversized response should be removed"
+        );
     }
 
     #[test]
