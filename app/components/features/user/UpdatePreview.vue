@@ -76,7 +76,7 @@
     <AddonTable
       v-if="incoming.length > 0"
       id="preview-incoming"
-      title="Incoming"
+      :title="applied ? 'Installed' : 'Incoming'"
       :rows="incoming"
       :max-height="300"
       noun="addons"

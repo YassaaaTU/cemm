@@ -473,7 +473,10 @@ const updatedRows = computed<AddonRow[]>(() =>
 			version: addon?.version ?? '',
 			versionNote: from !== undefined ? `from ${from}` : 'replaced',
 			tone: 'updated' as const,
-			label: 'Update',
+			// Imperative until it happens, past tense afterwards — the diff stays
+			// on screen as the record of the install, so a row still saying
+			// "Update" is describing something that is already done.
+			label: updateApplied.value ? 'Updated' : 'Update',
 			thumbnailUrl: addon?.thumbnailUrl
 		}
 	})
@@ -487,7 +490,7 @@ const removedRows = computed<AddonRow[]>(() =>
 		version: '',
 		versionNote: 'removed from disk',
 		tone: 'removed' as const,
-		label: 'Delete',
+		label: updateApplied.value ? 'Deleted' : 'Delete',
 		struck: true
 	}))
 )
