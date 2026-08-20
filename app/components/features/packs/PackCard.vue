@@ -23,10 +23,11 @@
     <div class="flex min-w-0 items-start gap-2.5">
       <span class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-box border border-base-300 bg-base-100">
         <img
-          v-if="pack.icon !== null"
+          v-if="pack.icon !== null && !iconFailed"
           :src="pack.icon"
           alt=""
           class="size-full object-cover"
+          @error="iconFailed = true"
         />
         <span
           v-else
@@ -139,13 +140,7 @@
           :disabled="busy"
           @click="emit('install', pack)"
         >
-          <span
-            v-if="busy === 'install'"
-            class="loading loading-xs loading-spinner"
-            aria-hidden="true"
-          />
           <Icon
-            v-else
             name="mdi:tray-arrow-down"
             size="0.9375rem"
             aria-hidden="true"
@@ -186,8 +181,11 @@ const props = withDefaults(
 	defineProps<{
 		pack: PackRow
 		groupName: string | null
-		/** Which action is in flight on this card, if any. */
-		busy?: 'install' | 'publish' | false
+		/**
+		 * Whether this card's action is in flight. Only publish can be: install
+		 * opens a dialog, which is instant and has nothing to wait behind.
+		 */
+		busy?: 'publish' | false
 	}>(),
 	{ busy: false }
 )
@@ -199,6 +197,21 @@ const emit = defineEmits<{
 }>()
 
 const initial = computed(() => props.pack.name.trim().charAt(0).toUpperCase() || '?')
+
+/**
+ * A `data:` URI the browser could not decode, which is the fourth artwork
+ * state — the comment on `initialTone` names three and says they look alike.
+ * The Rust side now refuses a non-image body before it reaches the cache, so
+ * this should not happen; it is here because the card must not be the place
+ * that finds out, the way AddonThumb already does not.
+ */
+const iconFailed = ref(false)
+// A card is reused as the grid re-sorts, so a failure must not follow the
+// component onto a different pack's picture.
+watch(() => props.pack.icon, () =>
+{
+	iconFailed.value = false
+})
 
 /**
  * What to say instead of an addon count for a pack the scan did not return.

@@ -248,9 +248,12 @@ const { $logger: logger } = useNuxtApp()
 
 const search = ref('')
 const activeFilter = ref('all')
-/** Which card is working, and on what — only one action runs at a time. */
-const busyPath = ref('')
-const busyAction = ref<'install' | 'publish' | false>(false)
+/**
+ * Which card is working — one value, so a path set without an action cannot be
+ * represented. Only publish ever appears here: install opens a dialog, and
+ * there is nothing to wait behind.
+ */
+const busy = ref<{ path: string, action: 'publish' } | null>(null)
 const pendingPack = ref<PackRow | null>(null)
 const fetching = ref(false)
 const fetchError = ref<string | null>(null)
@@ -262,8 +265,8 @@ const fetchError = ref<string | null>(null)
  */
 const allPacks = computed<PackRow[]>(() => packsStore.packs)
 
-const busyFor = (pack: PackRow): 'install' | 'publish' | false =>
-	busyPath.value === pack.instancePath ? busyAction.value : false
+const busyFor = (pack: PackRow): 'publish' | false =>
+	busy.value?.path === pack.instancePath ? busy.value.action : false
 
 const groupNameFor = (groupId: string | null): string | null =>
 {
@@ -308,6 +311,19 @@ const filters = computed(() =>
 			? [{ value: 'ungrouped', label: 'Ungrouped', count: ungrouped }]
 			: [])
 	].filter((option) => option.value === 'all' || option.count > 0)
+})
+
+/**
+ * A group emptied by a rescan or a folder change takes its pill with it, and the
+ * selection would otherwise survive the control: no pill lit anywhere, and a
+ * grid saying nothing matches a filter the user can no longer see or clear.
+ */
+watch(filters, (options) =>
+{
+	if (!options.some((option) => option.value === activeFilter.value))
+	{
+		activeFilter.value = 'all'
+	}
 })
 
 /** Free-text search covers everything a card actually shows. */
@@ -474,8 +490,7 @@ function installPack(pack: PackRow)
 
 async function publishPack(pack: PackRow)
 {
-	busyPath.value = pack.instancePath
-	busyAction.value = 'publish'
+	busy.value = { path: pack.instancePath, action: 'publish' }
 	try
 	{
 		// Released before the load rather than after it: loadInstance writes
@@ -504,8 +519,7 @@ async function publishPack(pack: PackRow)
 	}
 	finally
 	{
-		busyPath.value = ''
-		busyAction.value = false
+		busy.value = null
 	}
 }
 
