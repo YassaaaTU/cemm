@@ -344,10 +344,10 @@ export function calculateUpdateDiff(oldManifest: Manifest | null, newManifest: M
 			removed_addons: [],
 			updated_addon_ids: [],
 			new_addons: [
-				...newManifest.mods.map((addon) => addon.addon_name),
-				...newManifest.resourcepacks.map((addon) => addon.addon_name),
-				...newManifest.shaderpacks.map((addon) => addon.addon_name),
-				...newManifest.datapacks.map((addon) => addon.addon_name)
+				...newManifest.mods.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
+				...newManifest.resourcepacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
+				...newManifest.shaderpacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
+				...newManifest.datapacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name)
 			]
 		}
 	}
@@ -364,8 +364,10 @@ export function calculateUpdateDiff(oldManifest: Manifest | null, newManifest: M
 		// Find removed addons (in old but not in new)
 		for (const oldAddon of oldAddons)
 		{
-			const stillExists = newAddons.some((newAddon) => newAddon.addon_project_id === oldAddon.addon_project_id)
-			if (!stillExists)
+			if (oldAddon.disabled === true) continue
+
+			const newAddon = newAddons.find((addon) => addon.addon_project_id === oldAddon.addon_project_id)
+			if (newAddon === undefined || newAddon.disabled === true)
 			{
 				diff.removed_addons.push(oldAddon.addon_name)
 			}
@@ -375,8 +377,10 @@ export function calculateUpdateDiff(oldManifest: Manifest | null, newManifest: M
 		// Store project_id for reliable matching during removal
 		for (const oldAddon of oldAddons)
 		{
+			if (oldAddon.disabled === true) continue
+
 			const newAddon = newAddons.find((addon) => addon.addon_project_id === oldAddon.addon_project_id)
-			if (newAddon !== undefined && oldAddon.version !== newAddon.version)
+			if (newAddon !== undefined && newAddon.disabled !== true && oldAddon.version !== newAddon.version)
 			{
 				diff.updated_addon_ids.push(oldAddon.addon_project_id)
 			}
@@ -385,6 +389,8 @@ export function calculateUpdateDiff(oldManifest: Manifest | null, newManifest: M
 		// Find new addons (in new but not in old)
 		for (const newAddon of newAddons)
 		{
+			if (newAddon.disabled === true) continue
+
 			const isNew = !oldAddons.some((oldAddon) => oldAddon.addon_project_id === newAddon.addon_project_id)
 			if (isNew)
 			{
