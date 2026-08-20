@@ -133,6 +133,25 @@ async fn dispatch(
                 .await,
             )
         }
+        "library.scan" => {
+            let params: ScanLibraryParams = decode_params(request)?;
+            let icon_cache = context.cache_dir.as_ref().map(|dir| dir.join("pack-icons"));
+            encode_result(crate::composables::instances::scan_library(
+                params.instances_dir,
+                icon_cache.as_deref(),
+            ))
+        }
+        "library.cache_icons" => {
+            let params: CacheIconsParams = decode_params(request)?;
+            let cache_dir = context
+                .cache_dir
+                .as_ref()
+                .ok_or_else(|| "Local service cache directory is not configured".to_string())?
+                .join("pack-icons");
+            encode_result(
+                crate::composables::instances::cache_pack_icons_in(cache_dir, params.urls).await,
+            )
+        }
         method => Err(format!("Unknown sidecar service method: {method}")),
     }
 }
@@ -204,6 +223,17 @@ struct DownloadConfigFilesParams {
     uuid: String,
     modpack_key: Option<String>,
     manifest: crate::composables::manifest::Manifest,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScanLibraryParams {
+    instances_dir: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CacheIconsParams {
+    urls: Vec<String>,
 }
 
 pub fn run_stdio_service() -> i32 {

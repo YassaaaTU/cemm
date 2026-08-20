@@ -2,6 +2,7 @@ use serde_json::json;
 use tauri::State;
 
 use crate::composables::github::ConfigFileWithContent;
+use crate::composables::instances::{CachedIcon, PackLibrary};
 use crate::composables::manifest::{Manifest, UpdateInfo};
 use crate::service::ServiceClient;
 
@@ -146,5 +147,25 @@ pub async fn download_config_files(
                 "manifest": manifest
             }),
         )
+        .await
+}
+
+#[tauri::command]
+pub async fn scan_pack_library(
+    service: State<'_, ServiceClient>,
+    instances_dir: Option<String>,
+) -> Result<PackLibrary, String> {
+    service
+        .call_typed("library.scan", json!({ "instancesDir": instances_dir }))
+        .await
+}
+
+#[tauri::command]
+pub async fn cache_pack_icons(
+    service: State<'_, ServiceClient>,
+    urls: Vec<String>,
+) -> Result<Vec<CachedIcon>, String> {
+    service
+        .call_typed("library.cache_icons", json!({ "urls": urls }))
         .await
 }

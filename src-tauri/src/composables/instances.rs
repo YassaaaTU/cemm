@@ -11,10 +11,9 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::command;
 
 /// A CurseForge instance group, by id, as `groups.json` records them.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PackGroup {
     pub id: String,
@@ -24,7 +23,7 @@ pub struct PackGroup {
 /// One modpack, at the level of detail a library card needs — deliberately not
 /// the manifest. Loading an instance for real still goes through
 /// `parse_minecraft_instance`.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PackSummary {
     /// The folder holding `minecraftinstance.json`. This is the identity key
@@ -58,7 +57,7 @@ pub struct PackSummary {
     pub project_id: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PackLibrary {
     /// Where the scan actually looked, if anywhere.
@@ -275,13 +274,6 @@ fn cache_file_name(url: &str) -> Option<String> {
     Some(format!("{stem}.{extension}"))
 }
 
-fn icon_cache_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
-    use tauri::Manager;
-    let dir = app.path().app_cache_dir().ok()?.join("pack-icons");
-    fs::create_dir_all(&dir).ok()?;
-    Some(dir)
-}
-
 fn mime_for(path: &Path) -> Option<&'static str> {
     Some(match path.extension()?.to_str()?.to_lowercase().as_str() {
         "png" => "image/png",
@@ -326,7 +318,7 @@ fn cached_icon(cache_dir: Option<&Path>, url: &str) -> Option<String> {
     as_data_uri(&path)
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CachedIcon {
     pub url: String,
@@ -345,14 +337,12 @@ pub struct CachedIcon {
 ///
 /// Failures are reported per icon rather than failing the batch: an unreachable
 /// CDN should cost a card its picture, nothing more.
-#[tauri::command]
-pub async fn cache_pack_icons(
-    app: tauri::AppHandle,
+pub async fn cache_pack_icons_in(
+    cache_dir: PathBuf,
     urls: Vec<String>,
 ) -> Result<Vec<CachedIcon>, String> {
-    let Some(cache_dir) = icon_cache_dir(&app) else {
-        return Err("Could not open the icon cache directory".to_string());
-    };
+    fs::create_dir_all(&cache_dir)
+        .map_err(|error| format!("Could not open the icon cache directory: {error}"))?;
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
@@ -567,17 +557,7 @@ fn summarise(instance_dir: &Path, cache_dir: Option<&Path>) -> Result<PackSummar
     })
 }
 
-#[command]
-pub fn scan_pack_library(
-    app: tauri::AppHandle,
-    instances_dir: Option<String>,
-) -> Result<PackLibrary, String> {
-    // The cache directory is the only thing the command needs the app for, and
-    // splitting it out keeps the scan itself testable without a Tauri runtime.
-    scan_library(instances_dir, icon_cache_dir(&app).as_deref())
-}
-
-fn scan_library(
+pub(crate) fn scan_library(
     instances_dir: Option<String>,
     cache_dir: Option<&Path>,
 ) -> Result<PackLibrary, String> {
