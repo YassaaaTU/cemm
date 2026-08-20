@@ -291,11 +291,7 @@ onMounted(async () =>
 	}
 })
 
-/**
- * Deliberately not behind a confirmation. Nothing is destroyed — the mode is
- * re-asked, the repository and folder are carried into the screen already
- * filled in, and the rail is still there to navigate away with.
- */
+/** Points the library scan somewhere other than where CurseForge keeps its own. */
 const chooseInstancesDir = async () =>
 {
 	const dir = await selectDirectory()
@@ -312,6 +308,11 @@ const resetInstancesDir = async () =>
 	await packsStore.scan(true)
 }
 
+/**
+ * Deliberately not behind a confirmation. Nothing is destroyed — the mode is
+ * re-asked, the repository and folder are carried into the screen already
+ * filled in, and the rail is still there to navigate away with.
+ */
 const handleRerunSetup = async () =>
 {
 	appStore.resetModeChoice()
