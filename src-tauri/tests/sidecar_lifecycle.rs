@@ -77,7 +77,8 @@ fn compiled_binary_speaks_protocol_and_exits_when_stdin_closes() {
     assert_eq!(ready["type"], "ready");
     assert_eq!(ready["protocol_version"], 1);
 
-    writeln!(stdin, "{}", r#"{"id":1,"method":"ping","params":{}}"#)
+    stdin
+        .write_all(b"{\"id\":1,\"method\":\"ping\",\"params\":{}}\n")
         .expect("ping should be writable");
     stdin.flush().expect("ping should flush");
     let ping = read_message();
@@ -85,12 +86,9 @@ fn compiled_binary_speaks_protocol_and_exits_when_stdin_closes() {
     assert_eq!(ping["id"], 1);
     assert_eq!(ping["result"]["protocolVersion"], 1);
 
-    writeln!(
-        stdin,
-        "{}",
-        r#"{"id":2,"method":"not-a-real-method","params":{}}"#
-    )
-    .expect("unknown method should be writable");
+    stdin
+        .write_all(b"{\"id\":2,\"method\":\"not-a-real-method\",\"params\":{}}\n")
+        .expect("unknown method should be writable");
     stdin.flush().expect("unknown method should flush");
     let error = read_message();
     assert_eq!(error["type"], "error");

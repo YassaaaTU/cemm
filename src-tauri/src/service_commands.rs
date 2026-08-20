@@ -91,6 +91,10 @@ pub async fn compare_manifests(
 }
 
 #[tauri::command]
+// Tauri maps these named arguments directly from the established frontend
+// payload. Wrapping them would be a breaking IPC contract change for no domain
+// benefit; this function remains a zero-logic compatibility adapter.
+#[allow(clippy::too_many_arguments)]
 pub async fn upload_update(
     service: State<'_, ServiceClient>,
     operation_id: String,
