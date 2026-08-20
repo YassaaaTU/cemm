@@ -3,6 +3,24 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Git tag for the release'
+        required: true
+        default: 'cemm-v__VERSION__'
+      release_name:
+        description: 'Release title'
+        required: true
+        default: 'CEMM v__VERSION__'
+      release_body:
+        description: 'Release notes'
+        required: false
+        default: 'Manually published CEMM release.'
+      prerelease:
+        description: 'Publish as a prerelease'
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   publish-tauri:
@@ -70,9 +88,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.event.release.tag_name }}
-          releaseName: ${{ github.event.release.name }}
-          releaseBody: ${{ github.event.release.body }}
+          tagName: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag_name }}
+          releaseName: ${{ github.event_name == 'release' && github.event.release.name || inputs.release_name }}
+          releaseBody: ${{ github.event_name == 'release' && github.event.release.body || inputs.release_body }}
           releaseDraft: false
-          prerelease: ${{ github.event.release.prerelease }}
+          prerelease: ${{ github.event_name == 'release' && github.event.release.prerelease || inputs.prerelease }}
           args: ${{ matrix.args }} --verbose
