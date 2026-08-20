@@ -22,3 +22,8 @@ plans/
 testing_keys.ps1
 .claude/
 .impeccable/
+# Graphify
+/graphify-out/
+
+# CocoIndex Code (ccc)
+/.cocoindex_code/
