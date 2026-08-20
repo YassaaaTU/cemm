@@ -208,9 +208,24 @@ like the same thing.
 
 Install asks for the update code **on the card**, so choosing a pack and saying
 which update to put on it stay one gesture. Publish loads the instance and goes
-straight to the diff. Switching sides this way clears any loaded manifest, for
-the same reason the rail does — otherwise an admin would end up diffing against
-a manifest the player had downloaded.
+straight to the diff.
+
+**A loaded manifest belongs to a pack, not to a counter.** Switching sides
+clears it, for the same reason the rail does — otherwise an admin would end up
+diffing against a manifest the player had downloaded. But the side was only ever
+a stand-in for the real question, and the library is what exposed that: you can
+now pick a different pack *without* changing sides, and the manifest from the
+last one would still be sitting there. An install derives its deletions from the
+destination's own inventory, so the wrong pairing deletes files computed from a
+modpack that is not the one being written to. The manifest therefore records the
+folder it is about, and both entry points ask it — the pack, not the counter, is
+what has to match.
+
+The counter itself moves **only where the choice is committed**, which is not
+where a dialog opens. Cancelling the update-code dialog leaves the admin's
+loaded instance exactly as it was; a publish whose instance fails to load leaves
+the user on the side they were already on, rather than on an empty one they
+never asked for.
 
 No virtualisation. The author's library is 36 packs and the scan behind it takes
 ~70ms warm (~400ms cold), because the Rust side deserializes a header struct

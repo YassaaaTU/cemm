@@ -62,6 +62,10 @@ export function useUserApi()
 			if (modpackPath && modpackPath.trim().length > 0)
 			{
 				await generatePreviousManifest(modpackPath, onProgress)
+				// The pack this manifest is about. Recorded because the deletion set
+				// is derived from that folder's own inventory, so anything later
+				// pairing the two has to be able to tell whether they still match.
+				manifestStore.sourcePath = modpackPath
 			}
 
 			setStatus('Manifest ready for preview. Config files will be downloaded after confirmation.', 'success')

@@ -452,21 +452,31 @@ function forgetPack(pack: PackRow)
 }
 
 /**
- * Choosing an action here is what sets the counter, rather than the counter
- * deciding what the choice meant. Switching sides also drops whatever manifest
- * was loaded, exactly as switching from the rail does — a diff fetched as a
- * player is not the admin's working set, and loading an instance on top of one
- * would leave the admin diffing against the player's download.
+ * Drop a manifest that belongs somewhere else.
+ *
+ * Switching sides was the whole guard until now, and it was a serviceable
+ * stand-in while a folder dialog inside a counter was the only way to change
+ * packs. The library breaks that stand-in: you can pick a different pack
+ * without changing sides, and the manifest left over from the last one would
+ * then be diffed against this one — an install computing its deletions from a
+ * pack that is not the destination. So the guard is the pack itself, and the
+ * counter as well, because a diff fetched as a player is still not the admin's
+ * working set.
  */
-function enterMode(next: AppMode)
+function releaseManifest(next: AppMode, instancePath: string)
 {
-	if (appStore.mode !== next) manifestStore.clearManifest()
-	appStore.setMode(next)
+	if (appStore.mode !== next || !manifestStore.belongsTo(instancePath))
+	{
+		manifestStore.clearManifest()
+	}
 }
 
 function installPack(pack: PackRow)
 {
-	enterMode('user')
+	// Nothing is committed here. The dialog exists so the choice can still be
+	// abandoned, and an admin who opened it to see what it does gets their
+	// loaded instance back by cancelling — which is not true of the rail, where
+	// the click itself is the commitment.
 	fetchError.value = null
 	pendingPack.value = pack
 }
@@ -477,7 +487,10 @@ async function publishPack(pack: PackRow)
 	busyAction.value = 'publish'
 	try
 	{
-		enterMode('admin')
+		// Released before the load rather than after it: loadInstance writes
+		// into this same store and would otherwise diff the instance it is
+		// reading against whatever the previous pack left behind.
+		releaseManifest('admin', pack.instancePath)
 		const result = await loadInstance(
 			(message, type) =>
 			{
@@ -490,6 +503,11 @@ async function publishPack(pack: PackRow)
 		{
 			return
 		}
+		// The counter moves only once there is something on it to move to. A
+		// pack deleted inside the scan's 30-second window still renders its
+		// buttons, and a failed load that had already switched sides left the
+		// user on a counter they never reached, with nothing loaded.
+		appStore.setMode('admin')
 		packsStore.recordOpened(pack.instancePath)
 		await navigateTo('/dashboard')
 	}
@@ -513,8 +531,15 @@ async function fetchUpdate(code: string)
 	const failure = { message: '' }
 	try
 	{
+		// This, not the dialog opening, is where the choice is committed — so
+		// this is where the counter moves and the previous pack's manifest is
+		// dropped. Both happen before the destination changes, so a diff can
+		// never be generated for one pack while another one is still loaded.
+		releaseManifest('user', pack.instancePath)
+		appStore.setMode('user')
 		// The destination is set before the fetch, because generating the diff
-		// baseline reads the pack that is about to be updated.
+		// baseline reads the pack that is about to be updated. clearManifest
+		// resets updateCode, so the code is written after the release, not before.
 		appStore.modpackPath = pack.instancePath
 		manifestStore.updateCode = code
 

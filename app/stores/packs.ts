@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 
 import type { PackLibrary, PackSummary } from '~/types'
+import { normaliseInstancePath } from '~/utils/instancePath'
 
 /**
  * What CEMM itself remembers about a pack, as opposed to what CurseForge knows.
@@ -32,8 +33,11 @@ export interface PackRow extends PackSummary
 	missing: boolean
 }
 
-const normaliseKey = (path: string): string =>
-	path.trim().replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase()
+/**
+ * Shared with the manifest store, which asks the same question of the same
+ * paths: two spellings of one folder must not become two packs.
+ */
+const normaliseKey = normaliseInstancePath
 
 const latestTouch = (entry: PackHistoryEntry | null): number =>
 {

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 
 import type { Manifest, ManifestUpdateInfo } from '~/types'
+import { isSameInstance } from '~/utils/instancePath'
 
 /**
  * Addons the instance itself reports as switched off — CurseForge's own
@@ -29,12 +30,29 @@ export const useManifestStore = defineStore('manifest', () =>
 	 * loaded from a card arrives knowing its own provenance instead of the
 	 * panel having to rediscover it.
 	 *
-	 * `sourcePath` is the instance folder (admin), `updateCode` the update
-	 * reference (player). Deliberately NOT persisted: both describe a manifest
-	 * that only lives for this session.
+	 * `sourcePath` is the instance folder this manifest is *about* — the folder
+	 * it was read from on the admin side, and the destination its diff baseline
+	 * was generated against on the player side. One field for both, because the
+	 * question it answers is the same on both: which pack is this manifest for.
+	 * `updateCode` is the update reference (player only). Deliberately NOT
+	 * persisted: both describe a manifest that only lives for this session.
 	 */
 	const sourcePath = ref('')
 	const updateCode = ref('')
+
+	/**
+	 * Whether the loaded manifest is about this pack.
+	 *
+	 * Both counters read this one store, so "which pack is loaded" has to be
+	 * asked of the manifest rather than inferred from the screen. An empty
+	 * `sourcePath` means nothing is loaded that could contradict anything, so it
+	 * belongs to whoever asks next.
+	 */
+	function belongsTo(instancePath: string): boolean
+	{
+		if (sourcePath.value.trim().length === 0) return true
+		return isSameInstance(sourcePath.value, instancePath)
+	}
 
 	function setManifest(newManifest: Manifest | null)
 	{
@@ -121,6 +139,7 @@ export const useManifestStore = defineStore('manifest', () =>
 		excludedAddons,
 		sourcePath,
 		updateCode,
+		belongsTo,
 		setManifest,
 		loadInstalledManifest,
 		setPreviousManifest,
