@@ -27,6 +27,24 @@ export function useAdminApi()
 	} = useTauri()
 
 	/**
+	 * The instance folder this publish is about.
+	 *
+	 * `appStore.modpackPath` is the *player's* install target, and `loadInstance`
+	 * says as much where it deliberately declines to write it. Reading it here
+	 * anyway only worked while a session meant one pack. Load a pack from the
+	 * library while the destination still points at another and the update is
+	 * published under the wrong pack's key — the half of the update code friends
+	 * paste — and its config files get relative paths measured from the wrong
+	 * root. The manifest records the folder it came from, so ask it, and fall
+	 * back to the destination only when nothing is loaded to ask.
+	 */
+	const instanceRoot = (): string =>
+	{
+		const loaded = manifestStore.sourcePath.trim()
+		return loaded.length > 0 ? loaded : appStore.modpackPath
+	}
+
+	/**
    * Load a minecraftinstance.json file and convert to manifest.
    *
    * `knownPath` skips the native file dialog — that is how the pack library
@@ -181,7 +199,7 @@ export function useAdminApi()
 					const fileName = filePath.split(/[/\\]/).pop()
 					if (fileName !== undefined && fileName.length > 0)
 					{
-						const relativePath = calculateRelativePath(filePath, fileName, appStore.modpackPath)
+						const relativePath = calculateRelativePath(filePath, fileName, instanceRoot())
 
 						newConfigFiles.push({
 							filename: fileName,
@@ -273,7 +291,8 @@ export function useAdminApi()
 		try
 		{
 			const repo = appStore.githubRepo
-			const modpackPath = appStore.modpackPath
+			// The pack that was loaded, not the one the player side is aimed at.
+			const sourceRoot = instanceRoot()
 			const token = await getSecure('cemm_github_token')
 			if (repo.trim().length === 0 || token == null || token.trim().length === 0)
 			{
@@ -283,15 +302,15 @@ export function useAdminApi()
 
 			const uuid = Date.now().toString()
 			let minecraftInstanceContent: string | null = null
-			if (modpackPath.trim().length > 0)
+			if (sourceRoot.trim().length > 0)
 			{
-				minecraftInstanceContent = await readFile(`${modpackPath}/minecraftinstance.json`)
+				minecraftInstanceContent = await readFile(`${sourceRoot}/minecraftinstance.json`)
 			}
 
 			const modpackKey = resolveModpackKey({
 				customName: customModpackName,
 				instanceContent: minecraftInstanceContent,
-				modpackPath
+				modpackPath: sourceRoot
 			})
 			if (modpackKey == null)
 			{
