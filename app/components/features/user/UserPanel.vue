@@ -331,8 +331,8 @@ const { displayed: smoothProgress } = useSmoothProgress(progress)
 const progressMessage = ref('')
 const downloading = ref(false)
 const installing = ref(false)
-const configFilesDownloaded = ref(false)
 const downloadedConfigFiles = ref<ConfigFileWithContent[]>([])
+const downloadedConfigUpdateCode = ref<string | null>(null)
 const acknowledged = ref(false)
 const editingDestination = ref(false)
 
@@ -633,6 +633,10 @@ async function handleFetch()
 		if (result.success)
 		{
 			progress.value = 100
+			// Config payloads belong to exactly one fetched update. Invalidate the
+			// previous payload only after the replacement manifest is available.
+			downloadedConfigFiles.value = []
+			downloadedConfigUpdateCode.value = null
 			// Consent resets for every fetched update: acknowledging one diff is
 			// not consent to a different one. The applied flag goes with it, or a
 			// freshly fetched diff would inherit the previous one's "installed"
@@ -653,8 +657,8 @@ const clearFetched = () =>
 	manifestStore.clearManifest()
 	uuid.value = ''
 	acknowledged.value = false
-	configFilesDownloaded.value = false
 	downloadedConfigFiles.value = []
+	downloadedConfigUpdateCode.value = null
 	progress.value = 0
 	// Clearing after a finished install used to leave the applied flag set, which
 	// held the "Update installed" panel on screen above an empty code field —
@@ -687,7 +691,7 @@ async function handleApply()
 async function confirmInstall()
 {
 	if (
-		!configFilesDownloaded.value
+		downloadedConfigUpdateCode.value !== uuid.value.trim()
 		&& uuid.value.trim().length > 0
 		&& manifest.value !== null
 		&& manifest.value.config_files.length > 0
@@ -707,12 +711,16 @@ async function confirmInstall()
 				},
 				setStatus
 			)
-			downloadedConfigFiles.value = result.configFiles
-			configFilesDownloaded.value = true
-			if (result.success)
+			if (!result.success)
 			{
-				progress.value = 100
+				downloadedConfigFiles.value = []
+				downloadedConfigUpdateCode.value = null
+				return
 			}
+
+			downloadedConfigFiles.value = result.configFiles
+			downloadedConfigUpdateCode.value = uuid.value.trim()
+			progress.value = 100
 		}
 		catch (error)
 		{
