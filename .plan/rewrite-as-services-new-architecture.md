@@ -1,6 +1,6 @@
 # Local Rust Sidecar Rewrite Plan
 
-**Status:** Accepted
+**Status:** Implemented
 **Date:** 2026-08-20
 **Branch:** `feature/rewrite-as-services-new-architecture`
 
@@ -81,7 +81,8 @@ with the Tauri host through newline-delimited JSON over inherited stdin/stdout.
 - Remove superseded direct implementations and direct frontend `invoke` calls.
 - Replace ambiguous sentinel failures with explicit service errors where the UI
   can distinguish cancellation, absence, and failure.
-- Add focused mocked frontend contract tests for publish and install.
+- Add focused sidecar dispatch-contract tests for the existing frontend publish
+  and install payloads without introducing a second frontend test framework.
 - Update architecture documentation and CI checks.
 - Run lint, typecheck, Rust formatting/clippy/tests, static generation, and a
   packaged sidecar smoke test.
@@ -93,4 +94,3 @@ with the Tauri host through newline-delimited JSON over inherited stdin/stdout.
 - Progress must cross two boundaries instead of one.
 - A single serialized service is intentionally sufficient; separate daemons,
   queues, databases, or hosted APIs require measured need and a new ADR.
-

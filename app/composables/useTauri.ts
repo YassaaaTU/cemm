@@ -185,30 +185,31 @@ export const useTauri = () =>
 		})
 	}
 
-	const downloadManifest = async (repo: string, uuid: string, modpackKey?: string): Promise<Manifest | null> =>
+	const uploadUpdate = async (params: {
+		repo: string
+		token: string
+		uuid: string
+		modpackKey?: string
+		manifest: Manifest
+		configFiles: ConfigFileWithContent[]
+	}): Promise<void> =>
 	{
-		try
-		{
-			return await invoke<Manifest>('download_manifest', { repo, uuid, modpackKey })
-		}
-		catch (error)
-		{
-			logger.error({ repo, uuid, modpackKey, error }, '[useTauri] downloadManifest failed')
-			return null
-		}
+		await invoke('upload_update', params)
 	}
 
-	const downloadConfigFiles = async (repo: string, uuid: string, modpackKey?: string): Promise<ConfigFileWithContent[]> =>
+	const downloadManifest = async (repo: string, uuid: string, modpackKey?: string): Promise<Manifest> =>
 	{
-		try
-		{
-			return await invoke<ConfigFileWithContent[]>('download_config_files', { repo, uuid, modpackKey })
-		}
-		catch (error)
-		{
-			logger.error({ repo, uuid, modpackKey, error }, '[useTauri] downloadConfigFiles failed')
-			return []
-		}
+		return await invoke<Manifest>('download_manifest', { repo, uuid, modpackKey })
+	}
+
+	const downloadConfigFiles = async (
+		repo: string,
+		uuid: string,
+		manifest: Manifest,
+		modpackKey?: string
+	): Promise<ConfigFileWithContent[]> =>
+	{
+		return await invoke<ConfigFileWithContent[]>('download_config_files', { repo, uuid, modpackKey, manifest })
 	}
 
 	const readDirectoryRecursive = async (dirPath: string, basePath: string): Promise<ConfigFileWithContent[]> =>
@@ -311,6 +312,7 @@ export const useTauri = () =>
 		openCurseforgeUrl,
 		openUrl,
 		installUpdate,
+		uploadUpdate,
 		downloadManifest,
 		downloadConfigFiles,
 		readDirectoryRecursive,

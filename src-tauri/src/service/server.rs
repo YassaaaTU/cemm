@@ -349,6 +349,17 @@ pub fn run_stdio_service() -> i32 {
 mod tests {
     use super::*;
 
+    fn empty_manifest(update_type: &str) -> Value {
+        serde_json::json!({
+            "updateType": update_type,
+            "mods": [],
+            "resourcepacks": [],
+            "shaderpacks": [],
+            "datapacks": [],
+            "config_files": []
+        })
+    }
+
     fn context() -> ServiceContext {
         ServiceContext { cache_dir: None }
     }
@@ -383,5 +394,72 @@ mod tests {
             .await
             .expect_err("unknown method should fail");
         assert!(error.contains("Unknown sidecar service method"));
+    }
+
+    #[tokio::test]
+    async fn publish_contract_accepts_frontend_payload_shape_before_domain_validation() {
+        let request = ServiceRequest {
+            id: 3,
+            method: "github.upload_update".to_string(),
+            params: serde_json::json!({
+                "repo": "invalid-repository",
+                "token": "test-token",
+                "uuid": "test-update",
+                "modpackKey": "test-pack",
+                "manifest": empty_manifest("full"),
+                "configFiles": []
+            }),
+        };
+
+        let error = dispatch(&request, &context(), &no_events())
+            .await
+            .expect_err("invalid repository should fail before network access");
+        assert!(
+            error.contains("Invalid repo format"),
+            "frontend payload should decode before domain validation: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn install_contract_writes_only_to_temp_instance_and_forwards_progress() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        let request = ServiceRequest {
+            id: 4,
+            method: "install.apply_update".to_string(),
+            params: serde_json::json!({
+                "modpackPath": temp.path().to_string_lossy(),
+                "manifest": empty_manifest("config"),
+                "configFiles": [{
+                    "filename": "service.toml",
+                    "relative_path": "config/service.toml",
+                    "content": "sidecar = true"
+                }],
+                "options": null
+            }),
+        };
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured_events = Arc::clone(&events);
+        let event_callback: EventCallback = Arc::new(move |name, payload| {
+            captured_events
+                .lock()
+                .expect("event lock should not be poisoned")
+                .push((name.to_string(), payload));
+        });
+
+        dispatch(&request, &context(), &event_callback)
+            .await
+            .expect("frontend install payload should complete through dispatch");
+
+        assert_eq!(
+            tokio::fs::read_to_string(temp.path().join("config/service.toml"))
+                .await
+                .expect("installed config should be readable"),
+            "sidecar = true"
+        );
+        assert!(temp.path().join("cemm-manifest.json").exists());
+        let events = events.lock().expect("event lock should not be poisoned");
+        assert!(events.iter().any(|(name, payload)| {
+            name == "install-progress" && payload["progress"] == serde_json::json!(100.0)
+        }));
     }
 }

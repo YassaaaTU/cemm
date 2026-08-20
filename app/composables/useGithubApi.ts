@@ -1,10 +1,8 @@
-// eslint-disable-next-line simple-import-sort/imports
-import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
-import { useCache } from './useCache'
-
 import type { ConfigFileWithContent, Manifest } from '~/types'
+
+import { useCache } from './useCache'
 
 export interface GithubProgress
 {
@@ -25,6 +23,11 @@ export const useGithubApi = () =>
 	// Bump namespace when download path logic changes so in-memory cache cannot mask fixes after app update.
 	const cache = useCache<CachedGitHubData>('github-v2', 600000) // 10 minutes
 	const { $logger: logger } = useNuxtApp()
+	const {
+		uploadUpdate: invokeUploadUpdate,
+		downloadManifest: invokeDownloadManifest,
+		downloadConfigFiles: invokeDownloadConfigFiles
+	} = useTauri()
 
 	/**
 	 * Uploads an update to GitHub. Accepts an options object for progress callback.
@@ -53,7 +56,7 @@ export const useGithubApi = () =>
 				}
 			})
 
-			await invoke('upload_update', {
+			await invokeUploadUpdate({
 				repo: opts.repo,
 				token: opts.token,
 				uuid: opts.uuid,
@@ -101,11 +104,7 @@ export const useGithubApi = () =>
 	}): Promise<Manifest> =>
 	{
 		if (typeof opts.onProgress === 'function') opts.onProgress(10, 'Downloading manifest...')
-		const manifest = await invoke<Manifest>('download_manifest', {
-			repo: opts.repo,
-			uuid: opts.uuid,
-			modpackKey: opts.modpackKey
-		})
+		const manifest = await invokeDownloadManifest(opts.repo, opts.uuid, opts.modpackKey)
 		if (typeof opts.onProgress === 'function') opts.onProgress(100, 'Manifest downloaded')
 		return manifest
 	}
@@ -122,12 +121,12 @@ export const useGithubApi = () =>
 	}): Promise<ConfigFileWithContent[]> =>
 	{
 		if (typeof opts.onProgress === 'function') opts.onProgress(10, 'Downloading config files...')
-		const configFiles = await invoke<ConfigFileWithContent[]>('download_config_files', {
-			repo: opts.repo,
-			uuid: opts.uuid,
-			modpackKey: opts.modpackKey,
-			manifest: opts.manifest
-		})
+		const configFiles = await invokeDownloadConfigFiles(
+			opts.repo,
+			opts.uuid,
+			opts.manifest,
+			opts.modpackKey
+		)
 		if (typeof opts.onProgress === 'function') opts.onProgress(100, 'Config files downloaded')
 		return configFiles
 	}

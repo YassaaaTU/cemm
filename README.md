@@ -1,6 +1,6 @@
 # CEMM - ChillEcke Modpack Manager
 
-CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes it easier for you and your friends to play pre-existing CurseForge modpacks with custom modifications. Built with Nuxt 4 frontend and Tauri/Rust backend, it provides two main modes:
+CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes it easier for you and your friends to play pre-existing CurseForge modpacks with custom modifications. Built with a Nuxt 4 frontend, a Tauri native shell, and a local Rust sidecar service, it provides two main modes:
 
 - **Admin Mode**: Modify a downloaded CurseForge modpack (add, remove, or update addons and config files) → Generate an update code and upload changes to GitHub
 - **User Mode**: Paste the update code from admin → Select correct modpack directory → Install the modifications automatically
@@ -79,13 +79,25 @@ cemm/
 │   ├── composables/    # Reusable logic
 │   └── types/          # TypeScript type definitions
 ├── src-tauri/          # Tauri backend
-│   ├── src/            # Rust source code
+│   ├── src/            # Native shell, sidecar client/service, and Rust domains
 │   └── Cargo.toml      # Rust dependencies
+├── docs/architecture/  # Accepted architecture decisions
+└── .plan/              # Implementation plans for active rewrites
 ```
+
+### Runtime Architecture
+
+The Tauri host starts the packaged CEMM executable in a private local-service
+mode and communicates with it over inherited stdin/stdout. Tauri owns native OS
+integration; the sidecar owns filesystem, manifest, GitHub, CurseForge library,
+and installation work. No local HTTP port or separately installed daemon is
+used. See [ADR-001](docs/architecture/ADR-001-local-rust-sidecar.md) for the
+decision, boundaries, and failure behavior.
 
 ### Tech Stack
 - **Frontend**: Nuxt 4, Vue 3, TypeScript, Tailwind CSS v4, DaisyUI, Pinia
-- **Backend**: Tauri, Rust, Serde, Tokio
+- **Native shell**: Tauri (dialogs, window integration, keyring, updater)
+- **Local service**: Rust, Serde, Tokio, newline-delimited JSON over inherited stdio
 - **Storage**: GitHub API, Tauri Keyring (secure token storage)
 - **Development**: Bun package manager, ESLint, Pino logging
 - **Build**: Tauri bundler for cross-platform desktop apps
