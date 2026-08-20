@@ -25,7 +25,28 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self' customprotocol: asset:",
+        "connect-src": "ipc: http://ipc.localhost",
+        "font-src": "'self'",
+        "img-src": "'self' asset: http://asset.localhost https://asset.localhost blob: data:",
+        "style-src": "'self' 'unsafe-inline'",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "frame-ancestors": "'none'",
+        "form-action": "'self'"
+      },
+      "devCsp": {
+        "default-src": "'self' customprotocol: asset:",
+        "connect-src": "ipc: http://ipc.localhost http://localhost:3000 ws://localhost:3000",
+        "font-src": "'self'",
+        "img-src": "'self' asset: http://asset.localhost https://asset.localhost blob: data:",
+        "style-src": "'self' 'unsafe-inline'",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "frame-ancestors": "'none'",
+        "form-action": "'self'"
+      }
     }
   },
   "bundle": {
