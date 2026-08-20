@@ -89,11 +89,16 @@ async fn dispatch(
         "github.upload_update" => {
             let params: UploadUpdateParams = decode_params(request)?;
             let events = Arc::clone(event_callback);
+            let operation_id = params.operation_id.clone();
             let progress_callback = Arc::new(
                 move |progress: crate::composables::github::UploadProgress| {
                     events(
                         "upload_progress",
-                        serde_json::to_value(progress).unwrap_or(Value::Null),
+                        serde_json::json!({
+                            "operationId": operation_id,
+                            "progress": progress.progress,
+                            "message": progress.message
+                        }),
                     );
                 },
             );
@@ -155,10 +160,15 @@ async fn dispatch(
         "install.apply_update" => {
             let params: InstallUpdateParams = decode_params(request)?;
             let events = Arc::clone(event_callback);
+            let operation_id = params.operation_id.clone();
             let progress_callback = Arc::new(move |progress: crate::installer::InstallProgress| {
                 events(
                     "install-progress",
-                    serde_json::to_value(progress).unwrap_or(Value::Null),
+                    serde_json::json!({
+                        "operationId": operation_id,
+                        "progress": progress.progress,
+                        "message": progress.message
+                    }),
                 );
             });
             encode_result(
@@ -220,6 +230,7 @@ struct CompareManifestParams {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UploadUpdateParams {
+    operation_id: String,
     repo: String,
     token: String,
     uuid: String,
@@ -259,6 +270,7 @@ struct CacheIconsParams {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InstallUpdateParams {
+    operation_id: String,
     modpack_path: String,
     manifest: crate::composables::manifest::Manifest,
     config_files: Vec<crate::installer::ConfigFile>,
@@ -402,6 +414,7 @@ mod tests {
             id: 3,
             method: "github.upload_update".to_string(),
             params: serde_json::json!({
+                "operationId": "publish-test",
                 "repo": "invalid-repository",
                 "token": "test-token",
                 "uuid": "test-update",
@@ -411,13 +424,24 @@ mod tests {
             }),
         };
 
-        let error = dispatch(&request, &context(), &no_events())
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured_events = Arc::clone(&events);
+        let event_callback: EventCallback = Arc::new(move |name, payload| {
+            captured_events
+                .lock()
+                .expect("event lock should not be poisoned")
+                .push((name.to_string(), payload));
+        });
+        let error = dispatch(&request, &context(), &event_callback)
             .await
             .expect_err("invalid repository should fail before network access");
         assert!(
             error.contains("Invalid repo format"),
             "frontend payload should decode before domain validation: {error}"
         );
+        assert!(events.lock().unwrap().iter().any(|(name, payload)| {
+            name == "upload_progress" && payload["operationId"] == "publish-test"
+        }));
     }
 
     #[tokio::test]
@@ -427,6 +451,7 @@ mod tests {
             id: 4,
             method: "install.apply_update".to_string(),
             params: serde_json::json!({
+                "operationId": "install-test",
                 "modpackPath": temp.path().to_string_lossy(),
                 "manifest": empty_manifest("config"),
                 "configFiles": [{
@@ -459,7 +484,9 @@ mod tests {
         assert!(temp.path().join("cemm-manifest.json").exists());
         let events = events.lock().expect("event lock should not be poisoned");
         assert!(events.iter().any(|(name, payload)| {
-            name == "install-progress" && payload["progress"] == serde_json::json!(100.0)
+            name == "install-progress"
+                && payload["operationId"] == "install-test"
+                && payload["progress"] == serde_json::json!(100.0)
         }));
     }
 }

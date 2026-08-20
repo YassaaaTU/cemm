@@ -43,13 +43,15 @@ export const useGithubApi = () =>
 	}): Promise<void> =>
 	{
 		const startTime = performance.now()
+		const operationId = globalThis.crypto.randomUUID()
 		let unlisten: UnlistenFn | undefined
 
 		try
 		{
 			// Listen for progress events from the Rust backend
-			unlisten = await listen<{ progress: number, message: string }>('upload_progress', (event) =>
+			unlisten = await listen<{ operationId: string, progress: number, message: string }>('upload_progress', (event) =>
 			{
+				if (event.payload.operationId !== operationId) return
 				if (typeof opts.onProgress === 'function')
 				{
 					opts.onProgress(event.payload.progress, event.payload.message)
@@ -57,6 +59,7 @@ export const useGithubApi = () =>
 			})
 
 			await invokeUploadUpdate({
+				operationId,
 				repo: opts.repo,
 				token: opts.token,
 				uuid: opts.uuid,

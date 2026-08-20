@@ -163,6 +163,7 @@ export const useTauri = () =>
 	}
 
 	const installUpdate = async (
+		operationId: string,
 		modpackPath: string,
 		manifest: Manifest,
 		configFiles: ConfigFileWithContent[],
@@ -173,6 +174,7 @@ export const useTauri = () =>
 	): Promise<void> =>
 	{
 		return await invoke('install_update', {
+			operationId,
 			modpackPath,
 			manifest,
 			configFiles,
@@ -186,6 +188,7 @@ export const useTauri = () =>
 	}
 
 	const uploadUpdate = async (params: {
+		operationId: string
 		repo: string
 		token: string
 		uuid: string

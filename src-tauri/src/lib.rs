@@ -64,7 +64,17 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle().clone();
             let event_sink = Arc::new(move |event: service::ServiceEvent| {
-                let _ = app_handle.emit(&event.name, event.payload);
+                let payload = match event.payload {
+                    serde_json::Value::Object(mut fields) => {
+                        fields.insert("requestId".to_string(), event.request_id.into());
+                        serde_json::Value::Object(fields)
+                    }
+                    payload => serde_json::json!({
+                        "requestId": event.request_id,
+                        "payload": payload
+                    }),
+                };
+                let _ = app_handle.emit(&event.name, payload);
             });
             let cache_dir = app.path().app_cache_dir().ok();
             let executable = std::env::current_exe().map_err(|error| {

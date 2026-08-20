@@ -93,6 +93,7 @@ pub async fn compare_manifests(
 #[tauri::command]
 pub async fn upload_update(
     service: State<'_, ServiceClient>,
+    operation_id: String,
     repo: String,
     token: String,
     uuid: String,
@@ -104,6 +105,7 @@ pub async fn upload_update(
         .call_typed(
             "github.upload_update",
             json!({
+                "operationId": operation_id,
                 "repo": repo,
                 "token": token,
                 "uuid": uuid,
@@ -174,6 +176,7 @@ pub async fn cache_pack_icons(
 #[tauri::command]
 pub async fn install_update(
     service: State<'_, ServiceClient>,
+    operation_id: String,
     modpack_path: String,
     manifest: Manifest,
     config_files: Vec<InstallerConfigFile>,
@@ -183,6 +186,7 @@ pub async fn install_update(
         .call_typed(
             "install.apply_update",
             json!({
+                "operationId": operation_id,
                 "modpackPath": modpack_path,
                 "manifest": manifest,
                 "configFiles": config_files,

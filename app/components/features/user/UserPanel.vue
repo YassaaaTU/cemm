@@ -298,6 +298,7 @@ import type { ConfigFileWithContent } from '~/types'
 interface InstallProgressEvent
 {
 	payload?: {
+		operationId?: string
 		progress?: number
 		message?: string
 	}
@@ -747,12 +748,14 @@ async function performInstall()
 	installing.value = true
 	updateApplied.value = false
 	progress.value = 0
+	const operationId = globalThis.crypto.randomUUID()
 	let unlisten: UnlistenFn | null = null
 
 	try
 	{
 		unlisten = await listen('install-progress', (event) =>
 		{
+			if ((event as InstallProgressEvent).payload?.operationId !== operationId) return
 			const value = (event as InstallProgressEvent).payload?.progress
 			const message = (event as InstallProgressEvent).payload?.message
 
@@ -767,6 +770,7 @@ async function performInstall()
 		})
 
 		const installed = await installUpdate(
+			operationId,
 			manifest.value,
 			downloadedConfigFiles.value,
 			previousManifest.value,

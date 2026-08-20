@@ -183,6 +183,7 @@ export function useUserApi()
 	  * Install the update
 	  */
 	async function installUpdate(
+		operationId: string,
 		manifest: Manifest,
 		configFiles: ConfigFileWithContent[],
 		previousManifest: Manifest | null,
@@ -208,6 +209,7 @@ export function useUserApi()
 			}
 
 			await installUpdateTauri(
+				operationId,
 				appStore.modpackPath,
 				manifest,
 				configFiles,
