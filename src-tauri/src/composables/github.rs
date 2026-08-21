@@ -4,6 +4,91 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::composables::manifest::Manifest;
 
+const MAX_REMOTE_CONFIG_FILES: usize = 1_000;
+const MAX_REMOTE_CONFIG_FILE_BYTES: usize = 128 * 1024 * 1024;
+const MAX_REMOTE_CONFIG_TOTAL_BYTES: usize = 512 * 1024 * 1024;
+const MAX_REMOTE_MANIFEST_BYTES: usize = 8 * 1024 * 1024;
+const MAX_GITHUB_METADATA_BYTES: usize = 2 * 1024 * 1024;
+
+async fn read_response_limited(
+    mut response: reqwest::Response,
+    max_bytes: usize,
+    description: &str,
+) -> Result<Vec<u8>, String> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_bytes as u64)
+    {
+        return Err(format!(
+            "{description} exceeds the {max_bytes}-byte download limit"
+        ));
+    }
+
+    let mut bytes = Vec::with_capacity(
+        response
+            .content_length()
+            .unwrap_or_default()
+            .min(max_bytes as u64) as usize,
+    );
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| format!("Failed to read {description}: {error}"))?
+    {
+        let next_len = bytes
+            .len()
+            .checked_add(chunk.len())
+            .ok_or_else(|| format!("{description} size overflowed"))?;
+        if next_len > max_bytes {
+            return Err(format!(
+                "{description} exceeds the {max_bytes}-byte download limit"
+            ));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+
+    Ok(bytes)
+}
+
+fn validate_config_repo_relative_path(path: &str) -> Result<(), String> {
+    if !is_safe_repo_relative_path(path)
+        || path.contains(['\\', '?', '#'])
+        || path
+            .split('/')
+            .any(|component| component.is_empty() || component == ".")
+    {
+        return Err(format!("Invalid config file repository path: {path}"));
+    }
+    Ok(())
+}
+
+fn checked_config_download_total(current: usize, next: usize) -> Result<usize, String> {
+    let total = current
+        .checked_add(next)
+        .ok_or_else(|| "Downloaded config data size overflowed".to_string())?;
+    if total > MAX_REMOTE_CONFIG_TOTAL_BYTES {
+        return Err(format!(
+            "Downloaded config data exceeds the {}-byte total limit",
+            MAX_REMOTE_CONFIG_TOTAL_BYTES
+        ));
+    }
+    Ok(total)
+}
+
+fn validate_remote_config_manifest(manifest: &Manifest) -> Result<(), String> {
+    if manifest.config_files.len() > MAX_REMOTE_CONFIG_FILES {
+        return Err(format!(
+            "Manifest contains {} config files; the download limit is {}",
+            manifest.config_files.len(),
+            MAX_REMOTE_CONFIG_FILES
+        ));
+    }
+    for config_file in &manifest.config_files {
+        validate_config_repo_relative_path(&config_file.relative_path)?;
+    }
+    Ok(())
+}
+
 /// Encodes downloaded config-file bytes for storage in `ConfigFileWithContent.content`.
 /// Valid UTF-8 is kept as plain text; anything else is base64-wrapped in the same
 /// `data:application/octet-stream;base64,` form `installer::install_update` already
@@ -507,15 +592,17 @@ pub async fn download_manifest(
             })?;
 
         if !list_res.status().is_success() {
-            last_error = format!(
-                "Failed to list update files (status {}): {}",
-                list_res.status(),
-                list_res.text().await.unwrap_or_default()
-            );
+            last_error = format!("Failed to list update files (status {})", list_res.status());
             continue;
         }
 
-        let files: Vec<Value> = list_res.json().await.map_err(|e| {
+        let list_body = read_response_limited(
+            list_res,
+            MAX_GITHUB_METADATA_BYTES,
+            "GitHub update file listing",
+        )
+        .await?;
+        let files: Vec<Value> = serde_json::from_slice(&list_body).map_err(|e| {
             eprintln!("JSON parsing error: {}", e);
             e.to_string()
         })?;
@@ -548,19 +635,16 @@ pub async fn download_manifest(
 
         if !manifest_res.status().is_success() {
             last_error = format!(
-                "Failed to download cemm-manifest.json (status {}): {}",
-                manifest_res.status(),
-                manifest_res.text().await.unwrap_or_default()
+                "Failed to download cemm-manifest.json (status {})",
+                manifest_res.status()
             );
             continue;
         }
 
-        let manifest_json = manifest_res.text().await.map_err(|e| {
-            eprintln!("Failed to read manifest response text: {}", e);
-            e.to_string()
-        })?;
+        let manifest_json =
+            read_response_limited(manifest_res, MAX_REMOTE_MANIFEST_BYTES, "CEMM manifest").await?;
 
-        let manifest: Manifest = serde_json::from_str(&manifest_json).map_err(|e| {
+        let manifest: Manifest = serde_json::from_slice(&manifest_json).map_err(|e| {
             eprintln!("Failed to parse manifest JSON: {}", e);
             e.to_string()
         })?;
@@ -597,15 +681,18 @@ pub async fn download_config_files(
     let user_agent = "cemm-app-tauri";
     let base_paths = update_base_path_candidates(modpack_key.as_deref(), &uuid);
 
+    validate_remote_config_manifest(&manifest)?;
+
     eprintln!(
         "Downloading {} config files from manifest",
         manifest.config_files.len()
     );
 
     // Download config files based on manifest list
-    let mut config_files = Vec::new();
+    let mut config_files = Vec::with_capacity(manifest.config_files.len());
+    let mut total_downloaded_bytes = 0usize;
     for config_file in manifest.config_files {
-        let mut downloaded_content: Option<String> = None;
+        let mut downloaded_content: Option<Vec<u8>> = None;
         let mut last_error = String::new();
 
         for base_path in &base_paths {
@@ -624,15 +711,21 @@ pub async fn download_config_files(
 
             if !file_res.status().is_success() {
                 last_error = format!(
-                    "Failed to list config file {} (status {}): {}",
+                    "Failed to list config file {} (status {})",
                     config_file.relative_path,
-                    file_res.status(),
-                    file_res.text().await.unwrap_or_default()
+                    file_res.status()
                 );
                 continue;
             }
 
-            let file_data: serde_json::Value = file_res.json().await.map_err(|e| e.to_string())?;
+            let file_data_body = read_response_limited(
+                file_res,
+                MAX_GITHUB_METADATA_BYTES,
+                "GitHub config file metadata",
+            )
+            .await?;
+            let file_data: serde_json::Value =
+                serde_json::from_slice(&file_data_body).map_err(|e| e.to_string())?;
             let download_url = match file_data["download_url"].as_str() {
                 Some(url) => url,
                 None => {
@@ -650,10 +743,9 @@ pub async fn download_config_files(
 
             if !content_res.status().is_success() {
                 last_error = format!(
-                    "Failed to download config file {} (status {}): {}",
+                    "Failed to download config file {} (status {})",
                     config_file.relative_path,
-                    content_res.status(),
-                    content_res.text().await.unwrap_or_default()
+                    content_res.status()
                 );
                 continue;
             }
@@ -662,21 +754,30 @@ pub async fn download_config_files(
             // config files (e.g. .emotecraft) by replacing invalid byte sequences
             // with U+FFFD (F-P1-4). Reading raw bytes and only decoding as UTF-8
             // when that round-trips cleanly keeps both text and binary files intact.
-            let bytes = content_res.bytes().await.map_err(|e| e.to_string())?;
-            downloaded_content = Some(encode_downloaded_content(bytes.to_vec()));
+            let bytes = read_response_limited(
+                content_res,
+                MAX_REMOTE_CONFIG_FILE_BYTES,
+                &format!("config file {}", config_file.relative_path),
+            )
+            .await?;
+            total_downloaded_bytes =
+                checked_config_download_total(total_downloaded_bytes, bytes.len())?;
+            downloaded_content = Some(bytes);
             break;
         }
 
-        let content = downloaded_content.ok_or_else(|| {
-            if last_error.is_empty() {
-                format!(
-                    "Failed to download config file {}",
-                    config_file.relative_path
-                )
-            } else {
-                last_error
-            }
-        })?;
+        let content = downloaded_content
+            .map(encode_downloaded_content)
+            .ok_or_else(|| {
+                if last_error.is_empty() {
+                    format!(
+                        "Failed to download config file {}",
+                        config_file.relative_path
+                    )
+                } else {
+                    last_error
+                }
+            })?;
 
         config_files.push(ConfigFileWithContent {
             filename: config_file.filename,
@@ -811,5 +912,55 @@ mod tests {
     fn empty_bytes_round_trip_as_empty_text() {
         let content = encode_downloaded_content(Vec::new());
         assert_eq!(content, "");
+    }
+
+    #[test]
+    fn config_repository_paths_are_validated_before_download() {
+        assert!(validate_config_repo_relative_path("config/client/settings.toml").is_ok());
+
+        for bad in [
+            "",
+            "../outside.toml",
+            "/absolute.toml",
+            "C:/absolute.toml",
+            "./config.toml",
+            "config//settings.toml",
+            "config\\settings.toml",
+            "config/settings.toml?raw=1",
+            "config/settings.toml#fragment",
+        ] {
+            assert!(
+                validate_config_repo_relative_path(bad).is_err(),
+                "expected '{bad}' to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn config_download_total_is_bounded_and_overflow_safe() {
+        assert_eq!(
+            checked_config_download_total(MAX_REMOTE_CONFIG_TOTAL_BYTES - 1, 1).unwrap(),
+            MAX_REMOTE_CONFIG_TOTAL_BYTES
+        );
+        assert!(checked_config_download_total(MAX_REMOTE_CONFIG_TOTAL_BYTES, 1).is_err());
+        assert!(checked_config_download_total(usize::MAX, 1).is_err());
+    }
+
+    #[test]
+    fn config_manifest_file_count_is_bounded() {
+        let config_file = crate::composables::manifest::ConfigFile {
+            filename: "settings.toml".to_string(),
+            relative_path: "config/settings.toml".to_string(),
+        };
+        let manifest = Manifest {
+            update_type: Some("config".to_string()),
+            mods: Vec::new(),
+            resourcepacks: Vec::new(),
+            shaderpacks: Vec::new(),
+            datapacks: Vec::new(),
+            config_files: vec![config_file; MAX_REMOTE_CONFIG_FILES + 1],
+        };
+
+        assert!(validate_remote_config_manifest(&manifest).is_err());
     }
 }
