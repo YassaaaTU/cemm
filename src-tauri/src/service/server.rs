@@ -294,14 +294,66 @@ struct InstallUpdateParams {
     options: Option<crate::installer::InstallOptions>,
 }
 
+/// Where the sidecar's `log::` calls go.
+///
+/// `tauri_plugin_log` is installed by the host process and never by this one,
+/// so until now every `log::` call in domain code ran into the no-op default
+/// logger: the process that does all the file and network work had no
+/// diagnostics at all, which is why the code that most needed them reached for
+/// `eprintln!` directly and shipped request URLs to anyone watching stderr.
+///
+/// stderr only, and deliberately so -- stdout carries the protocol, and a stray
+/// line on it is read by the host as a malformed message.
+struct StderrLogger;
+
+/// Debug while developing, warnings only in a shipped build: a background
+/// service should be quiet until something is wrong.
+const fn sidecar_log_level() -> log::LevelFilter {
+    if cfg!(debug_assertions) {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Warn
+    }
+}
+
+impl log::Log for StderrLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= sidecar_log_level()
+    }
+
+    fn log(&self, record: &log::Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+        eprintln!(
+            "[cemm-sidecar] {:<5} {}: {}",
+            record.level(),
+            record.target(),
+            record.args()
+        );
+    }
+
+    fn flush(&self) {}
+}
+
+static SIDECAR_LOGGER: StderrLogger = StderrLogger;
+
+fn install_sidecar_logger() {
+    if log::set_logger(&SIDECAR_LOGGER).is_ok() {
+        log::set_max_level(sidecar_log_level());
+    }
+}
+
 pub fn run_stdio_service() -> i32 {
+    install_sidecar_logger();
+
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
     {
         Ok(runtime) => runtime,
         Err(error) => {
-            eprintln!("Failed to start sidecar runtime: {error}");
+            log::error!("Failed to start sidecar runtime: {error}");
             return 1;
         }
     };
@@ -314,7 +366,7 @@ pub fn run_stdio_service() -> i32 {
             protocol_version: SERVICE_PROTOCOL_VERSION,
         },
     ) {
-        eprintln!("{error}");
+        log::error!("{error}");
         return 1;
     }
 
@@ -322,7 +374,7 @@ pub fn run_stdio_service() -> i32 {
         let line = match line {
             Ok(line) => line,
             Err(error) => {
-                eprintln!("Failed to read sidecar request: {error}");
+                log::error!("Failed to read sidecar request: {error}");
                 return 1;
             }
         };
@@ -366,7 +418,7 @@ pub fn run_stdio_service() -> i32 {
         };
 
         if let Err(error) = write_message(&output, &response) {
-            eprintln!("{error}");
+            log::error!("{error}");
             return 1;
         }
     }

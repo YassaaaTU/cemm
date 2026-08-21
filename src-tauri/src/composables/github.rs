@@ -669,8 +669,8 @@ pub async fn download_config_files(
 
     validate_remote_config_manifest(&manifest)?;
 
-    eprintln!(
-        "Downloading {} config files from manifest",
+    log::debug!(
+        "download_config_files: {} files listed in the manifest",
         manifest.config_files.len()
     );
 
@@ -739,8 +739,8 @@ pub async fn download_config_files(
         });
     }
 
-    eprintln!(
-        "Successfully downloaded {} config files",
+    log::debug!(
+        "download_config_files: {} files downloaded",
         config_files.len()
     );
     Ok(config_files)
