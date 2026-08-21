@@ -100,6 +100,7 @@
                 v-model="uuid"
                 type="text"
                 class="grow"
+                :disabled="busy || manifest !== null"
                 placeholder="paste update code…"
                 spellcheck="false"
                 autocomplete="off"
@@ -334,6 +335,10 @@ const downloading = ref(false)
 const installing = ref(false)
 const downloadedConfigFiles = ref<ConfigFileWithContent[]>([])
 const downloadedConfigUpdateCode = ref<string | null>(null)
+/** Immutable identity of the code that produced the visible preview. */
+const fetchedUpdateCode = ref<string | null>(
+	manifestStore.manifest === null ? null : manifestStore.updateCode.trim() || null
+)
 const acknowledged = ref(false)
 const editingDestination = ref(false)
 
@@ -414,8 +419,15 @@ const hasDestructiveChanges = computed(() =>
 	previewData.value !== null && previewData.value.diff.removed_addons.length > 0
 )
 
-const canApply = computed(() =>
+const previewMatchesSelection = computed(() =>
 	manifest.value !== null
+	&& manifestStore.belongsTo(appStore.modpackPath)
+	&& fetchedUpdateCode.value !== null
+	&& fetchedUpdateCode.value === uuid.value.trim()
+)
+
+const canApply = computed(() =>
+	previewMatchesSelection.value
 	&& appStore.modpackPath.trim().length > 0
 	&& !installing.value
 	&& !downloading.value
@@ -585,17 +597,41 @@ const setStatus = (message: string, type: 'success' | 'error' | 'info' | 'warnin
 	notify(message, type)
 }
 
+const resetFetchedState = (clearUpdateCode: boolean) =>
+{
+	const preservedCode = uuid.value
+	manifestStore.clearManifest()
+	if (!clearUpdateCode) uuid.value = preservedCode
+	fetchedUpdateCode.value = null
+	acknowledged.value = false
+	downloadedConfigFiles.value = []
+	downloadedConfigUpdateCode.value = null
+	progress.value = 0
+	updateApplied.value = false
+	installPhase.value = 'idle'
+	installError.value = null
+	clearStatus()
+}
+
 const updateModpackPath = (newPath: string | string[] | null) =>
 {
 	const singlePath = Array.isArray(newPath) ? newPath[0] : newPath
 	if (singlePath !== null && singlePath !== undefined && singlePath.trim().length > 0)
 	{
+		const invalidatesPreview = manifest.value !== null && !manifestStore.belongsTo(singlePath)
 		appStore.modpackPath = singlePath
 		logger.info({ path: singlePath }, 'Modpack path updated via PathSelector')
+		if (invalidatesPreview)
+		{
+			resetFetchedState(false)
+			setStatus('Destination changed. Fetch the update again to preview it against this folder.', 'info')
+		}
 	}
 	else
 	{
+		const invalidatesPreview = manifest.value !== null
 		appStore.modpackPath = ''
+		if (invalidatesPreview) resetFetchedState(false)
 	}
 }
 
@@ -608,6 +644,7 @@ const handlePathSelectorError = (error: string) =>
 async function handleFetch()
 {
 	if (!canFetch.value) return
+	const requestedUpdateCode = uuid.value.trim()
 
 	if (appStore.modpackPath.trim().length === 0)
 	{
@@ -623,7 +660,7 @@ async function handleFetch()
 	try
 	{
 		const result = await downloadFromGithub(
-			uuid.value,
+			requestedUpdateCode,
 			(value: number, message?: string) =>
 			{
 				progress.value = value
@@ -633,6 +670,8 @@ async function handleFetch()
 		)
 		if (result.success)
 		{
+			uuid.value = requestedUpdateCode
+			fetchedUpdateCode.value = requestedUpdateCode
 			progress.value = 100
 			// Config payloads belong to exactly one fetched update. Invalidate the
 			// previous payload only after the replacement manifest is available.
@@ -655,19 +694,7 @@ async function handleFetch()
 
 const clearFetched = () =>
 {
-	manifestStore.clearManifest()
-	uuid.value = ''
-	acknowledged.value = false
-	downloadedConfigFiles.value = []
-	downloadedConfigUpdateCode.value = null
-	progress.value = 0
-	// Clearing after a finished install used to leave the applied flag set, which
-	// held the "Update installed" panel on screen above an empty code field —
-	// the app reporting success for something the user had just cleared away.
-	updateApplied.value = false
-	installPhase.value = 'idle'
-	installError.value = null
-	clearStatus()
+	resetFetchedState(true)
 }
 
 /**
@@ -692,8 +719,8 @@ async function handleApply()
 async function confirmInstall()
 {
 	if (
-		downloadedConfigUpdateCode.value !== uuid.value.trim()
-		&& uuid.value.trim().length > 0
+		fetchedUpdateCode.value !== null
+		&& downloadedConfigUpdateCode.value !== fetchedUpdateCode.value
 		&& manifest.value !== null
 		&& manifest.value.config_files.length > 0
 	)
@@ -703,7 +730,7 @@ async function confirmInstall()
 			downloading.value = true
 			progress.value = 0
 			const result = await downloadConfigFiles(
-				uuid.value,
+				fetchedUpdateCode.value,
 				manifest.value,
 				(value: number, message?: string) =>
 				{
@@ -720,7 +747,7 @@ async function confirmInstall()
 			}
 
 			downloadedConfigFiles.value = result.configFiles
-			downloadedConfigUpdateCode.value = uuid.value.trim()
+			downloadedConfigUpdateCode.value = fetchedUpdateCode.value
 			progress.value = 100
 		}
 		catch (error)
@@ -744,6 +771,12 @@ async function confirmInstall()
 async function performInstall()
 {
 	if (manifest.value === null) return
+	if (!previewMatchesSelection.value)
+	{
+		setStatus('The update preview no longer matches this destination or update code. Fetch it again before installing.', 'error')
+		installPhase.value = 'failed'
+		return
+	}
 
 	installing.value = true
 	updateApplied.value = false
