@@ -55,6 +55,44 @@ jobs:
       - name: cargo test
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
+  audit:
+    name: dependency advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      # Rust carries every network call and filesystem write CEMM makes, so an
+      # advisory here is a real finding and fails the build.
+      #
+      # The three ignores below are pinned by upstream Tauri and cannot be
+      # resolved from this repository. Re-check them on every Tauri upgrade and
+      # delete the ignore as soon as the bump lands:
+      #   RUSTSEC-2026-0194 quick-xml  <- plist <- tauri, macOS bundle parsing only
+      #   RUSTSEC-2026-0195 quick-xml  <- same path; absent from Windows builds
+      #   RUSTSEC-2026-0235 rkyv       <- transitive, needs a semver-major bump
+      - name: cargo audit
+        run: |
+          cargo audit --file src-tauri/Cargo.lock             --ignore RUSTSEC-2026-0194             --ignore RUSTSEC-2026-0195             --ignore RUSTSEC-2026-0235
+
+      - name: setup bun
+        uses: oven-sh/setup-bun@v1
+
+      - name: install dependencies
+        run: bun install --frozen-lockfile
+
+      # Reported, not enforced. Every current npm advisory is transitive through
+      # the build toolchain (vite, eslint, nuxt) and none of it ships in the
+      # webview bundle, so gating here would fail the build on findings nobody
+      # can act on. Dependabot drives the count down; this step keeps it visible.
+      - name: bun audit
+        continue-on-error: true
+        run: bun audit --audit-level=high
+
   sidecar-process:
     name: sidecar process (${{ matrix.os }})
     strategy:
