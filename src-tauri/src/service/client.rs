@@ -10,7 +10,9 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio::sync::oneshot;
 
-use super::protocol::{ServiceEvent, ServiceMessage, ServiceRequest, SERVICE_PROTOCOL_VERSION};
+use super::protocol::{
+    Method, ServiceEvent, ServiceMessage, ServiceRequest, SERVICE_PROTOCOL_VERSION,
+};
 
 type PendingResponse = oneshot::Sender<Result<Value, String>>;
 type EventSink = Arc<dyn Fn(ServiceEvent) + Send + Sync>;
@@ -53,14 +55,14 @@ impl ServiceClient {
         Ok(Self { supervisor })
     }
 
-    pub async fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+    pub async fn call(&self, method: Method, params: Value) -> Result<Value, String> {
         let inner = self.supervisor.start_if_needed()?;
         call_inner(&inner, method, params).await
     }
 
     pub async fn call_typed<T: DeserializeOwned>(
         &self,
-        method: &str,
+        method: Method,
         params: Value,
     ) -> Result<T, String> {
         let value = self.call(method, params).await?;
@@ -225,7 +227,7 @@ fn spawn_child(
 
 async fn call_inner(
     inner: &Arc<ClientInner>,
-    method: &str,
+    method: Method,
     params: Value,
 ) -> Result<Value, String> {
     if inner.closed.load(Ordering::Acquire) {
@@ -235,7 +237,7 @@ async fn call_inner(
     let id = inner.next_id.fetch_add(1, Ordering::Relaxed);
     let request = ServiceRequest {
         id,
-        method: method.to_string(),
+        method: method.as_str().to_string(),
         params,
     };
     let encoded = serde_json::to_string(&request)
@@ -268,7 +270,7 @@ async fn call_inner(
         return Err(error);
     }
 
-    match tokio::time::timeout(request_timeout(method), receiver).await {
+    match tokio::time::timeout(method.timeout(), receiver).await {
         Ok(Ok(result)) => result,
         Ok(Err(_)) => Err("Local CEMM service stopped before responding".to_string()),
         Err(_) => {
@@ -276,29 +278,9 @@ async fn call_inner(
             inner.stop();
             Err(format!(
                 "Local CEMM service method '{method}' exceeded its {:?} deadline; the child was stopped and the operation result is unknown",
-                request_timeout(method)
+                method.timeout()
             ))
         }
-    }
-}
-
-fn request_timeout(method: &str) -> Duration {
-    match method {
-        "ping" => Duration::from_secs(10),
-        "file.read"
-        | "file.write"
-        | "config.read_directory"
-        | "path.is_binary"
-        | "path.validate"
-        | "manifest.parse_instance"
-        | "manifest.compare"
-        | "library.scan" => Duration::from_secs(120),
-        "library.cache_icons" => Duration::from_secs(10 * 60),
-        "github.upload_update" | "github.download_manifest" | "github.download_config_files" => {
-            Duration::from_secs(30 * 60)
-        }
-        "install.apply_update" => Duration::from_secs(2 * 60 * 60),
-        _ => Duration::from_secs(5 * 60),
     }
 }
 
@@ -463,12 +445,33 @@ mod tests {
 
     #[test]
     fn every_service_method_has_a_finite_deadline() {
-        let local = request_timeout("file.read");
-        let network = request_timeout("github.upload_update");
-        let install = request_timeout("install.apply_update");
+        let local = Method::FileRead.timeout();
+        let network = Method::GithubUploadUpdate.timeout();
+        let install = Method::InstallApplyUpdate.timeout();
 
         assert!(local < network);
         assert!(network < install);
         assert!(install <= Duration::from_secs(2 * 60 * 60));
+
+        // No method may fall through to a shorter deadline than it needs; the
+        // enum has no catch-all arm, so this simply confirms none is zero.
+        for method in Method::ALL {
+            assert!(
+                method.timeout() >= Duration::from_secs(10),
+                "{method} has an implausibly short deadline"
+            );
+        }
+    }
+
+    #[test]
+    fn wire_names_round_trip_through_the_enum() {
+        for method in Method::ALL {
+            assert_eq!(
+                Method::from_wire(method.as_str()),
+                Some(method),
+                "{method} does not round-trip"
+            );
+        }
+        assert_eq!(Method::from_wire("file.reed"), None);
     }
 }

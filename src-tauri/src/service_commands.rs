@@ -5,12 +5,13 @@ use crate::composables::github::ConfigFileWithContent;
 use crate::composables::instances::{CachedIcon, PackLibrary};
 use crate::composables::manifest::{Manifest, UpdateInfo};
 use crate::installer::{ConfigFile as InstallerConfigFile, InstallOptions};
+use crate::service::protocol::Method;
 use crate::service::ServiceClient;
 
 #[tauri::command]
 pub async fn read_file(service: State<'_, ServiceClient>, path: String) -> Result<String, String> {
     service
-        .call_typed("file.read", json!({ "path": path }))
+        .call_typed(Method::FileRead, json!({ "path": path }))
         .await
 }
 
@@ -24,7 +25,7 @@ pub async fn write_file(
 ) -> Result<(), String> {
     service
         .call_typed(
-            "file.write",
+            Method::FileWrite,
             json!({
                 "path": path,
                 "content": content,
@@ -43,7 +44,7 @@ pub async fn read_directory_recursive(
 ) -> Result<Vec<ConfigFileWithContent>, String> {
     service
         .call_typed(
-            "config.read_directory",
+            Method::ConfigReadDirectory,
             json!({ "dirPath": dir_path, "basePath": base_path }),
         )
         .await
@@ -55,7 +56,7 @@ pub async fn is_binary_file(
     path: String,
 ) -> Result<bool, String> {
     service
-        .call_typed("path.is_binary", json!({ "path": path }))
+        .call_typed(Method::PathIsBinary, json!({ "path": path }))
         .await
 }
 
@@ -65,7 +66,7 @@ pub async fn validate_path(
     path: String,
 ) -> Result<serde_json::Value, String> {
     service
-        .call_typed("path.validate", json!({ "path": path }))
+        .call_typed(Method::PathValidate, json!({ "path": path }))
         .await
 }
 
@@ -75,7 +76,7 @@ pub async fn parse_minecraft_instance(
     path: String,
 ) -> Result<Manifest, String> {
     service
-        .call_typed("manifest.parse_instance", json!({ "path": path }))
+        .call_typed(Method::ManifestParseInstance, json!({ "path": path }))
         .await
 }
 
@@ -86,7 +87,7 @@ pub async fn compare_manifests(
     new: Manifest,
 ) -> Result<UpdateInfo, String> {
     service
-        .call_typed("manifest.compare", json!({ "old": old, "new": new }))
+        .call_typed(Method::ManifestCompare, json!({ "old": old, "new": new }))
         .await
 }
 
@@ -107,7 +108,7 @@ pub async fn upload_update(
 ) -> Result<(), String> {
     service
         .call_typed(
-            "github.upload_update",
+            Method::GithubUploadUpdate,
             json!({
                 "operationId": operation_id,
                 "repo": repo,
@@ -130,7 +131,7 @@ pub async fn download_manifest(
 ) -> Result<Manifest, String> {
     service
         .call_typed(
-            "github.download_manifest",
+            Method::GithubDownloadManifest,
             json!({ "repo": repo, "uuid": uuid, "modpackKey": modpack_key }),
         )
         .await
@@ -146,7 +147,7 @@ pub async fn download_config_files(
 ) -> Result<Vec<ConfigFileWithContent>, String> {
     service
         .call_typed(
-            "github.download_config_files",
+            Method::GithubDownloadConfigFiles,
             json!({
                 "repo": repo,
                 "uuid": uuid,
@@ -163,7 +164,10 @@ pub async fn scan_pack_library(
     instances_dir: Option<String>,
 ) -> Result<PackLibrary, String> {
     service
-        .call_typed("library.scan", json!({ "instancesDir": instances_dir }))
+        .call_typed(
+            Method::LibraryScan,
+            json!({ "instancesDir": instances_dir }),
+        )
         .await
 }
 
@@ -173,7 +177,7 @@ pub async fn cache_pack_icons(
     urls: Vec<String>,
 ) -> Result<Vec<CachedIcon>, String> {
     service
-        .call_typed("library.cache_icons", json!({ "urls": urls }))
+        .call_typed(Method::LibraryCacheIcons, json!({ "urls": urls }))
         .await
 }
 
@@ -188,7 +192,7 @@ pub async fn install_update(
 ) -> Result<(), String> {
     service
         .call_typed(
-            "install.apply_update",
+            Method::InstallApplyUpdate,
             json!({
                 "operationId": operation_id,
                 "modpackPath": modpack_path,

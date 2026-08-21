@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::protocol::{ServiceMessage, ServiceRequest, SERVICE_PROTOCOL_VERSION};
+use super::protocol::{Method, ServiceMessage, ServiceRequest, SERVICE_PROTOCOL_VERSION};
 
 #[derive(Debug, Clone)]
 pub struct ServiceContext {
@@ -41,16 +41,19 @@ async fn dispatch(
     context: &ServiceContext,
     event_callback: &EventCallback,
 ) -> Result<Value, String> {
-    match request.method.as_str() {
-        "ping" => Ok(serde_json::json!({
+    let method = Method::from_wire(&request.method)
+        .ok_or_else(|| format!("Unknown sidecar service method: {}", request.method))?;
+
+    match method {
+        Method::Ping => Ok(serde_json::json!({
             "protocolVersion": SERVICE_PROTOCOL_VERSION,
             "cacheDirectoryConfigured": context.cache_dir.is_some()
         })),
-        "file.read" => {
+        Method::FileRead => {
             let params: PathParams = decode_params(request)?;
             encode_result(crate::read_file(params.path))
         }
-        "file.write" => {
+        Method::FileWrite => {
             let params: WriteFileParams = decode_params(request)?;
             encode_result(crate::write_file(
                 params.path,
@@ -59,34 +62,34 @@ async fn dispatch(
                 params.files,
             ))
         }
-        "config.read_directory" => {
+        Method::ConfigReadDirectory => {
             let params: ReadDirectoryParams = decode_params(request)?;
             encode_result(crate::read_directory_recursive(
                 params.dir_path,
                 params.base_path,
             ))
         }
-        "path.is_binary" => {
+        Method::PathIsBinary => {
             let params: PathParams = decode_params(request)?;
             encode_result(crate::is_binary_file(params.path))
         }
-        "path.validate" => {
+        Method::PathValidate => {
             let params: PathParams = decode_params(request)?;
             crate::validate_path(params.path)
         }
-        "manifest.parse_instance" => {
+        Method::ManifestParseInstance => {
             let params: PathParams = decode_params(request)?;
             encode_result(crate::composables::manifest::parse_minecraft_instance(
                 params.path,
             ))
         }
-        "manifest.compare" => {
+        Method::ManifestCompare => {
             let params: CompareManifestParams = decode_params(request)?;
             encode_result(crate::composables::manifest::compare_manifests(
                 params.old, params.new,
             ))
         }
-        "github.upload_update" => {
+        Method::GithubUploadUpdate => {
             let params: UploadUpdateParams = decode_params(request)?;
             let events = Arc::clone(event_callback);
             let operation_id = params.operation_id.clone();
@@ -115,7 +118,7 @@ async fn dispatch(
                 .await,
             )
         }
-        "github.download_manifest" => {
+        Method::GithubDownloadManifest => {
             let params: DownloadManifestParams = decode_params(request)?;
             encode_result(
                 crate::composables::github::download_manifest(
@@ -126,7 +129,7 @@ async fn dispatch(
                 .await,
             )
         }
-        "github.download_config_files" => {
+        Method::GithubDownloadConfigFiles => {
             let params: DownloadConfigFilesParams = decode_params(request)?;
             encode_result(
                 crate::composables::github::download_config_files(
@@ -138,7 +141,7 @@ async fn dispatch(
                 .await,
             )
         }
-        "library.scan" => {
+        Method::LibraryScan => {
             let params: ScanLibraryParams = decode_params(request)?;
             let icon_cache = context.cache_dir.as_ref().map(|dir| dir.join("pack-icons"));
             encode_result(crate::composables::instances::scan_library(
@@ -146,7 +149,7 @@ async fn dispatch(
                 icon_cache.as_deref(),
             ))
         }
-        "library.cache_icons" => {
+        Method::LibraryCacheIcons => {
             let params: CacheIconsParams = decode_params(request)?;
             let cache_dir = context
                 .cache_dir
@@ -157,7 +160,7 @@ async fn dispatch(
                 crate::composables::instances::cache_pack_icons_in(cache_dir, params.urls).await,
             )
         }
-        "install.apply_update" => {
+        Method::InstallApplyUpdate => {
             let params: InstallUpdateParams = decode_params(request)?;
             let events = Arc::clone(event_callback);
             let operation_id = params.operation_id.clone();
@@ -182,7 +185,6 @@ async fn dispatch(
                 .await,
             )
         }
-        method => Err(format!("Unknown sidecar service method: {method}")),
     }
 }
 

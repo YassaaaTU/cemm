@@ -1,7 +1,127 @@
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const SERVICE_PROTOCOL_VERSION: u32 = 1;
+
+/// Every method the sidecar answers, and the deadline each one gets.
+///
+/// The wire name, the dispatch arm and the timeout used to be three separate
+/// string literals in three files, kept in agreement by hand. They agreed, but
+/// nothing made them: a rename that missed the timeout table did not fail to
+/// compile and did not fail a test, it silently moved that method onto the
+/// fallback deadline. For `install.apply_update` that meant dropping from two
+/// hours to five minutes, on the one code path that writes into a live game
+/// directory.
+///
+/// Naming them once, as a type, is what makes the compiler check the agreement.
+/// There is deliberately no catch-all arm in `timeout`, so a new variant cannot
+/// be added without choosing its deadline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Method {
+    Ping,
+    FileRead,
+    FileWrite,
+    ConfigReadDirectory,
+    PathIsBinary,
+    PathValidate,
+    ManifestParseInstance,
+    ManifestCompare,
+    GithubUploadUpdate,
+    GithubDownloadManifest,
+    GithubDownloadConfigFiles,
+    InstallApplyUpdate,
+    LibraryScan,
+    LibraryCacheIcons,
+}
+
+impl Method {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ping => "ping",
+            Self::FileRead => "file.read",
+            Self::FileWrite => "file.write",
+            Self::ConfigReadDirectory => "config.read_directory",
+            Self::PathIsBinary => "path.is_binary",
+            Self::PathValidate => "path.validate",
+            Self::ManifestParseInstance => "manifest.parse_instance",
+            Self::ManifestCompare => "manifest.compare",
+            Self::GithubUploadUpdate => "github.upload_update",
+            Self::GithubDownloadManifest => "github.download_manifest",
+            Self::GithubDownloadConfigFiles => "github.download_config_files",
+            Self::InstallApplyUpdate => "install.apply_update",
+            Self::LibraryScan => "library.scan",
+            Self::LibraryCacheIcons => "library.cache_icons",
+        }
+    }
+
+    pub fn from_wire(method: &str) -> Option<Self> {
+        Some(match method {
+            "ping" => Self::Ping,
+            "file.read" => Self::FileRead,
+            "file.write" => Self::FileWrite,
+            "config.read_directory" => Self::ConfigReadDirectory,
+            "path.is_binary" => Self::PathIsBinary,
+            "path.validate" => Self::PathValidate,
+            "manifest.parse_instance" => Self::ManifestParseInstance,
+            "manifest.compare" => Self::ManifestCompare,
+            "github.upload_update" => Self::GithubUploadUpdate,
+            "github.download_manifest" => Self::GithubDownloadManifest,
+            "github.download_config_files" => Self::GithubDownloadConfigFiles,
+            "install.apply_update" => Self::InstallApplyUpdate,
+            "library.scan" => Self::LibraryScan,
+            "library.cache_icons" => Self::LibraryCacheIcons,
+            _ => return None,
+        })
+    }
+
+    /// How long the host waits before declaring the child unresponsive and
+    /// killing it. Exhaustive on purpose -- see the type's documentation.
+    pub const fn timeout(self) -> Duration {
+        match self {
+            Self::Ping => Duration::from_secs(10),
+            Self::FileRead
+            | Self::FileWrite
+            | Self::ConfigReadDirectory
+            | Self::PathIsBinary
+            | Self::PathValidate
+            | Self::ManifestParseInstance
+            | Self::ManifestCompare
+            | Self::LibraryScan => Duration::from_secs(120),
+            Self::LibraryCacheIcons => Duration::from_secs(10 * 60),
+            Self::GithubUploadUpdate
+            | Self::GithubDownloadManifest
+            | Self::GithubDownloadConfigFiles => Duration::from_secs(30 * 60),
+            // A large modpack legitimately takes hours to install.
+            Self::InstallApplyUpdate => Duration::from_secs(2 * 60 * 60),
+        }
+    }
+
+    /// Every method, for tests that assert the wire mapping is a bijection.
+    pub const ALL: [Method; 14] = [
+        Self::Ping,
+        Self::FileRead,
+        Self::FileWrite,
+        Self::ConfigReadDirectory,
+        Self::PathIsBinary,
+        Self::PathValidate,
+        Self::ManifestParseInstance,
+        Self::ManifestCompare,
+        Self::GithubUploadUpdate,
+        Self::GithubDownloadManifest,
+        Self::GithubDownloadConfigFiles,
+        Self::InstallApplyUpdate,
+        Self::LibraryScan,
+        Self::LibraryCacheIcons,
+    ];
+}
+
+impl std::fmt::Display for Method {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ServiceRequest {
