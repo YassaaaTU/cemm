@@ -294,8 +294,23 @@ pub struct InstallProgress {
 pub type InstallProgressCallback = Arc<dyn Fn(InstallProgress) + Send + Sync>;
 
 const INSTALL_TRANSACTION_DIR: &str = ".cemm-transaction";
+const INSTALLED_MANIFEST_FILE: &str = "cemm-manifest.json";
 const INSTALL_JOURNAL_FILE: &str = "journal.json";
 const INSTALL_COMMITTED_FILE: &str = "committed";
+
+fn targets_reserved_install_path(relative_path: &str) -> bool {
+    Path::new(relative_path)
+        .components()
+        .find_map(|component| match component {
+            std::path::Component::Normal(value) => value.to_str(),
+            std::path::Component::CurDir => None,
+            _ => None,
+        })
+        .is_some_and(|component| {
+            component.eq_ignore_ascii_case(INSTALL_TRANSACTION_DIR)
+                || component.eq_ignore_ascii_case(INSTALLED_MANIFEST_FILE)
+        })
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct InstallTransactionEntry {
@@ -581,16 +596,7 @@ pub async fn install_update_with_progress(
     // a malformed final config cannot fail only after destructive work.
     let mut prepared_configs = Vec::with_capacity(config_files.len());
     for config in config_files {
-        let first_component = Path::new(&config.relative_path)
-            .components()
-            .next()
-            .and_then(|component| component.as_os_str().to_str());
-        if first_component
-            .is_some_and(|component| component.eq_ignore_ascii_case(INSTALL_TRANSACTION_DIR))
-            || config
-                .relative_path
-                .eq_ignore_ascii_case("cemm-manifest.json")
-        {
+        if targets_reserved_install_path(&config.relative_path) {
             return Err(format!(
                 "Config file path uses a CEMM-reserved install path: {}",
                 config.relative_path
@@ -965,8 +971,8 @@ pub async fn install_update_with_progress(
         );
     }
 
-    let manifest_path = validate_path_within_base(&modpack_path_buf, "cemm-manifest.json")?;
-    let staged_manifest_path = staging_dir.join("cemm-manifest.json");
+    let manifest_path = validate_path_within_base(&modpack_path_buf, INSTALLED_MANIFEST_FILE)?;
+    let staged_manifest_path = staging_dir.join(INSTALLED_MANIFEST_FILE);
     if let Some(parent) = staged_manifest_path.parent() {
         async_fs::create_dir_all(parent)
             .await
@@ -1828,8 +1834,11 @@ mod tests {
     async fn config_cannot_target_reserved_transaction_or_manifest_paths() {
         for relative_path in [
             ".cemm-transaction/journal.json",
+            "./.cemm-transaction/journal.json",
+            "././.CEMM-TRANSACTION/backup/0",
             ".CEMM-TRANSACTION/backup/0",
             "cemm-manifest.json",
+            "./cemm-manifest.json",
         ] {
             let temp = tempfile::tempdir().expect("failed to create temp dir");
             let result = install_update_with_progress(
