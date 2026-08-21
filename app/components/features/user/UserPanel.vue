@@ -777,7 +777,20 @@ async function confirmInstall()
 
 async function performInstall()
 {
-	if (manifest.value === null) return
+	// Pinned before the install starts rather than read from the refs inside the
+	// callback below. The store's manifest can change while an install runs —
+	// the user can navigate to another pack — and the install has to finish
+	// against the manifest the preview was approved for, not whichever one is
+	// current when the callback happens to fire.
+	//
+	// Guarding the const rather than `manifest.value` also keeps the non-null
+	// narrowing, which TypeScript does not carry across a closure boundary when
+	// it comes from a property access.
+	const installingManifest = manifest.value
+	const baseline = previousManifest.value
+	const configFiles = downloadedConfigFiles.value
+
+	if (installingManifest === null) return
 	if (!previewMatchesSelection.value)
 	{
 		setStatus('The update preview no longer matches this destination or update code. Fetch it again before installing.', 'error')
@@ -804,9 +817,9 @@ async function performInstall()
 			},
 			(operationId) => installUpdate(
 				operationId,
-				manifest.value,
-				downloadedConfigFiles.value,
-				previousManifest.value,
+				installingManifest,
+				configFiles,
+				baseline,
 				(value: number, message?: string) =>
 				{
 					progress.value = value
