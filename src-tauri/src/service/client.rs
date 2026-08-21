@@ -570,12 +570,7 @@ mod tests {
 
         let waiter = {
             let supervisor = Arc::clone(&supervisor);
-            tokio::spawn(async move {
-                supervisor
-                    .take_turn(Method::LibraryScan)
-                    .await
-                    .map(|turn| drop(turn))
-            })
+            tokio::spawn(async move { supervisor.take_turn(Method::LibraryScan).await.map(drop) })
         };
 
         // Still blocked while the first caller holds the gate.

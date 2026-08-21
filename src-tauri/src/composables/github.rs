@@ -8,7 +8,11 @@ const MAX_REMOTE_CONFIG_FILES: usize = 1_000;
 const MAX_REMOTE_CONFIG_FILE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_REMOTE_CONFIG_TOTAL_BYTES: usize = 512 * 1024 * 1024;
 const MAX_REMOTE_MANIFEST_BYTES: usize = 8 * 1024 * 1024;
-const MAX_GITHUB_METADATA_BYTES: usize = 2 * 1024 * 1024;
+
+/// The manifest's name inside an update folder. Published under this name by
+/// `upload_update_with_progress` and fetched under it by `download_manifest`,
+/// so the two cannot drift.
+const MANIFEST_FILE_NAME: &str = "cemm-manifest.json";
 
 async fn read_response_limited(
     mut response: reqwest::Response,
@@ -219,6 +223,56 @@ fn is_safe_repo_relative_path(path: &str) -> bool {
         && !(path.len() >= 2 && path.as_bytes().get(1) == Some(&b':'))
 }
 
+/// The branch CEMM publishes to, and therefore the branch it downloads from.
+/// `upload_update_with_progress` fast-forwards `refs/heads/main` and nothing
+/// else, so an update only ever exists here.
+const PUBLISH_BRANCH: &str = "main";
+
+/// Where a published file lives, as a URL that can be fetched directly.
+///
+/// The download path used to ask the contents API for every file -- one
+/// `GET /repos/{owner}/{repo}/contents/...` per config file, plus a directory
+/// listing for the manifest -- and then follow the `download_url` it reported,
+/// which pointed here anyway. Those API calls are unauthenticated on the user
+/// side by design, and GitHub allows 60 of them per hour per IP: a pack with
+/// more config files than that exhausted the quota partway through its own
+/// install, failed on a 403, and kept failing for the rest of the hour. Worse
+/// for a household or a LAN party, who share the quota.
+///
+/// Raw fetches do not count against that limit, and the manifest already tells
+/// us every path, so the listing was never needed. This makes an install cost
+/// zero REST calls.
+///
+/// Segments are pushed rather than interpolated so spaces and other characters
+/// legal in a config path are percent-encoded. Callers validate the shape first
+/// (`validate_config_repo_relative_path`), which is what keeps a path from
+/// climbing out of the update folder.
+fn raw_update_file_url(
+    owner: &str,
+    repo_name: &str,
+    base_path: &str,
+    relative_path: &str,
+) -> Result<String, String> {
+    let mut url = url::Url::parse("https://raw.githubusercontent.com/")
+        .map_err(|error| format!("Could not build a download URL: {error}"))?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| "Could not build a download URL".to_string())?;
+        segments.push(owner);
+        segments.push(repo_name);
+        segments.push(PUBLISH_BRANCH);
+        for segment in base_path
+            .split('/')
+            .chain(relative_path.split('/'))
+            .filter(|segment| !segment.is_empty())
+        {
+            segments.push(segment);
+        }
+    }
+    Ok(url.to_string())
+}
+
 fn push_unique_candidate(candidates: &mut Vec<String>, s: String) {
     if !s.is_empty() && !candidates.iter().any(|e| e == &s) {
         candidates.push(s);
@@ -326,7 +380,8 @@ pub async fn upload_update_with_progress(
 
     // Step 1: Get the current commit SHA of main branch
     emit_progress(&progress_callback, 10, "Getting branch reference...");
-    let refs_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/refs/heads/main");
+    let refs_url =
+        format!("https://api.github.com/repos/{owner}/{repo_name}/git/refs/heads/{PUBLISH_BRANCH}");
     let refs_response = client
         .get(&refs_url)
         .header("Authorization", format!("token {}", token))
@@ -440,7 +495,7 @@ pub async fn upload_update_with_progress(
     // Note: This will automatically overwrite any existing files at the same paths
     // because Git tree creation replaces the entire directory structure
     let mut tree_items = vec![json!({
-        "path": format!("{}/cemm-manifest.json", update_base_path),
+        "path": format!("{update_base_path}/{MANIFEST_FILE_NAME}"),
         "mode": "100644",
         "type": "blob",
         "sha": manifest_blob_sha
@@ -534,15 +589,10 @@ pub async fn download_manifest(
     modpack_key: Option<String>,
 ) -> Result<Manifest, String> {
     use reqwest::Client;
-    use serde_json::Value;
 
     let uuid = normalize_update_uuid_arg(uuid)?;
 
-    // Debug logging
-    eprintln!(
-        "download_manifest called with repo: '{}', uuid: '{}'",
-        repo, uuid
-    );
+    log::debug!("download_manifest: repo '{repo}', update '{uuid}'");
 
     let (owner, repo_name) = parse_and_validate_repo(&repo)?;
     let base_paths = update_base_path_candidates(modpack_key.as_deref(), &uuid);
@@ -554,65 +604,24 @@ pub async fn download_manifest(
     let mut last_error = String::new();
 
     for base_path in base_paths {
-        let api_base =
-            format!("https://api.github.com/repos/{owner}/{repo_name}/contents/{base_path}");
-        eprintln!("Trying manifest path: {}", api_base);
-
-        let list_res = client
-            .get(&api_base)
-            .header("User-Agent", user_agent)
-            .send()
-            .await
-            .map_err(|e| {
-                eprintln!("Request error: {}", e);
-                e.to_string()
-            })?;
-
-        if !list_res.status().is_success() {
-            last_error = format!("Failed to list update files (status {})", list_res.status());
-            continue;
-        }
-
-        let list_body = read_response_limited(
-            list_res,
-            MAX_GITHUB_METADATA_BYTES,
-            "GitHub update file listing",
-        )
-        .await?;
-        let files: Vec<Value> = serde_json::from_slice(&list_body).map_err(|e| {
-            eprintln!("JSON parsing error: {}", e);
-            e.to_string()
-        })?;
-
-        let manifest_file = match files.iter().find(|f| f["name"] == "cemm-manifest.json") {
-            Some(file) => file,
-            None => {
-                last_error = "cemm-manifest.json not found".to_string();
-                continue;
-            }
-        };
-
-        let manifest_url = match manifest_file["download_url"].as_str() {
-            Some(url) => url,
-            None => {
-                last_error = "No download_url for cemm-manifest.json".to_string();
-                continue;
-            }
-        };
+        // Straight to the file. The listing this used to do existed only to
+        // find a name we already know, and cost an API call per candidate.
+        let manifest_url = raw_update_file_url(owner, repo_name, &base_path, MANIFEST_FILE_NAME)?;
+        log::debug!("download_manifest: trying {manifest_url}");
 
         let manifest_res = client
-            .get(manifest_url)
+            .get(&manifest_url)
             .header("User-Agent", user_agent)
             .send()
             .await
             .map_err(|e| {
-                eprintln!("Manifest download error: {}", e);
+                log::warn!("download_manifest: request to {manifest_url} failed: {e}");
                 e.to_string()
             })?;
 
         if !manifest_res.status().is_success() {
             last_error = format!(
-                "Failed to download cemm-manifest.json (status {})",
+                "Failed to download {MANIFEST_FILE_NAME} (status {})",
                 manifest_res.status()
             );
             continue;
@@ -622,7 +631,7 @@ pub async fn download_manifest(
             read_response_limited(manifest_res, MAX_REMOTE_MANIFEST_BYTES, "CEMM manifest").await?;
 
         let manifest: Manifest = serde_json::from_slice(&manifest_json).map_err(|e| {
-            eprintln!("Failed to parse manifest JSON: {}", e);
+            log::warn!("download_manifest: {MANIFEST_FILE_NAME} did not parse: {e}");
             e.to_string()
         })?;
 
@@ -673,46 +682,12 @@ pub async fn download_config_files(
         let mut last_error = String::new();
 
         for base_path in &base_paths {
-            let file_url = format!(
-                "https://api.github.com/repos/{owner}/{repo_name}/contents/{}/{}",
-                base_path, config_file.relative_path
-            );
-            eprintln!("Downloading config file from: {}", file_url);
-
-            let file_res = client
-                .get(&file_url)
-                .header("User-Agent", user_agent)
-                .send()
-                .await
-                .map_err(|e| e.to_string())?;
-
-            if !file_res.status().is_success() {
-                last_error = format!(
-                    "Failed to list config file {} (status {})",
-                    config_file.relative_path,
-                    file_res.status()
-                );
-                continue;
-            }
-
-            let file_data_body = read_response_limited(
-                file_res,
-                MAX_GITHUB_METADATA_BYTES,
-                "GitHub config file metadata",
-            )
-            .await?;
-            let file_data: serde_json::Value =
-                serde_json::from_slice(&file_data_body).map_err(|e| e.to_string())?;
-            let download_url = match file_data["download_url"].as_str() {
-                Some(url) => url,
-                None => {
-                    last_error = "No download_url for config file".to_string();
-                    continue;
-                }
-            };
+            let file_url =
+                raw_update_file_url(owner, repo_name, base_path, &config_file.relative_path)?;
+            log::debug!("download_config_files: fetching {file_url}");
 
             let content_res = client
-                .get(download_url)
+                .get(&file_url)
                 .header("User-Agent", user_agent)
                 .send()
                 .await
@@ -816,6 +791,50 @@ mod tests {
             error,
             "GitHub update main branch reference failed (409 Conflict): GitHub returned no error details"
         );
+    }
+
+    /// An install's file URLs are now built here rather than read out of a
+    /// contents-API response, so this is the shape the whole download path
+    /// depends on.
+    #[test]
+    fn raw_urls_point_at_the_published_branch_and_encode_their_segments() {
+        assert_eq!(
+            raw_update_file_url("YassaaaTU", "cemm", "my-pack/abc123", "cemm-manifest.json")
+                .expect("url"),
+            "https://raw.githubusercontent.com/YassaaaTU/cemm/main/my-pack/abc123/cemm-manifest.json"
+        );
+
+        // Config paths legitimately contain spaces; a raw interpolation would
+        // have produced an invalid URL where the contents API tolerated one.
+        assert_eq!(
+            raw_update_file_url("owner", "repo", "pack/id", "config/Some Mod/settings.json")
+                .expect("url"),
+            "https://raw.githubusercontent.com/owner/repo/main/pack/id/config/Some%20Mod/settings.json"
+        );
+    }
+
+    /// The paths that reach the URL builder have been through this first, and
+    /// it is what stops one climbing out of its update folder or smuggling a
+    /// query string onto the request.
+    #[test]
+    fn config_paths_that_could_escape_the_update_folder_are_refused() {
+        for bad in [
+            "../../../etc/passwd",
+            "/etc/passwd",
+            "C:/Windows/System32/drivers/etc/hosts",
+            r"config\windows\path.json",
+            "config/settings.json?ref=other",
+            "config/settings.json#fragment",
+            "config//settings.json",
+            "config/./settings.json",
+        ] {
+            assert!(
+                validate_config_repo_relative_path(bad).is_err(),
+                "{bad} should not be accepted as a config path"
+            );
+        }
+
+        assert!(validate_config_repo_relative_path("config/mod/settings.json").is_ok());
     }
 
     #[test]
