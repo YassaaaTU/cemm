@@ -25,7 +25,7 @@ const manifest = (over: Partial<Manifest> = {}): Manifest => ({
 	...over
 })
 
-const emptyDiff: UpdateDiff = { removed_addons: [], updated_addon_ids: [], new_addons: [] }
+const emptyDiff: UpdateDiff = { removed_addons: [], removed_addon_ids: [], updated_addon_ids: [], new_addons: [] }
 
 /**
  * The diff itself is computed in Rust — by the same function the installer uses
@@ -68,6 +68,7 @@ describe('getUpdateDiff', () =>
 	{
 		const backendDiff: UpdateDiff = {
 			removed_addons: ['Lithium'],
+			removed_addon_ids: [225643],
 			updated_addon_ids: [238222],
 			new_addons: ['Sodium']
 		}

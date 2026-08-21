@@ -9,9 +9,24 @@
  */
 export type UpdateDiff = { 
 /**
- * Addons to delete from the pack. Drives `collect_old_file_paths`.
+ * Display only, and deliberately so: names are not an identity. Two
+ * CurseForge projects can carry the same `addon_name` -- across categories
+ * (a mod and a resourcepack), or within one after a fork rename -- so
+ * `collect_old_file_paths` reads `removed_addon_ids` instead.
  */
 removed_addons: Array<string>, 
+/**
+ * Project IDs to delete from the pack. Drives `collect_old_file_paths`.
+ *
+ * This used to be the name list above, matched per category against every
+ * old addon in that category. A kept addon whose name collided with a
+ * removed one in *another* category matched too: the transaction backed
+ * its file up, deleted it, and never restored it, while the installed
+ * manifest still listed it and the preview called it untouched. Project
+ * IDs are unique across all four categories, which is why
+ * `updated_addon_ids` was already keyed on them.
+ */
+removed_addon_ids: number[], 
 /**
  * Project IDs whose file must be replaced. Also drives
  * `collect_old_file_paths`, which removes both `X.jar` and

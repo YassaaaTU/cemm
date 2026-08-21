@@ -869,8 +869,22 @@ pub async fn install_update_with_progress(
 #[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export, export_to = "generated/")]
 pub struct UpdateDiff {
-    /// Addons to delete from the pack. Drives `collect_old_file_paths`.
+    /// Display only, and deliberately so: names are not an identity. Two
+    /// CurseForge projects can carry the same `addon_name` -- across categories
+    /// (a mod and a resourcepack), or within one after a fork rename -- so
+    /// `collect_old_file_paths` reads `removed_addon_ids` instead.
     pub removed_addons: Vec<String>,
+    /// Project IDs to delete from the pack. Drives `collect_old_file_paths`.
+    ///
+    /// This used to be the name list above, matched per category against every
+    /// old addon in that category. A kept addon whose name collided with a
+    /// removed one in *another* category matched too: the transaction backed
+    /// its file up, deleted it, and never restored it, while the installed
+    /// manifest still listed it and the preview called it untouched. Project
+    /// IDs are unique across all four categories, which is why
+    /// `updated_addon_ids` was already keyed on them.
+    #[ts(type = "number[]")]
+    pub removed_addon_ids: Vec<u64>,
     /// Project IDs whose file must be replaced. Also drives
     /// `collect_old_file_paths`, which removes both `X.jar` and
     /// `X.jar.disabled` — so an addon disabled in the old manifest still
@@ -900,6 +914,7 @@ pub fn update_diff(old: Option<&Manifest>, new: &Manifest) -> Result<UpdateDiff,
     if is_config_only_update(new) {
         return Ok(UpdateDiff {
             removed_addons: Vec::new(),
+            removed_addon_ids: Vec::new(),
             updated_addon_ids: Vec::new(),
             new_addons: Vec::new(),
         });
@@ -909,6 +924,7 @@ pub fn update_diff(old: Option<&Manifest>, new: &Manifest) -> Result<UpdateDiff,
         Some(old) => calculate_update_diff(old, new),
         None => Ok(UpdateDiff {
             removed_addons: Vec::new(),
+            removed_addon_ids: Vec::new(),
             updated_addon_ids: Vec::new(),
             new_addons: [
                 &new.mods,
@@ -931,6 +947,7 @@ pub fn calculate_update_diff(
 ) -> Result<UpdateDiff, String> {
     let mut diff = UpdateDiff {
         removed_addons: Vec::new(),
+        removed_addon_ids: Vec::new(),
         updated_addon_ids: Vec::new(),
         new_addons: Vec::new(),
     };
@@ -958,9 +975,11 @@ pub fn calculate_update_diff(
 
             if maybe_new.is_none() {
                 diff.removed_addons.push(old_addon.addon_name.clone());
+                diff.removed_addon_ids.push(old_addon.addon_project_id);
             } else if let Some(new_addon) = maybe_new {
                 if new_addon.disabled == Some(true) {
                     diff.removed_addons.push(old_addon.addon_name.clone());
+                    diff.removed_addon_ids.push(old_addon.addon_project_id);
                 }
             }
         }
@@ -1021,7 +1040,7 @@ fn collect_old_file_paths(
     ) -> Result<Vec<PathBuf>, String> {
         let mut paths = Vec::new();
         for old_addon in old_addons {
-            let is_removed = diff.removed_addons.contains(&old_addon.addon_name);
+            let is_removed = diff.removed_addon_ids.contains(&old_addon.addon_project_id);
             let is_updated = diff.updated_addon_ids.contains(&old_addon.addon_project_id);
             if !is_removed && !is_updated {
                 continue;
@@ -1139,6 +1158,7 @@ mod tests {
         let addon = make_addon(1, "Sodium", "sodium-1.jar");
         let diff = UpdateDiff {
             removed_addons: Vec::new(),
+            removed_addon_ids: Vec::new(),
             updated_addon_ids: Vec::new(),
             new_addons: Vec::new(),
         };
@@ -1167,6 +1187,7 @@ mod tests {
         let old = vec![make_addon(1, "Sodium", "sodium-1.jar")];
         let diff = UpdateDiff {
             removed_addons: Vec::new(),
+            removed_addon_ids: Vec::new(),
             updated_addon_ids: Vec::new(),
             new_addons: Vec::new(),
         };
@@ -1212,6 +1233,7 @@ mod tests {
         let old = make_manifest(None, vec![make_addon(1, "Sodium", "sodium-1.jar")]);
         let diff = UpdateDiff {
             removed_addons: Vec::new(),
+            removed_addon_ids: Vec::new(),
             updated_addon_ids: vec![1],
             new_addons: Vec::new(),
         };
@@ -1220,6 +1242,51 @@ mod tests {
 
         assert_eq!(paths.len(), 1);
         assert!(paths[0].ends_with("sodium-1.jar.disabled"));
+    }
+
+    /// Names are not an identity, and CurseForge does not treat them as one:
+    /// a mod and a resourcepack can both be called "Sodium". Removal used to be
+    /// matched by name against every category, so dropping the mod also swept
+    /// the resourcepack -- backed up, deleted, never restored, and still listed
+    /// in the manifest left on disk.
+    #[test]
+    fn a_removal_never_sweeps_a_same_named_addon_from_another_category() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        std::fs::create_dir_all(temp.path().join("mods")).expect("mods dir");
+        std::fs::create_dir_all(temp.path().join("resourcepacks")).expect("resourcepacks dir");
+        std::fs::write(temp.path().join("mods/sodium-1.jar"), b"mod").expect("write mod");
+        std::fs::write(
+            temp.path().join("resourcepacks/sodium-pack.zip"),
+            b"resourcepack",
+        )
+        .expect("write resourcepack");
+
+        let kept = {
+            let mut addon = make_addon(99, "Sodium", "sodium-pack.zip");
+            addon.mod_folder_path = "resourcepacks".to_string();
+            addon
+        };
+
+        let mut old = make_manifest(None, vec![make_addon(1, "Sodium", "sodium-1.jar")]);
+        old.resourcepacks = vec![kept.clone()];
+        let mut new = make_manifest(None, Vec::new());
+        new.resourcepacks = vec![kept];
+
+        let diff = calculate_update_diff(&old, &new).expect("diff");
+        assert_eq!(diff.removed_addon_ids, vec![1]);
+
+        let paths = collect_old_file_paths(temp.path(), &old, &diff).expect("collect");
+
+        assert_eq!(
+            paths.len(),
+            1,
+            "only the removed mod may be swept, not the resourcepack sharing its name: {paths:?}"
+        );
+        assert!(paths[0].ends_with("sodium-1.jar"));
+        assert!(
+            temp.path().join("resourcepacks/sodium-pack.zip").exists(),
+            "the kept resourcepack must still be on disk"
+        );
     }
 
     #[test]
