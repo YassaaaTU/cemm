@@ -290,22 +290,12 @@
 </template>
 
 <script setup lang="ts">
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-
 import type { AddonRow } from '~/components/domains/addons/AddonTable.vue'
 import type { ConfigFileWithContent, UpdateDiff } from '~/types'
 
-interface InstallProgressEvent
-{
-	payload?: {
-		operationId?: string
-		progress?: number
-		message?: string
-	}
-}
-
 const { downloadFromGithub, downloadConfigFiles, installUpdate } = useUserApi()
 const { getUpdateDiff } = useTauri()
+const { trackOperation } = useInstallProgress()
 const { notify } = useNotify()
 const { paneTransition } = useMotion()
 const manifestStore = useManifestStore()
@@ -798,38 +788,32 @@ async function performInstall()
 	installing.value = true
 	updateApplied.value = false
 	progress.value = 0
-	const operationId = globalThis.crypto.randomUUID()
-	let unlisten: UnlistenFn | null = null
-
 	try
 	{
-		unlisten = await listen('install-progress', (event) =>
-		{
-			if ((event as InstallProgressEvent).payload?.operationId !== operationId) return
-			const value = (event as InstallProgressEvent).payload?.progress
-			const message = (event as InstallProgressEvent).payload?.message
-
-			if (typeof value === 'number')
+		const installed = await trackOperation(
+			(payload) =>
 			{
-				progress.value = value
-			}
-			if (typeof message === 'string')
-			{
-				progressMessage.value = message
-			}
-		})
-
-		const installed = await installUpdate(
-			operationId,
-			manifest.value,
-			downloadedConfigFiles.value,
-			previousManifest.value,
-			(value: number, message?: string) =>
-			{
-				progress.value = value
-				if (message !== undefined) setStatus(message, 'info')
+				if (typeof payload.progress === 'number')
+				{
+					progress.value = payload.progress
+				}
+				if (typeof payload.message === 'string')
+				{
+					progressMessage.value = payload.message
+				}
 			},
-			setStatus
+			(operationId) => installUpdate(
+				operationId,
+				manifest.value,
+				downloadedConfigFiles.value,
+				previousManifest.value,
+				(value: number, message?: string) =>
+				{
+					progress.value = value
+					if (message !== undefined) setStatus(message, 'info')
+				},
+				setStatus
+			)
 		)
 		updateApplied.value = installed
 		installPhase.value = installed ? 'done' : 'failed'
@@ -851,10 +835,6 @@ async function performInstall()
 		if (installPhase.value === 'running')
 		{
 			installPhase.value = 'failed'
-		}
-		if (typeof unlisten === 'function')
-		{
-			unlisten()
 		}
 	}
 }
