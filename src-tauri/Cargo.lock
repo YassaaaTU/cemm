@@ -590,7 +590,6 @@ dependencies = [
  "base64 0.22.1",
  "cap-fs-ext",
  "cap-primitives",
- "chrono",
  "log",
  "opener",
  "reqwest 0.12.28",
@@ -608,7 +607,6 @@ dependencies = [
  "tokio",
  "ts-rs",
  "url",
- "uuid",
 ]
 
 [[package]]
@@ -657,10 +655,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c673075a2e0e5f4a1dde27ce9dee1ea4558c7ffe648f576438a20ca1d2acc4b0"
 dependencies = [
  "iana-time-zone",
- "js-sys",
  "num-traits",
  "serde",
- "wasm-bindgen",
  "windows-link 0.2.1",
 ]
 

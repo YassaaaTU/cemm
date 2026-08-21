@@ -1361,6 +1361,54 @@ mod tests {
         assert!(diff.new_addons.is_empty());
     }
 
+    /// A rename that changes nothing else is invisible, and has to be: the file
+    /// on disk is the same file, so there is nothing to download and nothing to
+    /// delete. Asserted here because this used to be `compare_manifests`'
+    /// coverage, and that second implementation is gone.
+    #[test]
+    fn a_rename_with_no_version_change_is_not_a_change_at_all() {
+        let diff = update_diff(
+            Some(&make_manifest(
+                None,
+                vec![make_addon(1, "JEI", "jei-1.jar")],
+            )),
+            &make_manifest(None, vec![make_addon(1, "Just Enough Items", "jei-1.jar")]),
+        )
+        .expect("diff should succeed");
+
+        assert!(diff.new_addons.is_empty());
+        assert!(diff.removed_addons.is_empty());
+        assert!(diff.removed_addon_ids.is_empty());
+        assert!(diff.updated_addon_ids.is_empty());
+    }
+
+    /// The plain cases, kept alongside the renaming ones so the whole identity
+    /// rule reads in one place.
+    #[test]
+    fn a_new_project_is_added_and_a_dropped_one_is_removed() {
+        let old = make_manifest(
+            None,
+            vec![
+                make_addon(1, "Sodium", "sodium-1.jar"),
+                make_addon(2, "Lithium", "lithium-1.jar"),
+            ],
+        );
+        let new = make_manifest(
+            None,
+            vec![
+                make_addon(1, "Sodium", "sodium-1.jar"),
+                make_addon(3, "Iris", "iris-1.jar"),
+            ],
+        );
+
+        let diff = update_diff(Some(&old), &new).expect("diff should succeed");
+
+        assert_eq!(diff.new_addons, vec!["Iris".to_string()]);
+        assert_eq!(diff.removed_addons, vec!["Lithium".to_string()]);
+        assert_eq!(diff.removed_addon_ids, vec![2]);
+        assert!(diff.updated_addon_ids.is_empty());
+    }
+
     #[test]
     fn rejects_traversing_or_absolute_addon_file_names() {
         for bad in ["../evil", "/etc/evil", "C:\\evil", "a/b", "..", ".", ""] {

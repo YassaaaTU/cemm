@@ -55,7 +55,6 @@ export function useAdminApi()
 		readDirectoryRecursive,
 		writeFile,
 		parseMinecraftInstance,
-		compareManifests,
 		readFile,
 		isBinaryFile
 	} = useTauri()
@@ -118,17 +117,6 @@ export function useAdminApi()
 			}
 			manifestStore.setManifest(parsed.value)
 			setStatus('Manifest generated from minecraftinstance.json.', 'success')
-
-			// If previous manifest exists, show diff
-			if (manifestStore.previousManifest != null)
-			{
-				const diff = await compareManifests(manifestStore.previousManifest, parsed.value)
-				manifestStore.setUpdateInfo(diff)
-			}
-			else
-			{
-				manifestStore.setUpdateInfo(null)
-			}
 
 			// The folder holding minecraftinstance.json identifies the pack. Returned
 			// rather than written to the shared store, because appStore.modpackPath is

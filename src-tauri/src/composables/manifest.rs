@@ -1,9 +1,7 @@
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use ts_rs::TS;
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[ts(export, export_to = "generated/")]
@@ -83,25 +81,6 @@ pub struct Manifest {
     pub shaderpacks: Vec<Addon>,
     pub datapacks: Vec<Addon>,
     pub config_files: Vec<ConfigFile>,
-}
-
-// Not persisted or published — computed fresh per compare_manifests call and
-// consumed only by the admin preview, so renaming its serde output is safe.
-// (Unlike `Manifest`/`Addon`, which are published and must never gain rename_all.)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "generated/")]
-pub struct UpdateInfo {
-    pub uuid: String,
-    pub timestamp: String,
-    pub added_addons: Vec<Addon>,
-    pub removed_addons: Vec<String>,
-    /// Project IDs of addons present in both manifests with a changed version.
-    /// Matches `installer::UpdateDiff::updated_addon_ids`, which is what the
-    /// installer actually acts on — keeping this the same shape means the
-    /// admin preview and the installer agree on what "updated" means.
-    #[ts(type = "number[]")]
-    pub updated_addon_ids: Vec<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -341,48 +320,6 @@ fn find_disabled_files(dir: PathBuf) -> Vec<String> {
     result
 }
 
-pub fn compare_manifests(old: Manifest, new: Manifest) -> Result<UpdateInfo, String> {
-    log::info!("compare_manifests: comparing manifests");
-
-    // Delegates to the installer's diff rather than repeating it. This function
-    // used to carry its own copy, which is how the two came to disagree about
-    // addons disabled in the old manifest (F-P2-12 fixed the addon_name/
-    // addon_project_id half of the same problem). The installer's version is
-    // the one that acts on files, so it is the one that defines the answer.
-    let diff = crate::installer::calculate_update_diff(&old, &new)?;
-
-    // UpdateInfo carries whole addons where UpdateDiff carries names, so resolve
-    // the new ones back against the manifest they came from.
-    let added: Vec<Addon> = [
-        &new.mods,
-        &new.resourcepacks,
-        &new.shaderpacks,
-        &new.datapacks,
-    ]
-    .into_iter()
-    .flatten()
-    .filter(|addon| diff.new_addons.contains(&addon.addon_name))
-    .cloned()
-    .collect();
-
-    log::info!(
-        "compare_manifests: {} added, {} removed, {} updated",
-        added.len(),
-        diff.removed_addons.len(),
-        diff.updated_addon_ids.len()
-    );
-
-    let update_info = UpdateInfo {
-        uuid: Uuid::new_v4().to_string(),
-        timestamp: Utc::now().to_rfc3339(),
-        added_addons: added,
-        removed_addons: diff.removed_addons,
-        updated_addon_ids: diff.updated_addon_ids,
-    };
-    log::info!("compare_manifests: update info generated");
-    Ok(update_info)
-}
-
 fn slugify_curseforge_name(name: &str) -> String {
     // Lowercase, replace spaces/underscores with dashes, preserve brackets, remove other non-url-safe chars
     let mut slug = name.to_lowercase();
@@ -473,138 +410,6 @@ mod tests {
                 "expected '{good}' to be accepted"
             );
         }
-    }
-
-    fn make_addon(project_id: u64, name: &str, version: &str) -> Addon {
-        Addon {
-            addon_file_id: project_id,
-            addon_name: name.to_string(),
-            addon_project_id: project_id,
-            cdn_download_url: format!("https://edge.forgecdn.net/{name}"),
-            mod_folder_path: "mods".to_string(),
-            version: version.to_string(),
-            web_site_url: None,
-            disabled: None,
-            file_name_on_disk: format!("{name}.jar"),
-        }
-    }
-
-    fn make_manifest(mods: Vec<Addon>) -> Manifest {
-        Manifest {
-            update_type: Some("full".to_string()),
-            mods,
-            resourcepacks: Vec::new(),
-            shaderpacks: Vec::new(),
-            datapacks: Vec::new(),
-            config_files: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn renamed_addon_with_version_bump_is_updated_not_removed_and_added() {
-        // Same project_id, different addon_name AND version — the exact shape
-        // that used to read as "removed + added" under name-based matching
-        // (F-P2-12), while installer::calculate_update_diff already treated it
-        // as "updated". This asserts compare_manifests now agrees.
-        let old = make_manifest(vec![make_addon(1, "Sodium", "sodium-mc1.20-0.5.jar")]);
-        let new = make_manifest(vec![make_addon(
-            1,
-            "Sodium Renamed",
-            "sodium-mc1.20-0.6.jar",
-        )]);
-
-        let info = compare_manifests(old, new).expect("compare_manifests should succeed");
-
-        assert!(
-            info.added_addons.is_empty(),
-            "renamed addon must not be reported as added"
-        );
-        assert!(
-            info.removed_addons.is_empty(),
-            "renamed addon must not be reported as removed"
-        );
-        assert_eq!(info.updated_addon_ids, vec![1]);
-    }
-
-    #[test]
-    fn renamed_addon_with_same_version_is_neither_added_removed_nor_updated() {
-        // A pure rename with no version change is invisible to both this
-        // function and the installer's diff — consistent, if quiet.
-        let old = make_manifest(vec![make_addon(1, "Sodium", "sodium-mc1.20-0.5.jar")]);
-        let new = make_manifest(vec![make_addon(
-            1,
-            "Sodium Renamed",
-            "sodium-mc1.20-0.5.jar",
-        )]);
-
-        let info = compare_manifests(old, new).expect("compare_manifests should succeed");
-
-        assert!(info.added_addons.is_empty());
-        assert!(info.removed_addons.is_empty());
-        assert!(info.updated_addon_ids.is_empty());
-    }
-
-    #[test]
-    fn genuinely_new_addon_is_added() {
-        let old = make_manifest(vec![make_addon(1, "Sodium", "1.0.jar")]);
-        let new = make_manifest(vec![
-            make_addon(1, "Sodium", "1.0.jar"),
-            make_addon(2, "Lithium", "1.0.jar"),
-        ]);
-
-        let info = compare_manifests(old, new).expect("compare_manifests should succeed");
-
-        assert_eq!(info.added_addons.len(), 1);
-        assert_eq!(info.added_addons[0].addon_project_id, 2);
-        assert!(info.removed_addons.is_empty());
-        assert!(info.updated_addon_ids.is_empty());
-    }
-
-    #[test]
-    fn genuinely_removed_addon_is_removed() {
-        let old = make_manifest(vec![
-            make_addon(1, "Sodium", "1.0.jar"),
-            make_addon(2, "Lithium", "1.0.jar"),
-        ]);
-        let new = make_manifest(vec![make_addon(1, "Sodium", "1.0.jar")]);
-
-        let info = compare_manifests(old, new).expect("compare_manifests should succeed");
-
-        assert!(info.added_addons.is_empty());
-        assert_eq!(info.removed_addons, vec!["Lithium".to_string()]);
-        assert!(info.updated_addon_ids.is_empty());
-    }
-
-    #[test]
-    fn update_info_serializes_with_camel_case_keys() {
-        let info = UpdateInfo {
-            uuid: "test-uuid".to_string(),
-            timestamp: "2026-01-01T00:00:00Z".to_string(),
-            added_addons: Vec::new(),
-            removed_addons: Vec::new(),
-            updated_addon_ids: vec![42],
-        };
-
-        let json = serde_json::to_value(&info).expect("UpdateInfo should serialize");
-        let obj = json
-            .as_object()
-            .expect("UpdateInfo should serialize to an object");
-
-        for key in [
-            "uuid",
-            "timestamp",
-            "addedAddons",
-            "removedAddons",
-            "updatedAddonIds",
-        ] {
-            assert!(
-                obj.contains_key(key),
-                "expected camelCase key '{key}' in serialized UpdateInfo, got: {obj:?}"
-            );
-        }
-        // snake_case must not leak through now that rename_all is applied.
-        assert!(!obj.contains_key("added_addons"));
-        assert!(!obj.contains_key("updated_addon_ids"));
     }
 
     #[test]

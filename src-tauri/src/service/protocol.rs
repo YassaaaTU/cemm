@@ -27,7 +27,6 @@ pub enum Method {
     PathIsBinary,
     PathValidate,
     ManifestParseInstance,
-    ManifestCompare,
     ManifestDiff,
     GithubUploadUpdate,
     GithubDownloadManifest,
@@ -47,7 +46,6 @@ impl Method {
             Self::PathIsBinary => "path.is_binary",
             Self::PathValidate => "path.validate",
             Self::ManifestParseInstance => "manifest.parse_instance",
-            Self::ManifestCompare => "manifest.compare",
             Self::ManifestDiff => "manifest.diff",
             Self::GithubUploadUpdate => "github.upload_update",
             Self::GithubDownloadManifest => "github.download_manifest",
@@ -67,7 +65,6 @@ impl Method {
             "path.is_binary" => Self::PathIsBinary,
             "path.validate" => Self::PathValidate,
             "manifest.parse_instance" => Self::ManifestParseInstance,
-            "manifest.compare" => Self::ManifestCompare,
             "manifest.diff" => Self::ManifestDiff,
             "github.upload_update" => Self::GithubUploadUpdate,
             "github.download_manifest" => Self::GithubDownloadManifest,
@@ -90,7 +87,6 @@ impl Method {
             | Self::PathIsBinary
             | Self::PathValidate
             | Self::ManifestParseInstance
-            | Self::ManifestCompare
             | Self::ManifestDiff
             | Self::LibraryScan => Duration::from_secs(120),
             // Bounded by ICON_BATCH_FETCH_BUDGET on the sidecar side, so this
@@ -130,7 +126,6 @@ impl Method {
             | Self::PathIsBinary
             | Self::PathValidate
             | Self::ManifestParseInstance
-            | Self::ManifestCompare
             | Self::ManifestDiff
             | Self::LibraryScan
             | Self::LibraryCacheIcons => false,
@@ -155,7 +150,7 @@ impl Method {
     }
 
     /// Every method, for tests that assert the wire mapping is a bijection.
-    pub const ALL: [Method; 15] = [
+    pub const ALL: [Method; 14] = [
         Self::Ping,
         Self::FileRead,
         Self::FileWrite,
@@ -163,7 +158,6 @@ impl Method {
         Self::PathIsBinary,
         Self::PathValidate,
         Self::ManifestParseInstance,
-        Self::ManifestCompare,
         Self::ManifestDiff,
         Self::GithubUploadUpdate,
         Self::GithubDownloadManifest,

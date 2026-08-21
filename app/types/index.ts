@@ -46,15 +46,6 @@ export type Manifest = Omit<WireManifest, 'mods' | 'resourcepacks' | 'shaderpack
  */
 export type TauriOutcome<T> = { ok: true, value: T } | { ok: false, message: string }
 
-export interface ManifestUpdateInfo
-{
-	uuid: string
-	timestamp: string
-	addedAddons: Addon[]
-	removedAddons: string[]
-	updatedAddonIds: number[]
-}
-
 /**
  * One of CurseForge's instance groups.
  *

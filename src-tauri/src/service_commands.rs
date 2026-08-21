@@ -3,7 +3,7 @@ use tauri::State;
 
 use crate::composables::instances::{CachedIcon, PackLibrary};
 use crate::composables::manifest::ConfigFileWithContent;
-use crate::composables::manifest::{Manifest, UpdateInfo};
+use crate::composables::manifest::Manifest;
 use crate::installer::{InstallOptions, UpdateDiff};
 use crate::service::protocol::Method;
 use crate::service::ServiceClient;
@@ -90,17 +90,6 @@ pub async fn get_update_diff(
 ) -> Result<UpdateDiff, String> {
     service
         .call_typed(Method::ManifestDiff, json!({ "old": old, "new": new }))
-        .await
-}
-
-#[tauri::command]
-pub async fn compare_manifests(
-    service: State<'_, ServiceClient>,
-    old: Manifest,
-    new: Manifest,
-) -> Result<UpdateInfo, String> {
-    service
-        .call_typed(Method::ManifestCompare, json!({ "old": old, "new": new }))
         .await
 }
 

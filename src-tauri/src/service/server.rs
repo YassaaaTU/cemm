@@ -83,12 +83,6 @@ async fn dispatch(
                 params.path,
             ))
         }
-        Method::ManifestCompare => {
-            let params: CompareManifestParams = decode_params(request)?;
-            encode_result(crate::composables::manifest::compare_manifests(
-                params.old, params.new,
-            ))
-        }
         Method::ManifestDiff => {
             let params: DiffManifestParams = decode_params(request)?;
             encode_result(crate::installer::update_diff(
@@ -235,12 +229,6 @@ struct DiffManifestParams {
     /// Absent on a first install, where every enabled addon is new.
     #[serde(default)]
     old: Option<crate::composables::manifest::Manifest>,
-    new: crate::composables::manifest::Manifest,
-}
-
-#[derive(Deserialize)]
-struct CompareManifestParams {
-    old: crate::composables::manifest::Manifest,
     new: crate::composables::manifest::Manifest,
 }
 

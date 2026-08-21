@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 
-import type { Manifest, ManifestUpdateInfo } from '~/types'
+import type { Manifest } from '~/types'
 import { isSameInstance } from '~/utils/instancePath'
 
 /**
@@ -20,7 +20,6 @@ export const useManifestStore = defineStore('manifest', () =>
 {
 	const manifest = ref<Manifest | null>(null)
 	const previousManifest = ref<Manifest | null>(null)
-	const updateInfo = ref<ManifestUpdateInfo | null>(null)
 	const excludedAddons = ref<string[]>([])
 
 	/**
@@ -82,11 +81,6 @@ export const useManifestStore = defineStore('manifest', () =>
 		previousManifest.value = prev
 	}
 
-	function setUpdateInfo(info: ManifestUpdateInfo | null)
-	{
-		updateInfo.value = info
-	}
-
 	function toggleExclusion(addonName: string)
 	{
 		const idx = excludedAddons.value.indexOf(addonName)
@@ -126,7 +120,6 @@ export const useManifestStore = defineStore('manifest', () =>
 	{
 		manifest.value = null
 		previousManifest.value = null
-		updateInfo.value = null
 		excludedAddons.value = []
 		sourcePath.value = ''
 		updateCode.value = ''
@@ -135,7 +128,6 @@ export const useManifestStore = defineStore('manifest', () =>
 	return {
 		manifest,
 		previousManifest,
-		updateInfo,
 		excludedAddons,
 		sourcePath,
 		updateCode,
@@ -143,7 +135,6 @@ export const useManifestStore = defineStore('manifest', () =>
 		setManifest,
 		loadInstalledManifest,
 		setPreviousManifest,
-		setUpdateInfo,
 		toggleExclusion,
 		isExcluded,
 		clearExclusions,

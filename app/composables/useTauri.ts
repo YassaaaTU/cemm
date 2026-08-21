@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { CachedIcon, ConfigFileWithContent, Manifest, ManifestUpdateInfo, PackLibrary, TauriOutcome, UpdateDiff } from '~/types'
+import type { CachedIcon, ConfigFileWithContent, Manifest, PackLibrary, TauriOutcome, UpdateDiff } from '~/types'
 import { getErrorMessage } from '~/utils/errorHandler'
 
 export const useTauri = () =>
@@ -128,19 +128,6 @@ export const useTauri = () =>
 		{
 			logger.error({ path, error }, '[useTauri] parseMinecraftInstance failed')
 			return { ok: false, message: getErrorMessage(error) }
-		}
-	}
-
-	const compareManifests = async (oldManifest: Manifest, newManifest: Manifest): Promise<ManifestUpdateInfo | null> =>
-	{
-		try
-		{
-			return await invoke<ManifestUpdateInfo>('compare_manifests', { old: oldManifest, new: newManifest })
-		}
-		catch (error)
-		{
-			logger.error({ error }, '[useTauri] compareManifests failed')
-			return null
 		}
 	}
 
@@ -346,7 +333,6 @@ export const useTauri = () =>
 		writeFile,
 		isBinaryFile,
 		parseMinecraftInstance,
-		compareManifests,
 		getUpdateDiff,
 		openCurseforgeUrl,
 		openUrl,

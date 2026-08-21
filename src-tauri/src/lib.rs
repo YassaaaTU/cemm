@@ -29,8 +29,7 @@ mod composables {
 pub use composables::github::{download_config_files, download_manifest};
 pub use composables::instances::{CachedIcon, PackGroup, PackLibrary, PackSummary};
 pub use composables::manifest::{
-    compare_manifests, open_curseforge_url, open_url, parse_minecraft_instance, Addon, Manifest,
-    UpdateInfo,
+    open_curseforge_url, open_url, parse_minecraft_instance, Addon, Manifest,
 };
 mod installer;
 pub use installer::InstallOptions;
@@ -49,7 +48,6 @@ pub fn run() {
             service_commands::read_file,
             service_commands::write_file,
             service_commands::parse_minecraft_instance,
-            service_commands::compare_manifests,
             service_commands::get_update_diff,
             open_curseforge_url,
             open_url,
