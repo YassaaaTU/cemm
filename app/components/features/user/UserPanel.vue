@@ -464,6 +464,24 @@ const previousById = computed(() =>
 	return map
 })
 
+/**
+ * Project pages for addons the update removes. Keyed by name because that is
+ * all `diff.removed_addons` carries; a name collision would at worst link to
+ * the wrong project page, which is why the deletion itself is keyed on project
+ * ID instead.
+ */
+const previousUrlByName = computed(() =>
+{
+	const map = new Map<string, string>()
+	const previous = previousManifest.value
+	if (previous === null) return map
+	for (const addon of [...previous.mods, ...previous.resourcepacks, ...previous.shaderpacks, ...previous.datapacks])
+	{
+		if (addon.webSiteURL != null && addon.webSiteURL.length > 0) map.set(addon.addon_name, addon.webSiteURL)
+	}
+	return map
+})
+
 const addedRows = computed<AddonRow[]>(() =>
 	(previewData.value?.diff.new_addons ?? []).map((name) =>
 	{
@@ -476,7 +494,8 @@ const addedRows = computed<AddonRow[]>(() =>
 			versionNote: 'new install',
 			tone: 'new' as const,
 			label: 'New',
-			thumbnailUrl: addon?.thumbnailUrl
+			thumbnailUrl: addon?.thumbnailUrl,
+			projectUrl: addon?.webSiteURL ?? undefined
 		}
 	})
 )
@@ -497,7 +516,8 @@ const updatedRows = computed<AddonRow[]>(() =>
 			// on screen as the record of the install, so a row still saying
 			// "Update" is describing something that is already done.
 			label: updateApplied.value ? 'Updated' : 'Update',
-			thumbnailUrl: addon?.thumbnailUrl
+			thumbnailUrl: addon?.thumbnailUrl,
+			projectUrl: addon?.webSiteURL ?? undefined
 		}
 	})
 )
@@ -511,7 +531,12 @@ const removedRows = computed<AddonRow[]>(() =>
 		versionNote: 'removed from disk',
 		tone: 'removed' as const,
 		label: updateApplied.value ? 'Deleted' : 'Delete',
-		struck: true
+		struck: true,
+		// Resolved against the manifest being replaced, since a removed addon is
+		// by definition absent from the incoming one. This is the row where
+		// "what is this thing?" is most worth answering: it lists what the
+		// install is about to take off disk.
+		projectUrl: previousUrlByName.value.get(name)
 	}))
 )
 
@@ -533,7 +558,8 @@ const unchangedRows = computed<AddonRow[]>(() =>
 			versionNote: 'unchanged',
 			tone: 'unchanged' as const,
 			label: 'Same',
-			thumbnailUrl: addon.thumbnailUrl
+			thumbnailUrl: addon.thumbnailUrl,
+			projectUrl: addon.webSiteURL ?? undefined
 		}))
 })
 

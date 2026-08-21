@@ -156,18 +156,6 @@ export const useTauri = () =>
 		}
 	}
 
-	const openCurseforgeUrl = async (addonName: string): Promise<void> =>
-	{
-		try
-		{
-			await invoke('open_curseforge_url', { addonName })
-		}
-		catch (error)
-		{
-			logger.error({ addonName, error }, '[useTauri] openCurseforgeUrl failed')
-		}
-	}
-
 	const openUrl = async (url: string): Promise<void> =>
 	{
 		try
@@ -334,7 +322,6 @@ export const useTauri = () =>
 		isBinaryFile,
 		parseMinecraftInstance,
 		getUpdateDiff,
-		openCurseforgeUrl,
 		openUrl,
 		installUpdate,
 		uploadUpdate,

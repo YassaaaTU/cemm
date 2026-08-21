@@ -117,7 +117,34 @@
               :src="row.thumbnailUrl ?? ''"
             />
             <span class="min-w-0">
+              <!--
+                The project name is the link, the way it is in every launcher
+                that lists mods. A separate icon button in the actions column
+                would have cost a column in the densest table in the app, and
+                the actions column does not exist at all in the review variant
+                the player reads.
+              -->
+              <button
+                v-if="row.projectUrl !== undefined"
+                type="button"
+                class="group flex w-full min-w-0 cursor-pointer items-center gap-1 text-left"
+                :title="`Open ${row.name} on CurseForge`"
+                @click="openProjectPage(row)"
+              >
+                <span
+                  class="truncate text-[0.9375rem] font-medium underline decoration-base-content/25 decoration-dotted underline-offset-3 transition-colors duration-150 ease-(--ease-standard) group-hover:decoration-base-content/70 group-focus-visible:decoration-base-content/70"
+                  :class="row.struck === true ? 'text-base-content/60 line-through decoration-error' : ''"
+                >{{ row.name }}</span>
+                <Icon
+                  name="mdi:open-in-new"
+                  size="0.75rem"
+                  class="shrink-0 text-base-content/0 transition-colors duration-150 ease-(--ease-standard) group-hover:text-base-content/50 group-focus-visible:text-base-content/50"
+                  aria-hidden="true"
+                />
+                <span class="sr-only">Open on CurseForge</span>
+              </button>
               <span
+                v-else
                 class="block truncate text-[0.9375rem] font-medium"
                 :class="row.struck === true ? 'text-base-content/60 line-through decoration-error' : ''"
                 :title="row.name"
@@ -188,6 +215,16 @@ export interface AddonRow
 	/** Whole row de-emphasised. */
 	dimmed?: boolean
 	thumbnailUrl?: string
+	/**
+	 * The addon's CurseForge project page, from the manifest's `webSiteURL`.
+	 *
+	 * Absent when the manifest carries no URL for that addon, and the name then
+	 * renders as plain text: a link that 404s is worse than no link. Never
+	 * constructed here — CurseForge slugs do not follow display names, and the
+	 * category segment differs per addon type, so a guessed URL is wrong often
+	 * enough to be useless.
+	 */
+	projectUrl?: string
 }
 
 const props = withDefaults(
@@ -217,6 +254,21 @@ const props = withDefaults(
 		fill: false
 	}
 )
+
+const { openUrl } = useTauri()
+
+/**
+ * Whether the URL is one CEMM will actually open is decided in Rust, by the
+ * allowlist behind `open_url` — the manifest is parsed input, so that check is
+ * a security boundary rather than a formatting nicety, and repeating it here
+ * would be a second copy to drift from. A refused URL logs and does nothing,
+ * which is the right outcome for a manifest that has been tampered with.
+ */
+const openProjectPage = (row: AddonRow) =>
+{
+	if (row.projectUrl === undefined) return
+	void openUrl(row.projectUrl)
+}
 
 const search = ref('')
 

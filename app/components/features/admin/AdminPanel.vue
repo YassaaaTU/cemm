@@ -419,7 +419,8 @@ const toRows = (addons: Addon[]): AddonRow[] =>
 			label: excluded ? (addon.disabled === true ? 'Disabled' : 'Excluded') : 'Ships',
 			struck: excluded,
 			dimmed: excluded,
-			thumbnailUrl: addon.thumbnailUrl
+			thumbnailUrl: addon.thumbnailUrl,
+			projectUrl: addon.webSiteURL ?? undefined
 		}
 	})
 

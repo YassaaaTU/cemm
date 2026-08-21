@@ -87,3 +87,40 @@ describe('getUpdateDiff', () =>
 		expect(logger.error).toHaveBeenCalled()
 	})
 })
+
+/**
+ * The addon table hands this whatever `webSiteURL` the manifest carried, and
+ * deliberately does not vet it first — the allowlist behind `open_url` is a
+ * security boundary over parsed input, and a second copy in TypeScript would
+ * be one to drift from. What is worth pinning here is that the value is passed
+ * through untouched, and that a refusal stays a refusal rather than becoming a
+ * silent success the caller might retry.
+ */
+describe('openUrl', () =>
+{
+	beforeEach(() =>
+	{
+		invoke.mockReset()
+		logger.error.mockReset()
+	})
+
+	it('passes the project URL to the backend unmodified', async () =>
+	{
+		invoke.mockResolvedValue(null)
+
+		await useTauri().openUrl('https://www.curseforge.com/minecraft/texture-packs/faithful-32x')
+
+		expect(invoke).toHaveBeenCalledWith('open_url', {
+			url: 'https://www.curseforge.com/minecraft/texture-packs/faithful-32x'
+		})
+	})
+
+	it('logs and does nothing when the backend refuses the URL', async () =>
+	{
+		invoke.mockRejectedValue('Refusing to open disallowed host: evil.example.com')
+
+		await useTauri().openUrl('https://evil.example.com/')
+
+		expect(logger.error).toHaveBeenCalled()
+	})
+})

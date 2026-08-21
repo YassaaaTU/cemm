@@ -320,31 +320,6 @@ fn find_disabled_files(dir: PathBuf) -> Vec<String> {
     result
 }
 
-fn slugify_curseforge_name(name: &str) -> String {
-    // Lowercase, replace spaces/underscores with dashes, preserve brackets, remove other non-url-safe chars
-    let mut slug = name.to_lowercase();
-    // Replace underscores and whitespace with dash
-    slug = slug.replace([' ', '_'], "-");
-    // Remove all characters except alphanumeric, dash, and brackets
-    slug = slug
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '[' || *c == ']')
-        .collect();
-    // Remove multiple dashes
-    while slug.contains("--") {
-        slug = slug.replace("--", "-");
-    }
-    // Remove leading/trailing dashes
-    slug.trim_matches('-').to_string()
-}
-
-#[tauri::command]
-pub fn open_curseforge_url(addon_name: String) -> Result<(), String> {
-    let slug = slugify_curseforge_name(&addon_name);
-    let url = format!("https://www.curseforge.com/minecraft/mc-mods/{}", slug);
-    opener::open(url).map_err(|e| format!("Failed to open browser: {e}"))
-}
-
 /// Hosts a manifest-supplied `webSiteURL` is legitimately allowed to point at.
 /// CurseForge only ever issues `https://www.curseforge.com/...` (and its bare
 /// `curseforge.com` form) for this field — anything else is either a mistake or
@@ -408,6 +383,28 @@ mod tests {
             assert!(
                 validate_open_url(good).is_ok(),
                 "expected '{good}' to be accepted"
+            );
+        }
+    }
+
+    /// The values this is actually fed: `webSiteURL` straight out of
+    /// `minecraftinstance.json`, for each of the four categories the addon
+    /// table renders. The allowlist is on the host alone, so a resourcepack's
+    /// `/texture-packs/` path must pass exactly as a mod's `/mc-mods/` does --
+    /// which is the whole reason the name-slugging route that hardcoded
+    /// `/mc-mods/` was replaced by this one.
+    #[test]
+    fn open_url_accepts_real_website_urls_from_every_addon_category() {
+        for url in [
+            "https://www.curseforge.com/minecraft/mc-mods/jei",
+            "https://www.curseforge.com/minecraft/texture-packs/faithful-32x",
+            "https://www.curseforge.com/minecraft/shaders/complementary-shaders",
+            "https://www.curseforge.com/minecraft/data-packs/terralith",
+            "https://www.curseforge.com/minecraft/mc-mods/some-mod?page=files",
+        ] {
+            assert!(
+                validate_open_url(url).is_ok(),
+                "expected '{url}' to be accepted"
             );
         }
     }
