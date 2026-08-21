@@ -501,7 +501,7 @@ async function handleSaveManifest()
 	clearStatus()
 	if (manifest.value !== null)
 	{
-		await saveManifest(manifest.value, setStatus)
+		await saveManifest(manifest.value, selectedConfigFiles.value, setStatus)
 	}
 }
 

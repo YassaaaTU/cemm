@@ -2,6 +2,40 @@ import type { ConfigFileWithContent, Manifest } from '~/types'
 import { getErrorMessage } from '~/utils/errorHandler'
 import { resolveModpackKey } from '~/utils/modpackKey'
 
+function buildUpdateManifest(
+	manifest: Manifest | null,
+	configFiles: readonly ConfigFileWithContent[],
+	excludedAddons: readonly string[]
+): Manifest
+{
+	const configMetadata = configFiles.map((configFile) => ({
+		filename: configFile.filename,
+		relative_path: configFile.relative_path
+	}))
+
+	if (manifest === null)
+	{
+		return {
+			updateType: 'config',
+			mods: [],
+			resourcepacks: [],
+			shaderpacks: [],
+			datapacks: [],
+			config_files: configMetadata
+		}
+	}
+
+	const excluded = new Set(excludedAddons)
+	return {
+		updateType: 'full',
+		mods: manifest.mods.filter((addon) => !excluded.has(addon.addon_name)),
+		resourcepacks: manifest.resourcepacks.filter((addon) => !excluded.has(addon.addon_name)),
+		shaderpacks: manifest.shaderpacks.filter((addon) => !excluded.has(addon.addon_name)),
+		datapacks: manifest.datapacks.filter((addon) => !excluded.has(addon.addon_name)),
+		config_files: configMetadata
+	}
+}
+
 /**
  * Composable for admin-specific API operations.
  * Extracts business logic from AdminPanel.vue for better maintainability.
@@ -122,10 +156,11 @@ export function useAdminApi()
    */
 	async function saveManifest(
 		manifest: Manifest | null,
+		configFiles: ConfigFileWithContent[],
 		setStatus: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void
 	): Promise<boolean>
 	{
-		if (manifest == null)
+		if (manifest == null && configFiles.length === 0)
 		{
 			return false
 		}
@@ -157,7 +192,12 @@ export function useAdminApi()
 			setStatus('File already exists. Overwriting.', 'warning')
 		}
 
-		const ok = await writeFile(filePath, JSON.stringify(manifest, null, 2))
+		const updateManifest = buildUpdateManifest(
+			manifest,
+			configFiles,
+			manifestStore.excludedAddons
+		)
+		const ok = await writeFile(filePath, JSON.stringify(updateManifest, null, 2))
 		if (ok)
 		{
 			setStatus(`Manifest saved as ${filePath}.`, 'success')
@@ -318,39 +358,11 @@ export function useAdminApi()
 				return { success: false }
 			}
 
-			// Create manifest (either from existing or config-only)
-			let manifestWithConfig: Manifest
-			if (manifest !== null)
-			{
-				// Filter out excluded addons
-				const excludedSet = manifestStore.excludedAddons
-				manifestWithConfig = {
-					updateType: 'full',
-					mods: manifest.mods.filter((m) => !excludedSet.includes(m.addon_name)),
-					resourcepacks: manifest.resourcepacks.filter((r) => !excludedSet.includes(r.addon_name)),
-					shaderpacks: manifest.shaderpacks.filter((s) => !excludedSet.includes(s.addon_name)),
-					datapacks: manifest.datapacks.filter((d) => !excludedSet.includes(d.addon_name)),
-					config_files: configFiles.map((cf) => ({
-						filename: cf.filename,
-						relative_path: cf.relative_path
-					}))
-				}
-			}
-			else
-			{
-				// Config-only manifest
-				manifestWithConfig = {
-					updateType: 'config',
-					mods: [],
-					resourcepacks: [],
-					shaderpacks: [],
-					datapacks: [],
-					config_files: configFiles.map((cf) => ({
-						filename: cf.filename,
-						relative_path: cf.relative_path
-					}))
-				}
-			}
+			const updateManifest = buildUpdateManifest(
+				manifest,
+				configFiles,
+				manifestStore.excludedAddons
+			)
 
 			const updateReference = `${modpackKey}/${uuid}`
 
@@ -364,7 +376,7 @@ export function useAdminApi()
 				token,
 				uuid,
 				modpackKey,
-				manifest: manifestWithConfig,
+				manifest: updateManifest,
 				configFiles,
 				onProgress: (p, msg) =>
 				{
