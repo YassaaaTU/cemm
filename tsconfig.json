@@ -3,7 +3,8 @@
 	"compilerOptions": {
 		"target": "ESNext",
 		"module": "ESNext",
-		"strict": true
+		"strict": true,
+		"types": ["bun"]
 	},
 	"include": [
 		".nuxt/nuxt.d.ts",

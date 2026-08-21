@@ -1,12 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, mock } from 'bun:test'
 
 import type { Manifest, UpdateDiff } from '~/types'
 
-const invoke = vi.hoisted(() => vi.fn())
-vi.mock('@tauri-apps/api/core', () => ({ invoke }))
+const invoke = mock(() => Promise.resolve<unknown>(null))
+mock.module('@tauri-apps/api/core', () => ({ invoke }))
 
-const logger = { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() }
-vi.stubGlobal('useNuxtApp', () => ({ $logger: logger }))
+/** Silences the composable's own logging while letting a test assert on it. */
+const noop = (): void =>
+{
+	// Nothing to do; the mock only records that it was called.
+}
+
+const logger = { error: mock(noop), info: mock(noop), warn: mock(noop), debug: mock(noop) }
+Object.assign(globalThis, { useNuxtApp: () => ({ $logger: logger }) })
 
 const { useTauri } = await import('~/composables/useTauri')
 

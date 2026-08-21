@@ -1,13 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, mock } from 'bun:test'
 
 import type { InstallProgressPayload } from '~/composables/useInstallProgress'
 
-const listen = vi.hoisted(() => vi.fn())
-vi.mock('@tauri-apps/api/event', () => ({ listen }))
+type Handler = (event: { payload?: InstallProgressPayload }) => void
+
+const noop = (): void =>
+{
+	// Stand-in unlisten for the default mock; tests that assert on teardown
+	// install their own through captureHandler.
+}
+
+const listen = mock((_name: string, _handler: Handler) => Promise.resolve(noop))
+mock.module('@tauri-apps/api/event', () => ({ listen }))
 
 const { useInstallProgress } = await import('~/composables/useInstallProgress')
-
-type Handler = (event: { payload?: InstallProgressPayload }) => void
 
 const ignoreProgress = (): void =>
 {
@@ -15,8 +21,9 @@ const ignoreProgress = (): void =>
 }
 
 /** Captures the handler Tauri would call, so a test can emit events itself. */
-const captureHandler = (unlisten = vi.fn()) =>
+const captureHandler = () =>
 {
+	const unlisten = mock(noop)
 	let handler: Handler = ignoreProgress
 
 	listen.mockImplementation((_name: string, given: Handler) =>
@@ -86,7 +93,7 @@ describe('useInstallProgress', () =>
 
 		await useInstallProgress().trackOperation(ignoreProgress, async () => true)
 
-		expect(unlisten).toHaveBeenCalledOnce()
+		expect(unlisten).toHaveBeenCalledTimes(1)
 	})
 
 	it('unsubscribes when the operation throws', async () =>
@@ -101,7 +108,7 @@ describe('useInstallProgress', () =>
 			useInstallProgress().trackOperation(ignoreProgress, failingInstall)
 		).rejects.toThrow('install failed')
 
-		expect(unlisten).toHaveBeenCalledOnce()
+		expect(unlisten).toHaveBeenCalledTimes(1)
 	})
 
 	it('gives each operation its own id', async () =>
