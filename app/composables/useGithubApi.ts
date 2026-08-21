@@ -2,26 +2,14 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 import type { ConfigFileWithContent, Manifest } from '~/types'
 
-import { useCache } from './useCache'
-
 export interface GithubProgress
 {
 	progress: number // 0-100
 	message?: string
 }
 
-interface CachedGitHubData
-{
-	manifest: Manifest
-	configFiles: ConfigFileWithContent[]
-	uploadedAt?: number
-	downloadedAt?: number
-}
-
 export const useGithubApi = () =>
 {
-	// Bump namespace when download path logic changes so in-memory cache cannot mask fixes after app update.
-	const cache = useCache<CachedGitHubData>('github-v2', 600000) // 10 minutes
 	const { $logger: logger } = useNuxtApp()
 	const {
 		uploadUpdate: invokeUploadUpdate,
@@ -66,14 +54,6 @@ export const useGithubApi = () =>
 				modpackKey: opts.modpackKey,
 				manifest: opts.manifest,
 				configFiles: opts.configFiles
-			})
-
-			// Cache the uploaded manifest for potential re-use
-			const cacheKey = `${opts.repo}-${opts.modpackKey ?? 'legacy'}-${opts.uuid}`
-			cache.set(cacheKey, {
-				manifest: opts.manifest,
-				configFiles: opts.configFiles,
-				uploadedAt: Date.now()
 			})
 
 			const duration = performance.now() - startTime
