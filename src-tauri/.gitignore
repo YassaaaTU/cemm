@@ -2,3 +2,8 @@
 # will have compiled files and executables
 /target/
 /gen/schemas
+
+# ts-rs falls back to this when TS_RS_EXPORT_DIR is unset -- which happens
+# whenever cargo runs from outside src-tauri. The bindings that count live in
+# app/types/generated; anything landing here is a stray from a misinvoked run.
+/bindings/

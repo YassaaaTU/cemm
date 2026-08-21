@@ -1,5 +1,10 @@
-# ts-rs writes app/types/generated/*.ts from the structs deriving TS. Set here
-# rather than in a script so a plain `cargo test` also refreshes the bindings
-# instead of dropping a stray src-tauri/bindings/ directory.
+# ts-rs writes app/types/generated/*.ts from the structs deriving TS.
+#
+# Cargo reads this file based on the *working directory*, not on --manifest-path,
+# so it only applies to a cargo invoked from inside src-tauri (which is what
+# `bun run types:generate` and CI both do). A run started from the repo root
+# does not see it, leaves TS_RS_EXPORT_DIR unset, and drops the bindings in
+# src-tauri/bindings/ instead -- gitignored, so a stray run cannot be mistaken
+# for the real thing.
 [env]
 TS_RS_EXPORT_DIR = { value = "../app/types", relative = true }

@@ -55,8 +55,16 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 
+      # Run from inside src-tauri, not with --manifest-path from the repo root.
+      # Cargo discovers .cargo/config.toml from the *working directory's*
+      # ancestry, so a root-invoked run never sees src-tauri/.cargo/config.toml,
+      # never picks up TS_RS_EXPORT_DIR, and exports the bindings to
+      # src-tauri/bindings/ instead of app/types/generated -- which left the
+      # drift check below diffing a directory nothing had written to, unable to
+      # fail no matter how far the two sides drifted.
       - name: cargo test
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        working-directory: src-tauri
+        run: cargo test
 
       # cargo test regenerates app/types/generated from the Rust structs. If it
       # produced a diff, a type changed on one side only -- which is exactly the
