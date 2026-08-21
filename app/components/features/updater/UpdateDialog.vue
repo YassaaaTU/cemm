@@ -6,6 +6,7 @@
     ref="dialogRef"
     class="modal modal-bottom sm:modal-middle"
     aria-labelledby="update-dialog-title"
+    @cancel="handleCancel"
     @close="handleNativeClose"
   >
     <div class="modal-box max-w-md border border-base-300 bg-base-200 p-0">
@@ -145,7 +146,9 @@
     </div>
 
     <!-- No backdrop dismissal while an install is in flight: closing the dialog
-         mid-download would hide the only progress the user can see. -->
+         mid-download would hide the only progress the user can see. Escape is
+         guarded separately, in @cancel -- removing this form stops the backdrop
+         click and nothing else. -->
     <form
       v-if="!updater.isDownloading.value && !updater.isInstalling.value"
       method="dialog"
@@ -195,6 +198,19 @@ const handleUpdateConfirm = async () =>
 			updateError.value = String(err)
 		}
 	}
+}
+
+/**
+ * Escape is the platform's own dismissal and has to obey the same rule the
+ * backdrop does. It did not: hiding the backdrop form left Escape working, so a
+ * player who pressed it mid-download saw the dialog vanish and reasonably
+ * concluded the update had been cancelled. Nothing was cancelled -- the
+ * in-flight `Update` is detached from the dialog -- and the app force-restarted
+ * into the new version when the download finished.
+ */
+const handleCancel = (event: Event) =>
+{
+	if (updater.isDownloading.value || updater.isInstalling.value) event.preventDefault()
 }
 
 const handleLater = () =>
