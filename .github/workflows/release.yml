@@ -4,14 +4,15 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
+      # No defaults: nothing substitutes a placeholder here, so a default is
+      # only ever a literal. `cemm-v__VERSION__` was one, and dispatching with
+      # the form untouched published a release tagged exactly that.
       tag_name:
-        description: 'Git tag for the release'
+        description: 'Git tag for the release, e.g. cemm-v2.0.0'
         required: true
-        default: 'cemm-v__VERSION__'
       release_name:
-        description: 'Release title'
+        description: 'Release title, e.g. CEMM v2.0.0'
         required: true
-        default: 'CEMM v__VERSION__'
       release_body:
         description: 'Release notes'
         required: false
@@ -75,13 +76,6 @@ jobs:
         if: matrix.args == '--target aarch64-apple-darwin'
         run: rustup target add aarch64-apple-darwin
       
-      - name: Load version from .env
-        shell: bash
-        run: |
-          VERSION=$(grep '^VERSION=' .env | cut -d '=' -f2)
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Loaded VERSION: $VERSION"
-
       - uses: tauri-apps/tauri-action@v0.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
