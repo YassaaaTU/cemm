@@ -1,4 +1,6 @@
-use crate::composables::manifest::Manifest;
+use crate::composables::manifest::{
+    ConfigFileWithContent as ConfigFile, Manifest, BINARY_CONTENT_PREFIX,
+};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -257,21 +259,6 @@ fn validate_all_addons(manifest: &Manifest) -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-/// Configuration file with content for installation operations.
-///
-/// This struct is mirrored in multiple locations across the codebase:
-/// - Rust: src-tauri/src/installer.rs (this file)
-/// - Rust: src-tauri/src/composables/github.rs (ConfigFileWithContent struct)
-/// - TypeScript: app/types/index.ts (ConfigFile and ConfigFileWithContent interfaces)
-///
-/// When modifying this struct, ensure all definitions remain consistent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConfigFile {
-    pub filename: String,
-    pub relative_path: String,
-    pub content: String,
 }
 
 /// Options for install_update function. Only ever deserialized (received from
@@ -680,13 +667,10 @@ pub async fn install_update_with_progress(
             ));
         }
         let dest = validate_path_within_base(&modpack_path_buf, &config.relative_path)?;
-        let bytes = if config
-            .content
-            .starts_with("data:application/octet-stream;base64,")
-        {
+        let bytes = if config.content.starts_with(BINARY_CONTENT_PREFIX) {
             let base64_content = config
                 .content
-                .strip_prefix("data:application/octet-stream;base64,")
+                .strip_prefix(BINARY_CONTENT_PREFIX)
                 .unwrap_or(&config.content);
             use base64::engine::general_purpose::STANDARD;
             use base64::Engine;
@@ -882,7 +866,8 @@ pub async fn install_update_with_progress(
 /// Serialized straight to the frontend over `manifest.diff`, so the preview a
 /// user approves and the deletions `collect_old_file_paths` performs are the
 /// same values, not two computations that happen to agree.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "generated/")]
 pub struct UpdateDiff {
     /// Addons to delete from the pack. Drives `collect_old_file_paths`.
     pub removed_addons: Vec<String>,
@@ -890,6 +875,7 @@ pub struct UpdateDiff {
     /// `collect_old_file_paths`, which removes both `X.jar` and
     /// `X.jar.disabled` — so an addon disabled in the old manifest still
     /// belongs here when its version changed, and is deliberately not filtered.
+    #[ts(type = "number[]")]
     pub updated_addon_ids: Vec<u64>,
     /// Display only; nothing in the installer reads it. Disabled addons are
     /// excluded because an addon that arrives disabled is not being added to
@@ -1676,6 +1662,7 @@ mod tests {
                 filename: "settings.toml".to_string(),
                 relative_path: "config/settings.toml".to_string(),
                 content: "enabled = true".to_string(),
+                is_binary: None,
             }],
             None,
             progress,
@@ -1727,7 +1714,8 @@ mod tests {
             vec![ConfigFile {
                 filename: "broken.bin".to_string(),
                 relative_path: "config/broken.bin".to_string(),
-                content: "data:application/octet-stream;base64,%%%invalid%%%".to_string(),
+                content: format!("{BINARY_CONTENT_PREFIX}%%%invalid%%%"),
+                is_binary: None,
             }],
             Some(InstallOptions {
                 old_manifest: Some(old_manifest),
@@ -1914,6 +1902,7 @@ mod tests {
                     filename: "reserved".to_string(),
                     relative_path: relative_path.to_string(),
                     content: "blocked".to_string(),
+                    is_binary: None,
                 }],
                 None,
                 Arc::new(|_| {}),

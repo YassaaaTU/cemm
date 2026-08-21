@@ -98,7 +98,9 @@ export default withNuxt(
 	},
 	// Ignore patterns
 	{
-		ignores: ['.nuxt/**', 'node_modules/**', '.output/**', 'src-tauri/target/**', 'dist/**']
+		// app/types/generated is written by ts-rs from the Rust structs; its
+		// formatting is the generator's business, not this config's.
+		ignores: ['.nuxt/**', 'node_modules/**', '.output/**', 'src-tauri/target/**', 'dist/**', 'app/types/generated/**']
 	}
 ).override('nuxt/typescript/rules', {
 	files: ['**/*.ts', '**/*.tsx', '**/*.vue'],

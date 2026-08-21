@@ -30,6 +30,7 @@
 		"cargo:clean": "cd src-tauri; cargo clean",
 		"cargo:check": "cd src-tauri; cargo check",
 		"cargo:fix": "cd src-tauri; cargo fix",
+		"types:generate": "cd src-tauri && cargo test export_bindings",
 		"bump": "bunx bumpp --all --config bump.config.ts"
 	},
 	"dependencies": {

@@ -1,10 +1,10 @@
 use serde_json::json;
 use tauri::State;
 
-use crate::composables::github::ConfigFileWithContent;
 use crate::composables::instances::{CachedIcon, PackLibrary};
+use crate::composables::manifest::ConfigFileWithContent;
 use crate::composables::manifest::{Manifest, UpdateInfo};
-use crate::installer::{ConfigFile as InstallerConfigFile, InstallOptions, UpdateDiff};
+use crate::installer::{InstallOptions, UpdateDiff};
 use crate::service::protocol::Method;
 use crate::service::ServiceClient;
 
@@ -200,7 +200,7 @@ pub async fn install_update(
     operation_id: String,
     modpack_path: String,
     manifest: Manifest,
-    config_files: Vec<InstallerConfigFile>,
+    config_files: Vec<ConfigFileWithContent>,
     options: Option<InstallOptions>,
 ) -> Result<(), String> {
     service

@@ -1,58 +1,38 @@
-export interface Addon
+import type { Addon as WireAddon } from './generated/Addon'
+import type { Manifest as WireManifest } from './generated/Manifest'
+
+export type { ConfigFile } from './generated/ConfigFile'
+export type { ConfigFileWithContent } from './generated/ConfigFileWithContent'
+export type { UpdateDiff } from './generated/UpdateDiff'
+
+/**
+ * Everything under `./generated` is written from the Rust structs by ts-rs
+ * (`bun run types:generate`) and checked in CI, so these shapes cannot drift
+ * from the backend the way the hand-maintained copies did. Edit the Rust
+ * definition, not the generated file.
+ *
+ * Only two types are restated here, and only to add fields that exist purely in
+ * the UI and are never sent to Rust.
+ */
+
+/** The wire shape, plus the artwork the UI attaches after a manifest loads. */
+export interface Addon extends WireAddon
 {
-	addon_file_id: number
-	addon_name: string
-	addon_project_id: number
-	cdn_download_url: string
-	mod_folder_path: string
-	version: string
-	thumbnailUrl?: string // optional, for UI only
-	webSiteURL?: string // optional, CurseForge or homepage URL (always preserved)
-	disabled?: boolean // optional, true if .disabled file detected
-	fileNameOnDisk: string // exact filename on disk for reliable removal
+	/** UI only — resolved client-side, dropped when the addon goes back to Rust. */
+	thumbnailUrl?: string
 }
 
 /**
- * Configuration file metadata without content.
+ * The wire shape over the UI-extended Addon.
  *
- * This type is mirrored in multiple locations across the codebase:
- * - TypeScript: app/types/index.ts (this file)
- * - Rust: src-tauri/src/installer.rs (ConfigFile struct with content)
- * - Rust: src-tauri/src/composables/github.rs (ConfigFileWithContent struct)
- *
- * When modifying this type, ensure all definitions remain consistent.
+ * Written as an Omit so it still inherits any field Rust adds, and so renaming
+ * a category in Rust breaks this line rather than silently going unnoticed.
  */
-export interface ConfigFile
-{
-	filename: string
-	relative_path: string
-}
-
-/**
- * Configuration file with content for upload/download operations.
- *
- * Extends ConfigFile with file content and binary flag.
- *
- * This type is mirrored in:
- * - TypeScript: app/types/index.ts (this file)
- * - Rust: src-tauri/src/composables/github.rs (ConfigFileWithContent struct)
- *
- * When modifying this type, ensure all definitions remain consistent.
- */
-export interface ConfigFileWithContent extends ConfigFile
-{
-	content: string
-	is_binary?: boolean // true if this is a binary file (content will be base64 data URI)
-}
-
-export interface Manifest
-{
-	updateType?: 'full' | 'config' // 'full' = addons + config, 'config' = config only
+export type Manifest = Omit<WireManifest, 'mods' | 'resourcepacks' | 'shaderpacks' | 'datapacks'> & {
 	mods: Addon[]
 	resourcepacks: Addon[]
 	shaderpacks: Addon[]
 	datapacks: Addon[]
-	config_files: ConfigFile[]
 }
 
 export interface ManifestUpdateInfo
@@ -62,22 +42,6 @@ export interface ManifestUpdateInfo
 	addedAddons: Addon[]
 	removedAddons: string[]
 	updatedAddonIds: number[]
-}
-
-/**
- * Represents the difference between two manifest versions during an update.
- *
- * This type is mirrored in:
- * - TypeScript: app/types/index.ts (this file)
- * - Rust: src-tauri/src/installer.rs (UpdateDiff struct)
- *
- * When modifying this type, ensure all definitions remain consistent.
- */
-export interface UpdateDiff
-{
-	removed_addons: string[] // addon names to remove
-	updated_addon_ids: number[] // project IDs of addons that were updated (matched by project_id for reliability)
-	new_addons: string[] // completely new addon names
 }
 
 /**

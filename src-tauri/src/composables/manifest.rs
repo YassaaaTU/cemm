@@ -2,35 +2,82 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use ts_rs::TS;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "generated/")]
 pub struct Addon {
+    #[ts(type = "number")]
     pub addon_file_id: u64,
     pub addon_name: String,
+    #[ts(type = "number")]
     pub addon_project_id: u64,
     pub cdn_download_url: String,
     pub mod_folder_path: String,
     pub version: String,
     #[serde(rename = "webSiteURL")]
+    #[ts(optional = nullable)]
     pub web_site_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub disabled: Option<bool>,
     #[serde(rename = "fileNameOnDisk")]
     pub file_name_on_disk: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "generated/")]
 pub struct ConfigFile {
     pub filename: String,
     pub relative_path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Marks config content that is bytes rather than text.
+///
+/// A config file's content is one JSON string either way, so binary payloads
+/// travel base64-encoded behind this prefix. Declared once because the encoder,
+/// every decoder and the tests all have to agree on it character for character;
+/// it used to be written out as a literal in six places across two modules.
+pub const BINARY_CONTENT_PREFIX: &str = "data:application/octet-stream;base64,";
+
+/// A config file carrying its contents, for upload, download and installation.
+///
+/// `ConfigFile` above is the manifest's own record of which config files an
+/// update covers, and deliberately holds no content. This type is what moves
+/// over the wire; the two used to have a third sibling in `installer.rs` that
+/// was identical except for a missing `is_binary`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "generated/")]
+pub struct ConfigFileWithContent {
+    pub filename: String,
+    pub relative_path: String,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub is_binary: Option<bool>,
+}
+
+impl ConfigFileWithContent {
+    /// Whether `content` holds base64-encoded bytes rather than text.
+    ///
+    /// Reads the payload rather than trusting the `is_binary` flag: the flag is
+    /// set by the admin side at capture time and is absent on anything a
+    /// download produced, whereas the prefix is always present when it matters.
+    pub fn has_binary_content(&self) -> bool {
+        self.content.starts_with(BINARY_CONTENT_PREFIX)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "generated/")]
 pub struct Manifest {
     #[serde(rename = "updateType")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub update_type: Option<String>, // "full" or "config"
+    // The discriminator install_update keys config-only behaviour to, so the
+    // generated binding narrows it rather than exposing a bare string.
+    #[ts(type = "'full' | 'config'", optional)]
+    pub update_type: Option<String>,
     pub mods: Vec<Addon>,
     pub resourcepacks: Vec<Addon>,
     pub shaderpacks: Vec<Addon>,
@@ -41,8 +88,9 @@ pub struct Manifest {
 // Not persisted or published — computed fresh per compare_manifests call and
 // consumed only by the admin preview, so renaming its serde output is safe.
 // (Unlike `Manifest`/`Addon`, which are published and must never gain rename_all.)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "generated/")]
 pub struct UpdateInfo {
     pub uuid: String,
     pub timestamp: String,
@@ -52,6 +100,7 @@ pub struct UpdateInfo {
     /// Matches `installer::UpdateDiff::updated_addon_ids`, which is what the
     /// installer actually acts on — keeping this the same shape means the
     /// admin preview and the installer agree on what "updated" means.
+    #[ts(type = "number[]")]
     pub updated_addon_ids: Vec<u64>,
 }
 

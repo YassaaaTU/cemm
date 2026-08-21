@@ -42,5 +42,10 @@ tauri-plugin-updater = "2.10.1"
 tauri-plugin-process = "2.3.1"
 url = "2.5"
 
+# Generates app/types/generated.ts from the structs below, so the TypeScript
+# view of a manifest cannot drift from the Rust one. Bindings are written by
+# `cargo test export_bindings`, which CI already runs.
+ts-rs = "12.0"
+
 [dev-dependencies]
 tempfile = "3.14"

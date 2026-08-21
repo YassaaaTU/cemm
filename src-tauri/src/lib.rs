@@ -31,7 +31,7 @@ pub use composables::manifest::{
     UpdateInfo,
 };
 mod installer;
-pub use installer::{ConfigFile as InstallerConfigFile, InstallOptions};
+pub use installer::InstallOptions;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -287,7 +287,7 @@ fn read_file(path: String) -> Result<String, String> {
                         use base64::Engine;
                         let encoded = STANDARD.encode(&bytes);
                         log::info!("read_file: successfully read binary file as base64: {path}");
-                        Ok(format!("data:application/octet-stream;base64,{}", encoded))
+                        Ok(format!("{BINARY_CONTENT_PREFIX}{encoded}"))
                     }
                     Err(read_err) => {
                         log::error!("read_file: failed to read binary file: {path}: {read_err}");
@@ -737,7 +737,7 @@ fn read_directory_recursive_with_limits(
                     use base64::engine::general_purpose::STANDARD;
                     use base64::Engine;
                     format!(
-                        "data:application/octet-stream;base64,{}",
+                        "{BINARY_CONTENT_PREFIX}{}",
                         STANDARD.encode(error.into_bytes())
                     )
                 }
@@ -753,8 +753,7 @@ fn read_directory_recursive_with_limits(
                 .ok_or_else(|| format!("Failed to get filename from path: {}", path.display()))?
                 .to_string_lossy()
                 .to_string();
-            let is_binary = content.starts_with("data:application/octet-stream;base64,")
-                || extension == "emotecraft";
+            let is_binary = content.starts_with(BINARY_CONTENT_PREFIX) || extension == "emotecraft";
 
             total_bytes += raw_bytes;
             config_files.push(ConfigFileWithContent {
@@ -889,7 +888,7 @@ fn validate_path(path: String) -> Result<serde_json::Value, String> {
     Ok(serde_json::Value::Object(result))
 }
 
-use crate::composables::github::ConfigFileWithContent;
+use crate::composables::manifest::{ConfigFileWithContent, BINARY_CONTENT_PREFIX};
 
 #[cfg(test)]
 mod tests {

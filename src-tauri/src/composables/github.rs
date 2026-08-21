@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::composables::manifest::Manifest;
+use crate::composables::manifest::{ConfigFileWithContent, Manifest, BINARY_CONTENT_PREFIX};
 
 const MAX_REMOTE_CONFIG_FILES: usize = 1_000;
 const MAX_REMOTE_CONFIG_FILE_BYTES: usize = 128 * 1024 * 1024;
@@ -100,29 +100,9 @@ fn encode_downloaded_content(bytes: Vec<u8>) -> String {
         Err(e) => {
             use base64::engine::general_purpose::STANDARD;
             use base64::Engine;
-            format!(
-                "data:application/octet-stream;base64,{}",
-                STANDARD.encode(e.into_bytes())
-            )
+            format!("{BINARY_CONTENT_PREFIX}{}", STANDARD.encode(e.into_bytes()))
         }
     }
-}
-
-/// Configuration file with content for GitHub upload/download operations.
-///
-/// This struct is mirrored in multiple locations across the codebase:
-/// - Rust: src-tauri/src/composables/github.rs (this file)
-/// - Rust: src-tauri/src/installer.rs (ConfigFile struct)
-/// - TypeScript: app/types/index.ts (ConfigFile and ConfigFileWithContent interfaces)
-///
-/// When modifying this struct, ensure all definitions remain consistent.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ConfigFileWithContent {
-    pub filename: String,
-    pub relative_path: String,
-    pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_binary: Option<bool>,
 }
 
 /// Progress event payload for upload operations
@@ -420,14 +400,11 @@ pub async fn upload_update_with_progress(
         );
 
         // Check if content is already base64-encoded (binary files)
-        let (content, encoding) = if file
-            .content
-            .starts_with("data:application/octet-stream;base64,")
-        {
+        let (content, encoding) = if file.content.starts_with(BINARY_CONTENT_PREFIX) {
             // Already base64-encoded binary content, extract the base64 part
             let base64_content = file
                 .content
-                .strip_prefix("data:application/octet-stream;base64,")
+                .strip_prefix(BINARY_CONTENT_PREFIX)
                 .unwrap_or(&file.content);
             (base64_content.to_string(), "base64")
         } else {
@@ -879,7 +856,7 @@ mod tests {
         use base64::engine::general_purpose::STANDARD;
         use base64::Engine;
 
-        match content.strip_prefix("data:application/octet-stream;base64,") {
+        match content.strip_prefix(BINARY_CONTENT_PREFIX) {
             Some(base64_content) => STANDARD.decode(base64_content).expect("valid base64"),
             None => content.as_bytes().to_vec(),
         }
@@ -889,7 +866,7 @@ mod tests {
     fn valid_utf8_bytes_are_kept_as_plain_text() {
         let content = encode_downloaded_content(b"key = \"value\"\n".to_vec());
         assert_eq!(content, "key = \"value\"\n");
-        assert!(!content.starts_with("data:application/octet-stream;base64,"));
+        assert!(!content.starts_with(BINARY_CONTENT_PREFIX));
     }
 
     #[test]
@@ -899,7 +876,7 @@ mod tests {
         let original: Vec<u8> = vec![0xFF, 0xFE, 0x00, b'r', b'e', b's', b't'];
 
         let content = encode_downloaded_content(original.clone());
-        assert!(content.starts_with("data:application/octet-stream;base64,"));
+        assert!(content.starts_with(BINARY_CONTENT_PREFIX));
 
         let round_tripped = decode_installed_content(&content);
         assert_eq!(

@@ -253,7 +253,7 @@ struct UploadUpdateParams {
     uuid: String,
     modpack_key: Option<String>,
     manifest: crate::composables::manifest::Manifest,
-    config_files: Vec<crate::composables::github::ConfigFileWithContent>,
+    config_files: Vec<crate::composables::manifest::ConfigFileWithContent>,
 }
 
 #[derive(Deserialize)]
@@ -290,7 +290,7 @@ struct InstallUpdateParams {
     operation_id: String,
     modpack_path: String,
     manifest: crate::composables::manifest::Manifest,
-    config_files: Vec<crate::installer::ConfigFile>,
+    config_files: Vec<crate::composables::manifest::ConfigFileWithContent>,
     options: Option<crate::installer::InstallOptions>,
 }
 

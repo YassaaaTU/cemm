@@ -58,6 +58,13 @@ jobs:
       - name: cargo test
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
+      # cargo test regenerates app/types/generated from the Rust structs. If it
+      # produced a diff, a type changed on one side only -- which is exactly the
+      # drift the hand-maintained "keep these in sync" comments used to invite.
+      - name: TypeScript bindings are current
+        run: |
+          git diff --exit-code -- app/types/generated             || (echo "::error::Generated types are stale. Run 'bun run types:generate' and commit the result." && exit 1)
+
   audit:
     name: dependency advisories
     runs-on: ubuntu-latest
