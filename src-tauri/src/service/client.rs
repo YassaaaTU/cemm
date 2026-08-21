@@ -28,6 +28,19 @@ struct ServiceSupervisor {
     event_sink: EventSink,
     inner: Mutex<Option<Arc<ClientInner>>>,
     shutting_down: AtomicBool,
+    /// Held for the whole of one request, so only one is ever in the pipe.
+    ///
+    /// The server reads one line, runs it to completion, then reads the next --
+    /// but the host used to write whenever it was asked and start the method's
+    /// deadline at that moment. A request issued during a publish therefore
+    /// spent its entire 120 seconds waiting its turn, expired without the child
+    /// having looked at it, and `stop()`ed the child: the publish died of a
+    /// library scan. Taking this gate before writing means a deadline measures
+    /// the child's own work, which is what it was always meant to bound.
+    gate: tokio::sync::Mutex<()>,
+    /// Set while the gate is held by a method that runs for minutes. New
+    /// callers are refused instead of queued -- see `Method::is_exclusive`.
+    exclusive: Mutex<Option<Method>>,
 }
 
 struct ClientInner {
@@ -50,12 +63,15 @@ impl ServiceClient {
             event_sink,
             inner: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
+            gate: tokio::sync::Mutex::new(()),
+            exclusive: Mutex::new(None),
         });
         supervisor.start_if_needed()?;
         Ok(Self { supervisor })
     }
 
     pub async fn call(&self, method: Method, params: Value) -> Result<Value, String> {
+        let _turn = self.supervisor.take_turn(method).await?;
         let inner = self.supervisor.start_if_needed()?;
         call_inner(&inner, method, params).await
     }
@@ -83,7 +99,63 @@ impl ServiceClient {
     }
 }
 
+/// Holds the supervisor's gate for one request and clears the exclusive marker
+/// on the way out, including on an early return or a panic.
+struct Turn<'a> {
+    supervisor: &'a ServiceSupervisor,
+    exclusive: bool,
+    _guard: tokio::sync::MutexGuard<'a, ()>,
+}
+
+impl std::fmt::Debug for Turn<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Turn")
+            .field("exclusive", &self.exclusive)
+            .finish()
+    }
+}
+
+impl Drop for Turn<'_> {
+    fn drop(&mut self) {
+        if self.exclusive {
+            if let Ok(mut current) = self.supervisor.exclusive.lock() {
+                *current = None;
+            }
+        }
+    }
+}
+
 impl ServiceSupervisor {
+    /// Wait for the pipe, or refuse if what is holding it will not be quick.
+    async fn take_turn(&self, method: Method) -> Result<Turn<'_>, String> {
+        let guard = match self.gate.try_lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                // Nothing else can be *started* while a long operation runs, so
+                // say what is running rather than making the caller wait it out.
+                if let Some(running) = self.exclusive.lock().ok().and_then(|held| *held) {
+                    return Err(running.busy_message().to_string());
+                }
+                // Short methods queue: the wait is bounded by another short
+                // method, and this request's deadline has not started yet.
+                self.gate.lock().await
+            }
+        };
+
+        let exclusive = method.is_exclusive();
+        if exclusive {
+            if let Ok(mut current) = self.exclusive.lock() {
+                *current = Some(method);
+            }
+        }
+
+        Ok(Turn {
+            supervisor: self,
+            exclusive,
+            _guard: guard,
+        })
+    }
+
     fn start_if_needed(&self) -> Result<Arc<ClientInner>, String> {
         if self.shutting_down.load(Ordering::Acquire) {
             return Err("Local CEMM service is shutting down".to_string());
@@ -270,6 +342,8 @@ async fn call_inner(
         return Err(error);
     }
 
+    // Starts here, with the gate held and this request first in the pipe, so it
+    // bounds the child's work on this request and never a wait behind another.
     match tokio::time::timeout(method.timeout(), receiver).await {
         Ok(Ok(result)) => result,
         Ok(Err(_)) => Err("Local CEMM service stopped before responding".to_string()),
@@ -442,6 +516,95 @@ fn fail_pending(inner: &ClientInner, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A supervisor with no child behind it. `take_turn` never touches the
+    /// child -- it only decides whether this caller may write to the pipe --
+    /// so the gate's behaviour is testable without spawning anything.
+    fn gate_only_supervisor() -> ServiceSupervisor {
+        ServiceSupervisor {
+            executable: PathBuf::from("cemm"),
+            cache_dir: None,
+            event_sink: Arc::new(|_| {}),
+            inner: Mutex::new(None),
+            shutting_down: AtomicBool::new(false),
+            gate: tokio::sync::Mutex::new(()),
+            exclusive: Mutex::new(None),
+        }
+    }
+
+    /// The regression this gate exists for: a second request issued during a
+    /// publish used to be written straight into the pipe, sit there for its
+    /// whole deadline without the child ever reading it, then expire and kill
+    /// the child -- taking the publish with it.
+    #[tokio::test]
+    async fn a_request_during_a_long_operation_is_refused_not_queued() {
+        let supervisor = gate_only_supervisor();
+        let publish = supervisor
+            .take_turn(Method::GithubUploadUpdate)
+            .await
+            .expect("the first caller takes the pipe");
+
+        let refused = supervisor
+            .take_turn(Method::LibraryScan)
+            .await
+            .expect_err("a scan must not queue behind an upload");
+        assert_eq!(refused, Method::GithubUploadUpdate.busy_message());
+        assert!(refused.contains("publishing"));
+
+        drop(publish);
+        supervisor
+            .take_turn(Method::LibraryScan)
+            .await
+            .expect("the scan goes through once the upload is done");
+    }
+
+    /// Short methods still queue: the wait is bounded by another short method,
+    /// and the waiter's deadline does not start until it holds the gate.
+    #[tokio::test]
+    async fn short_methods_wait_their_turn_rather_than_failing() {
+        let supervisor = Arc::new(gate_only_supervisor());
+        let held = supervisor
+            .take_turn(Method::PathValidate)
+            .await
+            .expect("the first caller takes the pipe");
+
+        let waiter = {
+            let supervisor = Arc::clone(&supervisor);
+            tokio::spawn(async move {
+                supervisor
+                    .take_turn(Method::LibraryScan)
+                    .await
+                    .map(|turn| drop(turn))
+            })
+        };
+
+        // Still blocked while the first caller holds the gate.
+        assert!(!waiter.is_finished());
+        drop(held);
+        waiter
+            .await
+            .expect("the waiting task should not panic")
+            .expect("a short method must be allowed to wait");
+    }
+
+    /// An exclusive method that ends -- successfully or not -- must not leave
+    /// the service looking permanently busy.
+    #[tokio::test]
+    async fn the_busy_marker_clears_when_the_operation_ends() {
+        let supervisor = gate_only_supervisor();
+        drop(
+            supervisor
+                .take_turn(Method::InstallApplyUpdate)
+                .await
+                .expect("install takes the pipe"),
+        );
+
+        assert!(supervisor.exclusive.lock().expect("marker lock").is_none());
+        supervisor
+            .take_turn(Method::Ping)
+            .await
+            .expect("the service is free again");
+    }
 
     #[test]
     fn every_service_method_has_a_finite_deadline() {

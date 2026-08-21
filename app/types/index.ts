@@ -35,6 +35,17 @@ export type Manifest = Omit<WireManifest, 'mods' | 'resourcepacks' | 'shaderpack
 	datapacks: Addon[]
 }
 
+/**
+ * A backend call whose failure is worth repeating to the user.
+ *
+ * Most `useTauri` wrappers collapse failure to `null` and keep the detail in
+ * the log, because "it did not work" is all the caller can act on. These
+ * cannot: the local service now refuses a request outright while a publish or
+ * an install is running, and reporting that as a malformed instance file or an
+ * unreadable modpack folder would be a lie about the user's disk.
+ */
+export type TauriOutcome<T> = { ok: true, value: T } | { ok: false, message: string }
+
 export interface ManifestUpdateInfo
 {
 	uuid: string

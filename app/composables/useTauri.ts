@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { CachedIcon, ConfigFileWithContent, Manifest, ManifestUpdateInfo, PackLibrary, UpdateDiff } from '~/types'
+import type { CachedIcon, ConfigFileWithContent, Manifest, ManifestUpdateInfo, PackLibrary, TauriOutcome, UpdateDiff } from '~/types'
+import { getErrorMessage } from '~/utils/errorHandler'
 
 export const useTauri = () =>
 {
@@ -112,16 +113,21 @@ export const useTauri = () =>
 		}
 	}
 
-	const parseMinecraftInstance = async (path: string): Promise<Manifest | null> =>
+	/**
+	 * Returns the failure rather than swallowing it: a refusal from the local
+	 * service ("CEMM is publishing an update…") must not reach the user dressed
+	 * up as "invalid minecraftinstance.json".
+	 */
+	const parseMinecraftInstance = async (path: string): Promise<TauriOutcome<Manifest>> =>
 	{
 		try
 		{
-			return await invoke<Manifest>('parse_minecraft_instance', { path })
+			return { ok: true, value: await invoke<Manifest>('parse_minecraft_instance', { path }) }
 		}
 		catch (error)
 		{
 			logger.error({ path, error }, '[useTauri] parseMinecraftInstance failed')
-			return null
+			return { ok: false, message: getErrorMessage(error) }
 		}
 	}
 
@@ -286,22 +292,26 @@ export const useTauri = () =>
 	 * Read the local CurseForge library.
 	 *
 	 * `instancesDir` overrides discovery; omit it to let Rust find the folder
-	 * from CurseForge's own settings. Failure is returned rather than thrown so
-	 * the library can show its own empty state — not finding CurseForge is an
-	 * ordinary outcome on a machine that does not have it.
+	 * from CurseForge's own settings. Not finding CurseForge is an ordinary
+	 * outcome on a machine that does not have it, and comes back as a successful
+	 * empty library — so an actual failure here always has something specific to
+	 * say, and the message is carried out rather than dropped.
 	 */
-	const scanPackLibrary = async (instancesDir?: string | null): Promise<PackLibrary | null> =>
+	const scanPackLibrary = async (instancesDir?: string | null): Promise<TauriOutcome<PackLibrary>> =>
 	{
 		try
 		{
-			return await invoke<PackLibrary>('scan_pack_library', {
-				instancesDir: instancesDir ?? null
-			})
+			return {
+				ok: true,
+				value: await invoke<PackLibrary>('scan_pack_library', {
+					instancesDir: instancesDir ?? null
+				})
+			}
 		}
 		catch (error)
 		{
 			logger.error({ instancesDir, error }, '[useTauri] scanPackLibrary failed')
-			return null
+			return { ok: false, message: getErrorMessage(error) }
 		}
 	}
 

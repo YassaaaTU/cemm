@@ -102,6 +102,55 @@ impl Method {
         }
     }
 
+    /// Whether this method holds the sidecar for long enough that a second
+    /// caller must be turned away rather than made to wait.
+    ///
+    /// The server answers one request at a time, so everything queues behind a
+    /// publish or an install. Queueing is fine when the wait is seconds; it is
+    /// not fine when the wait is the length of an upload, because the caller
+    /// sits on a spinner with no way to know why. These four are the methods
+    /// that legitimately run for minutes or hours, and while one of them is in
+    /// flight any new request fails immediately with `busy_message`.
+    ///
+    /// Exhaustive on purpose, like `timeout`: a new method cannot be added
+    /// without deciding which side of this line it falls on.
+    pub const fn is_exclusive(self) -> bool {
+        match self {
+            Self::GithubUploadUpdate
+            | Self::GithubDownloadManifest
+            | Self::GithubDownloadConfigFiles
+            | Self::InstallApplyUpdate => true,
+            Self::Ping
+            | Self::FileRead
+            | Self::FileWrite
+            | Self::ConfigReadDirectory
+            | Self::PathIsBinary
+            | Self::PathValidate
+            | Self::ManifestParseInstance
+            | Self::ManifestCompare
+            | Self::ManifestDiff
+            | Self::LibraryScan
+            | Self::LibraryCacheIcons => false,
+        }
+    }
+
+    /// What to tell the user is already running. Shown verbatim, so it names
+    /// the operation in their terms rather than in wire-method terms.
+    pub const fn busy_message(self) -> &'static str {
+        match self {
+            Self::GithubUploadUpdate => {
+                "CEMM is publishing an update. Wait for it to finish, then try again."
+            }
+            Self::GithubDownloadManifest | Self::GithubDownloadConfigFiles => {
+                "CEMM is downloading an update. Wait for it to finish, then try again."
+            }
+            Self::InstallApplyUpdate => {
+                "CEMM is installing an update. Wait for it to finish, then try again."
+            }
+            _ => "CEMM is busy with another operation. Wait for it to finish, then try again.",
+        }
+    }
+
     /// Every method, for tests that assert the wire mapping is a bijection.
     pub const ALL: [Method; 15] = [
         Self::Ping,
@@ -167,6 +216,43 @@ pub struct ServiceEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The exclusive set is the one that decides whether a second caller waits
+    /// or is turned away, so it is worth stating outright rather than leaving
+    /// implicit in a match arm.
+    #[test]
+    fn only_the_long_running_methods_are_exclusive() {
+        let exclusive: Vec<&str> = Method::ALL
+            .into_iter()
+            .filter(|method| method.is_exclusive())
+            .map(Method::as_str)
+            .collect();
+
+        assert_eq!(
+            exclusive,
+            vec![
+                "github.upload_update",
+                "github.download_manifest",
+                "github.download_config_files",
+                "install.apply_update",
+            ]
+        );
+    }
+
+    /// Every exclusive method's message is shown to a user who tried to do
+    /// something else, so none of them may fall through to the generic arm.
+    #[test]
+    fn every_exclusive_method_names_what_is_running() {
+        for method in Method::ALL {
+            if !method.is_exclusive() {
+                continue;
+            }
+            assert!(
+                !method.busy_message().contains("another operation"),
+                "{method} falls through to the generic busy message"
+            );
+        }
+    }
 
     #[test]
     fn request_round_trips_as_one_json_value() {

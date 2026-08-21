@@ -203,12 +203,18 @@ export const usePacksStore = defineStore('packs', () =>
 			// A newer scan has taken over; this one's answer is about a question
 			// nobody is asking any more, including its error.
 			if (mine !== generation) return
-			if (result === null)
+			if (!result.ok)
 			{
-				scanError.value = 'Could not read your modpack folder. Check the location in Settings.'
+				// The backend's own words. A machine without CurseForge comes
+				// back as a successful empty library, so anything that lands here
+				// has a specific cause worth naming — an unreadable folder, or
+				// the local service refusing to start a second operation while a
+				// publish is running. A single stock sentence about the folder
+				// location was wrong for the second case.
+				scanError.value = result.message
 				return
 			}
-			library.value = result
+			library.value = result.value
 			scannedAt.value = Date.now()
 			// Deliberately not awaited. The grid is already correct without any
 			// artwork, and a slow or unreachable CDN must never be something the

@@ -104,9 +104,9 @@ export function useAdminApi()
 		try
 		{
 			const parsed = await parseMinecraftInstance(filePath)
-			if (parsed == null)
+			if (!parsed.ok)
 			{
-				setStatus('Failed to parse minecraftinstance.json. Invalid format.', 'error')
+				setStatus(parsed.message, 'error')
 				return { success: false }
 			}
 
@@ -116,13 +116,13 @@ export function useAdminApi()
 			{
 				manifestStore.setPreviousManifest(currentManifest)
 			}
-			manifestStore.setManifest(parsed)
+			manifestStore.setManifest(parsed.value)
 			setStatus('Manifest generated from minecraftinstance.json.', 'success')
 
 			// If previous manifest exists, show diff
 			if (manifestStore.previousManifest != null)
 			{
-				const diff = await compareManifests(manifestStore.previousManifest, parsed)
+				const diff = await compareManifests(manifestStore.previousManifest, parsed.value)
 				manifestStore.setUpdateInfo(diff)
 			}
 			else
@@ -141,7 +141,7 @@ export function useAdminApi()
 			// exactly the case when the pack library loads a card and navigates.
 			manifestStore.sourcePath = instanceDir
 
-			return { success: true, manifest: parsed, instanceDir }
+			return { success: true, manifest: parsed.value, instanceDir }
 		}
 		catch (error)
 		{

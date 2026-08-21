@@ -316,17 +316,16 @@ export function useUserApi()
 			{
 				const parsedManifest = await parseMinecraftInstance(minecraftInstancePath)
 
-				if (parsedManifest !== null)
+				if (parsedManifest.ok)
 				{
-					manifestStore.loadInstalledManifest(parsedManifest)
+					manifestStore.loadInstalledManifest(parsedManifest.value)
 					return { success: true }
 				}
 				else
 				{
-					const errorMsg = 'Invalid minecraftinstance.json format - failed to parse'
-					logger.error(errorMsg)
+					logger.error({ error: parsedManifest.message }, 'Failed to parse minecraftinstance.json')
 					manifestStore.loadInstalledManifest(null)
-					return { success: false, error: errorMsg }
+					return { success: false, error: parsedManifest.message }
 				}
 			}
 			else
