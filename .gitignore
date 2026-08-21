@@ -27,3 +27,7 @@ testing_keys.ps1
 
 # CocoIndex Code (ccc)
 /.cocoindex_code/
+
+# cargo-audit output. CI runs the scan and fails on it; a dump committed here
+# is stale the moment Cargo.lock moves.
+/aud.json
