@@ -717,12 +717,19 @@ pub async fn install_update_with_progress(
         (&manifest.datapacks, "datapacks", "datapack"),
     ];
 
-    // Count files that actually need downloading for accurate progress.
-    // Config-only updates install config files only.
+    // Everything the progress bar will step through: the addons that actually
+    // need fetching, every config being staged, and the installed manifest.
+    //
+    // The denominator used to count addons alone on a full update, so the
+    // config loop and the manifest stepped `current` past the total and
+    // `emit_progress` clamped them all to 100%. The bar sat full through the
+    // slowest, most alarming part of an install -- staging and finalisation --
+    // and a full update carrying only configs jumped straight to 100% before
+    // anything had been written.
     let files_to_download = if is_config_only {
-        prepared_configs.len()
+        prepared_configs.len() + 1
     } else {
-        let mut count = 0usize;
+        let mut count = prepared_configs.len() + 1;
         for (index, (addons, directory, _)) in categories.iter().enumerate() {
             let old_addons = options
                 .old_manifest
@@ -826,6 +833,8 @@ pub async fn install_update_with_progress(
         .await
         .map_err(|error| format!("Failed to stage installed manifest: {error}"))?;
     staged_moves.push((staged_manifest_path, manifest_path));
+    // The manifest is the `+ 1` in the denominator above.
+    current += 1;
 
     let cleanup_paths = if options.cleanup_old {
         if let (Some(old_manifest), Some(ref diff)) = (options.old_manifest.as_ref(), &diff) {
