@@ -89,6 +89,13 @@ async fn dispatch(
                 params.old, params.new,
             ))
         }
+        Method::ManifestDiff => {
+            let params: DiffManifestParams = decode_params(request)?;
+            encode_result(crate::installer::update_diff(
+                params.old.as_ref(),
+                &params.new,
+            ))
+        }
         Method::GithubUploadUpdate => {
             let params: UploadUpdateParams = decode_params(request)?;
             let events = Arc::clone(event_callback);
@@ -221,6 +228,14 @@ struct WriteFileParams {
 struct ReadDirectoryParams {
     dir_path: String,
     base_path: String,
+}
+
+#[derive(Deserialize)]
+struct DiffManifestParams {
+    /// Absent on a first install, where every enabled addon is new.
+    #[serde(default)]
+    old: Option<crate::composables::manifest::Manifest>,
+    new: crate::composables::manifest::Manifest,
 }
 
 #[derive(Deserialize)]

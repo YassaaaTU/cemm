@@ -48,6 +48,7 @@ pub fn run() {
             service_commands::write_file,
             service_commands::parse_minecraft_instance,
             service_commands::compare_manifests,
+            service_commands::get_update_diff,
             open_curseforge_url,
             open_url,
             service_commands::upload_update,

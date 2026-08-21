@@ -28,6 +28,7 @@ pub enum Method {
     PathValidate,
     ManifestParseInstance,
     ManifestCompare,
+    ManifestDiff,
     GithubUploadUpdate,
     GithubDownloadManifest,
     GithubDownloadConfigFiles,
@@ -47,6 +48,7 @@ impl Method {
             Self::PathValidate => "path.validate",
             Self::ManifestParseInstance => "manifest.parse_instance",
             Self::ManifestCompare => "manifest.compare",
+            Self::ManifestDiff => "manifest.diff",
             Self::GithubUploadUpdate => "github.upload_update",
             Self::GithubDownloadManifest => "github.download_manifest",
             Self::GithubDownloadConfigFiles => "github.download_config_files",
@@ -66,6 +68,7 @@ impl Method {
             "path.validate" => Self::PathValidate,
             "manifest.parse_instance" => Self::ManifestParseInstance,
             "manifest.compare" => Self::ManifestCompare,
+            "manifest.diff" => Self::ManifestDiff,
             "github.upload_update" => Self::GithubUploadUpdate,
             "github.download_manifest" => Self::GithubDownloadManifest,
             "github.download_config_files" => Self::GithubDownloadConfigFiles,
@@ -88,6 +91,7 @@ impl Method {
             | Self::PathValidate
             | Self::ManifestParseInstance
             | Self::ManifestCompare
+            | Self::ManifestDiff
             | Self::LibraryScan => Duration::from_secs(120),
             Self::LibraryCacheIcons => Duration::from_secs(10 * 60),
             Self::GithubUploadUpdate
@@ -99,7 +103,7 @@ impl Method {
     }
 
     /// Every method, for tests that assert the wire mapping is a bijection.
-    pub const ALL: [Method; 14] = [
+    pub const ALL: [Method; 15] = [
         Self::Ping,
         Self::FileRead,
         Self::FileWrite,
@@ -108,6 +112,7 @@ impl Method {
         Self::PathValidate,
         Self::ManifestParseInstance,
         Self::ManifestCompare,
+        Self::ManifestDiff,
         Self::GithubUploadUpdate,
         Self::GithubDownloadManifest,
         Self::GithubDownloadConfigFiles,

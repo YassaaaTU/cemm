@@ -1019,20 +1019,67 @@ pub async fn install_update_with_progress(
 
 /// Represents the difference between two manifest versions during an update.
 ///
-/// This struct is mirrored in:
-/// - Rust: src-tauri/src/installer.rs (this file)
-/// - TypeScript: app/types/index.ts (UpdateDiff interface)
-///
-/// When modifying this struct, ensure all definitions remain consistent.
-#[derive(Debug, Clone)]
+/// Serialized straight to the frontend over `manifest.diff`, so the preview a
+/// user approves and the deletions `collect_old_file_paths` performs are the
+/// same values, not two computations that happen to agree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateDiff {
+    /// Addons to delete from the pack. Drives `collect_old_file_paths`.
     pub removed_addons: Vec<String>,
-    /// Project IDs of addons that were updated (matched by project_id, not version)
+    /// Project IDs whose file must be replaced. Also drives
+    /// `collect_old_file_paths`, which removes both `X.jar` and
+    /// `X.jar.disabled` — so an addon disabled in the old manifest still
+    /// belongs here when its version changed, and is deliberately not filtered.
     pub updated_addon_ids: Vec<u64>,
+    /// Display only; nothing in the installer reads it. Disabled addons are
+    /// excluded because an addon that arrives disabled is not being added to
+    /// the pack the user runs.
     pub new_addons: Vec<String>,
 }
 
-fn calculate_update_diff(
+/// The one place any caller asks "what changes between these manifests".
+///
+/// The preview the user approves, the admin-side comparison and the installer's
+/// own cleanup all resolve here. They used to be three implementations across
+/// two languages, and they had drifted: the TypeScript preview skipped addons
+/// disabled in the old manifest when detecting version changes, while the
+/// installer did not. An addon disabled in the old manifest and updated in the
+/// new one was therefore absent from the preview but present in the deletion
+/// list -- the dialog said nothing and the files went away.
+///
+/// `old` is `None` for a first install, where every enabled addon is new.
+pub fn update_diff(old: Option<&Manifest>, new: &Manifest) -> Result<UpdateDiff, String> {
+    // Checked before the `old` case so a config-only first install is still
+    // reported as touching no addons.
+    if is_config_only_update(new) {
+        return Ok(UpdateDiff {
+            removed_addons: Vec::new(),
+            updated_addon_ids: Vec::new(),
+            new_addons: Vec::new(),
+        });
+    }
+
+    match old {
+        Some(old) => calculate_update_diff(old, new),
+        None => Ok(UpdateDiff {
+            removed_addons: Vec::new(),
+            updated_addon_ids: Vec::new(),
+            new_addons: [
+                &new.mods,
+                &new.resourcepacks,
+                &new.shaderpacks,
+                &new.datapacks,
+            ]
+            .into_iter()
+            .flatten()
+            .filter(|addon| addon.disabled != Some(true))
+            .map(|addon| addon.addon_name.clone())
+            .collect(),
+        }),
+    }
+}
+
+pub fn calculate_update_diff(
     old_manifest: &Manifest,
     new_manifest: &Manifest,
 ) -> Result<UpdateDiff, String> {
@@ -1085,8 +1132,11 @@ fn calculate_update_diff(
             }
         }
 
-        // Find new addons
+        // Find new addons. Display only, so a disabled arrival is not listed.
         for new_addon in new_addons {
+            if new_addon.disabled == Some(true) {
+                continue;
+            }
             if !old_addons
                 .iter()
                 .any(|old_addon| old_addon.addon_project_id == new_addon.addon_project_id)
@@ -1231,6 +1281,113 @@ mod tests {
             make_addon(2, "Lithium", "lithium-1.jar"),
             make_addon(3, "Iris", "iris-1.jar"),
         ]
+    }
+
+    /// The divergence that motivated collapsing three diff implementations into
+    /// one. The TypeScript preview skipped addons disabled in the old manifest
+    /// when detecting version changes; this function never did. So an addon
+    /// disabled in the old manifest and updated in the new one was absent from
+    /// the dialog the user approved, yet present in `updated_addon_ids`, which
+    /// `collect_old_file_paths` reads to build the deletion list.
+    #[test]
+    fn an_addon_disabled_in_the_old_manifest_still_counts_as_updated() {
+        let mut was_disabled = make_addon(1, "Sodium", "sodium-1.jar");
+        was_disabled.disabled = Some(true);
+
+        let diff = update_diff(
+            Some(&make_manifest(None, vec![was_disabled])),
+            &make_manifest(None, vec![make_addon(1, "Sodium", "sodium-2.jar")]),
+        )
+        .expect("diff should succeed");
+
+        assert_eq!(diff.updated_addon_ids, vec![1]);
+        assert!(diff.removed_addons.is_empty());
+    }
+
+    /// `collect_old_file_paths` removes both `X.jar` and `X.jar.disabled` for
+    /// anything in `updated_addon_ids`, which is what makes the case above a
+    /// deletion the preview has to disclose.
+    #[test]
+    fn an_updated_addon_sweeps_both_its_enabled_and_disabled_files() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let mods = temp.path().join("mods");
+        std::fs::create_dir_all(&mods).expect("mods dir");
+        std::fs::write(mods.join("sodium-1.jar.disabled"), b"old").expect("write");
+
+        let old = make_manifest(None, vec![make_addon(1, "Sodium", "sodium-1.jar")]);
+        let diff = UpdateDiff {
+            removed_addons: Vec::new(),
+            updated_addon_ids: vec![1],
+            new_addons: Vec::new(),
+        };
+
+        let paths = collect_old_file_paths(temp.path(), &old, &diff).expect("collect");
+
+        assert_eq!(paths.len(), 1);
+        assert!(paths[0].ends_with("sodium-1.jar.disabled"));
+    }
+
+    #[test]
+    fn a_disabled_arrival_is_not_announced_as_new() {
+        let mut arrives_disabled = make_addon(2, "Lithium", "lithium-1.jar");
+        arrives_disabled.disabled = Some(true);
+
+        let diff = update_diff(
+            Some(&make_manifest(
+                None,
+                vec![make_addon(1, "Sodium", "sodium-1.jar")],
+            )),
+            &make_manifest(
+                None,
+                vec![make_addon(1, "Sodium", "sodium-1.jar"), arrives_disabled],
+            ),
+        )
+        .expect("diff should succeed");
+
+        assert!(diff.new_addons.is_empty());
+    }
+
+    #[test]
+    fn a_first_install_reports_every_enabled_addon_as_new() {
+        let mut hidden = make_addon(9, "Hidden", "hidden-1.jar");
+        hidden.disabled = Some(true);
+        let mut incoming = three_installed_addons();
+        incoming.push(hidden);
+
+        let diff = update_diff(None, &make_manifest(None, incoming)).expect("diff should succeed");
+
+        assert_eq!(diff.new_addons, vec!["Sodium", "Lithium", "Iris"]);
+        assert!(diff.removed_addons.is_empty());
+        assert!(diff.updated_addon_ids.is_empty());
+    }
+
+    #[test]
+    fn a_config_only_update_reports_no_addon_changes_even_on_first_install() {
+        let diff = update_diff(
+            None,
+            &make_manifest(Some("config"), three_installed_addons()),
+        )
+        .expect("diff should succeed");
+
+        assert!(diff.new_addons.is_empty());
+        assert!(diff.removed_addons.is_empty());
+        assert!(diff.updated_addon_ids.is_empty());
+    }
+
+    #[test]
+    fn a_renamed_addon_is_an_update_not_a_remove_and_add() {
+        let diff = update_diff(
+            Some(&make_manifest(
+                None,
+                vec![make_addon(1, "JEI", "jei-1.jar")],
+            )),
+            &make_manifest(None, vec![make_addon(1, "Just Enough Items", "jei-2.jar")]),
+        )
+        .expect("diff should succeed");
+
+        assert_eq!(diff.updated_addon_ids, vec![1]);
+        assert!(diff.removed_addons.is_empty());
+        assert!(diff.new_addons.is_empty());
     }
 
     #[test]

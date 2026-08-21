@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { Addon, CachedIcon, ConfigFileWithContent, Manifest, ManifestUpdateInfo, PackLibrary, UpdateDiff } from '~/types'
+import type { CachedIcon, ConfigFileWithContent, Manifest, ManifestUpdateInfo, PackLibrary, UpdateDiff } from '~/types'
 
 export const useTauri = () =>
 {
@@ -134,6 +134,31 @@ export const useTauri = () =>
 		catch (error)
 		{
 			logger.error({ error }, '[useTauri] compareManifests failed')
+			return null
+		}
+	}
+
+	/**
+	 * The diff behind the update preview.
+	 *
+	 * Computed in Rust by the same function the installer uses to decide what to
+	 * delete. This used to be a third implementation living in this file, and it
+	 * had drifted: it skipped addons disabled in the old manifest when detecting
+	 * version changes, so an addon disabled-then-updated never reached the
+	 * preview even though the installer removed its files.
+	 *
+	 * Returns null on failure so callers can hold the preview back rather than
+	 * show an empty diff, which would read as "nothing will change".
+	 */
+	const getUpdateDiff = async (oldManifest: Manifest | null, newManifest: Manifest): Promise<UpdateDiff | null> =>
+	{
+		try
+		{
+			return await invoke<UpdateDiff>('get_update_diff', { old: oldManifest, new: newManifest })
+		}
+		catch (error)
+		{
+			logger.error({ error }, '[useTauri] getUpdateDiff failed')
 			return null
 		}
 	}
@@ -312,6 +337,7 @@ export const useTauri = () =>
 		isBinaryFile,
 		parseMinecraftInstance,
 		compareManifests,
+		getUpdateDiff,
 		openCurseforgeUrl,
 		openUrl,
 		installUpdate,
@@ -323,92 +349,4 @@ export const useTauri = () =>
 		scanPackLibrary,
 		cachePackIcons
 	}
-}
-
-/**
- * Calculate the difference between two manifests.
- * Exported as a standalone function for use in components without composable overhead.
- */
-export function calculateUpdateDiff(oldManifest: Manifest | null, newManifest: Manifest): UpdateDiff
-{
-	// Config-only updates never change addons. Key this behavior to the explicit
-	// discriminator so a legitimate full update can still empty a category.
-	if (newManifest.updateType === 'config')
-	{
-		return {
-			removed_addons: [],
-			updated_addon_ids: [],
-			new_addons: []
-		}
-	}
-
-	// If no old manifest, everything is new
-	if (oldManifest === null)
-	{
-		return {
-			removed_addons: [],
-			updated_addon_ids: [],
-			new_addons: [
-				...newManifest.mods.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
-				...newManifest.resourcepacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
-				...newManifest.shaderpacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name),
-				...newManifest.datapacks.filter((addon) => addon.disabled !== true).map((addon) => addon.addon_name)
-			]
-		}
-	}
-
-	const diff: UpdateDiff = {
-		removed_addons: [],
-		updated_addon_ids: [],
-		new_addons: []
-	}
-
-	// Helper function to process addon categories
-	const processCategory = (oldAddons: Addon[], newAddons: Addon[]) =>
-	{
-		// Find removed addons (in old but not in new)
-		for (const oldAddon of oldAddons)
-		{
-			if (oldAddon.disabled === true) continue
-
-			const newAddon = newAddons.find((addon) => addon.addon_project_id === oldAddon.addon_project_id)
-			if (newAddon === undefined || newAddon.disabled === true)
-			{
-				diff.removed_addons.push(oldAddon.addon_name)
-			}
-		}
-
-		// Find updated addons (same project ID, different version)
-		// Store project_id for reliable matching during removal
-		for (const oldAddon of oldAddons)
-		{
-			if (oldAddon.disabled === true) continue
-
-			const newAddon = newAddons.find((addon) => addon.addon_project_id === oldAddon.addon_project_id)
-			if (newAddon !== undefined && newAddon.disabled !== true && oldAddon.version !== newAddon.version)
-			{
-				diff.updated_addon_ids.push(oldAddon.addon_project_id)
-			}
-		}
-
-		// Find new addons (in new but not in old)
-		for (const newAddon of newAddons)
-		{
-			if (newAddon.disabled === true) continue
-
-			const isNew = !oldAddons.some((oldAddon) => oldAddon.addon_project_id === newAddon.addon_project_id)
-			if (isNew)
-			{
-				diff.new_addons.push(newAddon.addon_name)
-			}
-		}
-	}
-
-	// Process each category
-	processCategory(oldManifest.mods, newManifest.mods)
-	processCategory(oldManifest.resourcepacks, newManifest.resourcepacks)
-	processCategory(oldManifest.shaderpacks, newManifest.shaderpacks)
-	processCategory(oldManifest.datapacks, newManifest.datapacks)
-
-	return diff
 }

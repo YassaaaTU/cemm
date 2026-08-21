@@ -1,16 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { calculateUpdateDiff } from '~/composables/useTauri'
-import type { Addon, Manifest } from '~/types'
+import type { Manifest, UpdateDiff } from '~/types'
 
-const addon = (over: Partial<Addon> & Pick<Addon, 'addon_name' | 'addon_project_id'>): Addon => ({
-	addon_file_id: 1,
-	cdn_download_url: 'https://mediafilez.forgecdn.net/files/1/1/x.jar',
-	mod_folder_path: 'mods',
-	version: '1.0.0',
-	fileNameOnDisk: `${over.addon_name}.jar`,
-	...over
-})
+const invoke = vi.hoisted(() => vi.fn())
+vi.mock('@tauri-apps/api/core', () => ({ invoke }))
+
+const logger = { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() }
+vi.stubGlobal('useNuxtApp', () => ({ $logger: logger }))
+
+const { useTauri } = await import('~/composables/useTauri')
 
 const manifest = (over: Partial<Manifest> = {}): Manifest => ({
 	mods: [],
@@ -21,74 +19,64 @@ const manifest = (over: Partial<Manifest> = {}): Manifest => ({
 	...over
 })
 
-describe('calculateUpdateDiff', () =>
+const emptyDiff: UpdateDiff = { removed_addons: [], updated_addon_ids: [], new_addons: [] }
+
+/**
+ * The diff itself is computed in Rust — by the same function the installer uses
+ * to decide what to delete — and its behaviour is covered by the tests beside
+ * that code in `installer.rs`. What still lives in TypeScript, and so is worth
+ * testing here, is the delegation: that the preview asks the backend rather
+ * than recomputing, and that a failed lookup cannot be mistaken for "no
+ * changes".
+ */
+describe('getUpdateDiff', () =>
 {
-	it('reports an addon that is gone from the new manifest as removed', () =>
+	beforeEach(() =>
 	{
-		const diff = calculateUpdateDiff(
-			manifest({ mods: [addon({ addon_name: 'Jei', addon_project_id: 238222 })] }),
-			manifest()
-		)
-
-		expect(diff.removed_addons).toEqual(['Jei'])
-		expect(diff.updated_addon_ids).toEqual([])
-		expect(diff.new_addons).toEqual([])
+		invoke.mockReset()
+		logger.error.mockReset()
 	})
 
-	it('reports a version change as an update, keyed by project id', () =>
+	it('asks the backend rather than computing the diff locally', async () =>
 	{
-		const diff = calculateUpdateDiff(
-			manifest({ mods: [addon({ addon_name: 'Jei', addon_project_id: 238222, version: '1.0.0' })] }),
-			manifest({ mods: [addon({ addon_name: 'Jei', addon_project_id: 238222, version: '2.0.0' })] })
-		)
+		invoke.mockResolvedValue(emptyDiff)
+		const previous = manifest()
+		const incoming = manifest()
 
-		expect(diff.updated_addon_ids).toEqual([238222])
-		expect(diff.removed_addons).toEqual([])
+		await useTauri().getUpdateDiff(previous, incoming)
+
+		expect(invoke).toHaveBeenCalledWith('get_update_diff', { old: previous, new: incoming })
 	})
 
-	it('matches a renamed addon by project id rather than calling it removed and added', () =>
+	it('passes a null old manifest through for a first install', async () =>
 	{
-		const diff = calculateUpdateDiff(
-			manifest({ mods: [addon({ addon_name: 'JEI', addon_project_id: 238222, version: '1.0.0' })] }),
-			manifest({ mods: [addon({ addon_name: 'Just Enough Items', addon_project_id: 238222, version: '2.0.0' })] })
-		)
+		invoke.mockResolvedValue(emptyDiff)
+		const incoming = manifest()
 
-		expect(diff.updated_addon_ids).toEqual([238222])
-		expect(diff.removed_addons).toEqual([])
-		expect(diff.new_addons).toEqual([])
+		await useTauri().getUpdateDiff(null, incoming)
+
+		expect(invoke).toHaveBeenCalledWith('get_update_diff', { old: null, new: incoming })
 	})
 
-	it('treats an addon disabled in the new manifest as removed', () =>
+	it('returns the backend diff unchanged', async () =>
 	{
-		const diff = calculateUpdateDiff(
-			manifest({ mods: [addon({ addon_name: 'Jei', addon_project_id: 238222 })] }),
-			manifest({ mods: [addon({ addon_name: 'Jei', addon_project_id: 238222, disabled: true })] })
-		)
+		const backendDiff: UpdateDiff = {
+			removed_addons: ['Lithium'],
+			updated_addon_ids: [238222],
+			new_addons: ['Sodium']
+		}
+		invoke.mockResolvedValue(backendDiff)
 
-		expect(diff.removed_addons).toEqual(['Jei'])
+		expect(await useTauri().getUpdateDiff(manifest(), manifest())).toEqual(backendDiff)
 	})
 
-	it('never reports addon changes for a config-only update', () =>
+	// Null, not an empty diff. An empty diff renders as "nothing will change"
+	// beside an Apply button; the caller has to be able to tell the two apart.
+	it('returns null when the backend call fails', async () =>
 	{
-		const diff = calculateUpdateDiff(
-			manifest({ mods: [addon({ addon_name: 'Jei', addon_project_id: 238222 })] }),
-			manifest({ updateType: 'config', mods: [] })
-		)
+		invoke.mockRejectedValue(new Error('sidecar is not running'))
 
-		expect(diff).toEqual({ removed_addons: [], updated_addon_ids: [], new_addons: [] })
-	})
-
-	it('lists every enabled addon as new when there is no old manifest', () =>
-	{
-		const diff = calculateUpdateDiff(
-			null,
-			manifest({
-				mods: [addon({ addon_name: 'Jei', addon_project_id: 1 })],
-				shaderpacks: [addon({ addon_name: 'Complementary', addon_project_id: 2 })],
-				datapacks: [addon({ addon_name: 'Hidden', addon_project_id: 3, disabled: true })]
-			})
-		)
-
-		expect(diff.new_addons).toEqual(['Jei', 'Complementary'])
+		expect(await useTauri().getUpdateDiff(manifest(), manifest())).toBeNull()
+		expect(logger.error).toHaveBeenCalled()
 	})
 })

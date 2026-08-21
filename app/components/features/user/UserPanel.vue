@@ -293,8 +293,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 import type { AddonRow } from '~/components/domains/addons/AddonTable.vue'
-import { calculateUpdateDiff } from '~/composables/useTauri'
-import type { ConfigFileWithContent } from '~/types'
+import type { ConfigFileWithContent, UpdateDiff } from '~/types'
 
 interface InstallProgressEvent
 {
@@ -306,6 +305,7 @@ interface InstallProgressEvent
 }
 
 const { downloadFromGithub, downloadConfigFiles, installUpdate } = useUserApi()
+const { getUpdateDiff } = useTauri()
 const { notify } = useNotify()
 const { paneTransition } = useMotion()
 const manifestStore = useManifestStore()
@@ -392,25 +392,42 @@ const showDiffActions = computed(
 	() => manifest.value !== null && !installing.value && !updateApplied.value
 )
 
+/**
+ * The diff is computed in Rust now, by the same function the installer uses to
+ * decide what to delete, so this became asynchronous. It is held in a ref and
+ * refreshed by the watcher below rather than derived synchronously.
+ *
+ * Null means "not known yet or failed", which is deliberately different from a
+ * diff with no entries: a failed lookup must not render as "nothing changes"
+ * next to an Apply button.
+ */
+const diff = ref<UpdateDiff | null>(null)
+
+watch(
+	[manifest, previousManifest],
+	async ([newManifest, oldManifest]) =>
+	{
+		if (newManifest === null)
+		{
+			diff.value = null
+			return
+		}
+		diff.value = await getUpdateDiff(oldManifest, newManifest)
+	},
+	{ immediate: true }
+)
+
 const previewData = computed(() =>
 {
-	if (manifest.value === null) return null
+	if (manifest.value === null || diff.value === null) return null
 
-	const oldManifest = previousManifest.value
-	const newManifest = manifest.value
-
-	// calculateUpdateDiff keys config-only behavior to the explicit updateType
-	// discriminator, so the preview and installer agree without preventing a
-	// legitimate full update from emptying an addon category.
-	const diff = calculateUpdateDiff(oldManifest, newManifest)
-
-	const hasChanges = oldManifest !== null && (
-		diff.removed_addons.length > 0
-		|| diff.updated_addon_ids.length > 0
-		|| diff.new_addons.length > 0
+	const hasChanges = previousManifest.value !== null && (
+		diff.value.removed_addons.length > 0
+		|| diff.value.updated_addon_ids.length > 0
+		|| diff.value.new_addons.length > 0
 	)
 
-	return { diff, hasChanges: oldManifest === null ? false : hasChanges }
+	return { diff: diff.value, hasChanges }
 })
 
 const hasAnyChange = computed(() => previewData.value?.hasChanges === true)

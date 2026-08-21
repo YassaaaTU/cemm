@@ -4,7 +4,7 @@ use tauri::State;
 use crate::composables::github::ConfigFileWithContent;
 use crate::composables::instances::{CachedIcon, PackLibrary};
 use crate::composables::manifest::{Manifest, UpdateInfo};
-use crate::installer::{ConfigFile as InstallerConfigFile, InstallOptions};
+use crate::installer::{ConfigFile as InstallerConfigFile, InstallOptions, UpdateDiff};
 use crate::service::protocol::Method;
 use crate::service::ServiceClient;
 
@@ -77,6 +77,19 @@ pub async fn parse_minecraft_instance(
 ) -> Result<Manifest, String> {
     service
         .call_typed(Method::ManifestParseInstance, json!({ "path": path }))
+        .await
+}
+
+/// The diff behind the update preview. Same function the installer uses to
+/// decide what to delete, so the dialog cannot understate the change.
+#[tauri::command]
+pub async fn get_update_diff(
+    service: State<'_, ServiceClient>,
+    old: Option<Manifest>,
+    new: Manifest,
+) -> Result<UpdateDiff, String> {
+    service
+        .call_typed(Method::ManifestDiff, json!({ "old": old, "new": new }))
         .await
 }
 

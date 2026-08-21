@@ -295,104 +295,40 @@ fn find_disabled_files(dir: PathBuf) -> Vec<String> {
 pub fn compare_manifests(old: Manifest, new: Manifest) -> Result<UpdateInfo, String> {
     log::info!("compare_manifests: comparing manifests");
 
-    // Helper function to process a single addon category. Identity is matched on
-    // addon_project_id, the same key installer::calculate_update_diff uses — a
-    // renamed addon (same project, different addon_name) is therefore reported as
-    // "updated" here too, rather than as "removed + added" (F-P2-12). Matching by
-    // name previously meant this preview and the installer's own diff could
-    // disagree on the same manifest pair.
-    fn process_category(
-        old_addons: &[Addon],
-        new_addons: &[Addon],
-        added: &mut Vec<Addon>,
-        removed: &mut Vec<String>,
-        updated: &mut Vec<u64>,
-    ) {
-        // Find added addons (no matching project ID in old, and not disabled)
-        for new_addon in new_addons {
-            let exists_in_old = old_addons
-                .iter()
-                .any(|a| a.addon_project_id == new_addon.addon_project_id);
-            if !exists_in_old && new_addon.disabled != Some(true) {
-                added.push(new_addon.clone());
-            }
-        }
+    // Delegates to the installer's diff rather than repeating it. This function
+    // used to carry its own copy, which is how the two came to disagree about
+    // addons disabled in the old manifest (F-P2-12 fixed the addon_name/
+    // addon_project_id half of the same problem). The installer's version is
+    // the one that acts on files, so it is the one that defines the answer.
+    let diff = crate::installer::calculate_update_diff(&old, &new)?;
 
-        // Find removed addons (no matching project ID in new, or disabled in new).
-        // Skip if old addon was already disabled - can't "remove" something that wasn't active.
-        for old_addon in old_addons {
-            if old_addon.disabled.unwrap_or(false) {
-                continue;
-            }
-            match new_addons
-                .iter()
-                .find(|a| a.addon_project_id == old_addon.addon_project_id)
-            {
-                None => removed.push(old_addon.addon_name.clone()),
-                Some(new_addon) if new_addon.disabled == Some(true) => {
-                    removed.push(old_addon.addon_name.clone())
-                }
-                Some(_) => {}
-            }
-        }
-
-        // Find updated addons (same project ID present in both, version changed)
-        for old_addon in old_addons {
-            if old_addon.disabled.unwrap_or(false) {
-                continue;
-            }
-            if let Some(new_addon) = new_addons
-                .iter()
-                .find(|a| a.addon_project_id == old_addon.addon_project_id)
-            {
-                if new_addon.disabled != Some(true) && old_addon.version != new_addon.version {
-                    updated.push(old_addon.addon_project_id);
-                }
-            }
-        }
-    }
-
-    let mut added: Vec<Addon> = Vec::new();
-    let mut removed: Vec<String> = Vec::new();
-    let mut updated: Vec<u64> = Vec::new();
-
-    // Process all addon categories
-    process_category(&old.mods, &new.mods, &mut added, &mut removed, &mut updated);
-    process_category(
-        &old.resourcepacks,
+    // UpdateInfo carries whole addons where UpdateDiff carries names, so resolve
+    // the new ones back against the manifest they came from.
+    let added: Vec<Addon> = [
+        &new.mods,
         &new.resourcepacks,
-        &mut added,
-        &mut removed,
-        &mut updated,
-    );
-    process_category(
-        &old.shaderpacks,
         &new.shaderpacks,
-        &mut added,
-        &mut removed,
-        &mut updated,
-    );
-    process_category(
-        &old.datapacks,
         &new.datapacks,
-        &mut added,
-        &mut removed,
-        &mut updated,
-    );
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|addon| diff.new_addons.contains(&addon.addon_name))
+    .cloned()
+    .collect();
 
     log::info!(
         "compare_manifests: {} added, {} removed, {} updated",
         added.len(),
-        removed.len(),
-        updated.len()
+        diff.removed_addons.len(),
+        diff.updated_addon_ids.len()
     );
 
     let update_info = UpdateInfo {
         uuid: Uuid::new_v4().to_string(),
         timestamp: Utc::now().to_rfc3339(),
         added_addons: added,
-        removed_addons: removed,
-        updated_addon_ids: updated,
+        removed_addons: diff.removed_addons,
+        updated_addon_ids: diff.updated_addon_ids,
     };
     log::info!("compare_manifests: update info generated");
     Ok(update_info)
