@@ -13,22 +13,20 @@ CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes
 - **GitHub Integration**: Secure distribution via GitHub repositories
 - **Automatic Installation**: Users can install modifications with a single update code
 - **Recoverable Installation**: Add-ons, configs, and manifests finalize through a journaled transaction that rolls back interrupted or failed updates
-- **Cross-Platform**: Works on Windows *AND SHOULD* work on macOS and Linux, never tested on these platforms
+- **Cross-Platform**: Developed and used on Windows. macOS and Linux builds are produced by CI, and the compiled sidecar's lifecycle is tested on all three, but the full app has never been run on macOS or Linux — treat those as untested.
 
 ## Usage
 
 ### Admin Mode
-1. Select your modpack directory containing `minecraftinstance.json`
-2. Select the minecraftinstance.json file to generate `manifest.json`
-   - This file contains metadata about your modpack
-   - It will be used to track updates and changes
-3. Choose config files to distribute (optional)
-4. **Exclude addons (optional)**: Click the ban icon (🚫) on any mod or resourcepack to exclude it from the upload
-   - Excluded addons are marked with strikethrough styling
-   - They remain in your local modpack but won't be included in the distributed instance
-   - Useful for keeping server-side mods private or excluding platform-specific addons
-5. Generate an update code and upload to your GitHub repository
-6. Share the update code with users for easy installation
+1. Open the pack library and choose **Publish** on the modpack you want to distribute. CEMM reads its `minecraftinstance.json` and loads the addons it contains. (A pack outside the CurseForge library can be pointed at by hand instead.)
+2. Review the addons by category — mods, resourcepacks, shaderpacks, datapacks.
+3. **Exclude addons (optional)**: switch off the toggle on any row to keep it out of the published update.
+   - It stays in your local modpack; it just is not distributed.
+   - Useful for server-side mods, or anything platform-specific.
+   - Addons already switched off in CurseForge start excluded. Switch one back on to publish it anyway.
+4. Choose config files to distribute (optional) from the **Config files** tab.
+5. **Publish update**. CEMM uploads to your GitHub repository and gives you an update code.
+6. Share the update code.
 
 ### User Mode
 1. Configure your GitHub repository settings
@@ -37,8 +35,8 @@ CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes
 4. Install the update to your modpack directory
 
 ### Settings
-- GitHub repository name from which to download updates using the update code
-- Github token for secure access to private repositories (only needed for admin mode)
+- GitHub repository the update code resolves against — the one an admin publishes to and a user downloads from.
+- GitHub token, used only to publish. Downloads are unauthenticated, so the repository has to be public for users to install from it; the token is not a way to distribute from a private repo. Stored in the OS keyring.
 
 ## Getting Started (Contribute/Development)
 
