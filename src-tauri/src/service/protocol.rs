@@ -93,7 +93,10 @@ impl Method {
             | Self::ManifestCompare
             | Self::ManifestDiff
             | Self::LibraryScan => Duration::from_secs(120),
-            Self::LibraryCacheIcons => Duration::from_secs(10 * 60),
+            // Bounded by ICON_BATCH_FETCH_BUDGET on the sidecar side, so this
+            // is headroom over a batch that stops itself rather than a cap the
+            // batch is free to run up against.
+            Self::LibraryCacheIcons => Duration::from_secs(2 * 60),
             Self::GithubUploadUpdate
             | Self::GithubDownloadManifest
             | Self::GithubDownloadConfigFiles => Duration::from_secs(30 * 60),

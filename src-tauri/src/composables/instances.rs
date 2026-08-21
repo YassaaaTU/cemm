@@ -327,6 +327,19 @@ pub struct CachedIcon {
     pub icon: Option<String>,
 }
 
+/// How long one batch may spend on the network before it stops fetching and
+/// reports the rest as not-yet-cached.
+///
+/// The batch is one sidecar request covering every uncached thumbnail, fetched
+/// one after another with a 15-second client timeout apiece. A first run on a
+/// large library behind a stalling network -- a captive portal, a blackholed
+/// DNS -- therefore had no upper bound short of 15 seconds times the number of
+/// packs, which passed the request's own deadline and got the child killed by
+/// the supervisor: background artwork taking down the service. A URL left
+/// unfetched is already an ordinary outcome the caller handles by asking again
+/// on the next scan, so giving up is cheap and giving up is bounded.
+const ICON_BATCH_FETCH_BUDGET: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// Fetch pack artwork from CurseForge's CDN and keep it on disk.
 ///
 /// This is the app's second network exception after GitHub, and it is bounded to
@@ -356,6 +369,7 @@ pub async fn cache_pack_icons_in(
         .map_err(|e| format!("Could not create HTTP client: {e}"))?;
 
     let mut results = Vec::new();
+    let started = std::time::Instant::now();
     for url in urls {
         let Some(valid) = validate_icon_url(&url) else {
             results.push(CachedIcon { url, icon: None });
@@ -373,6 +387,16 @@ pub async fn cache_pack_icons_in(
                 url,
                 icon: Some(icon),
             });
+            continue;
+        }
+
+        // Checked here rather than at the top of the loop so a spent budget
+        // still serves every icon already on disk -- the cache hit above costs
+        // no network, and a library that is mostly cached must still come back
+        // complete.
+        if started.elapsed() >= ICON_BATCH_FETCH_BUDGET {
+            log::warn!("cache_pack_icons: fetch budget spent, leaving {valid} for the next scan");
+            results.push(CachedIcon { url, icon: None });
             continue;
         }
 
@@ -797,6 +821,26 @@ mod tests {
         assert_eq!(
             library.packs[0].icon, None,
             "an icon path escaping its instance must not be read"
+        );
+    }
+
+    /// The batch stops itself; the deadline is only the backstop. If the two
+    /// ever cross, a slow first run kills the sidecar again -- which is the
+    /// defect this budget exists to close, so the relationship is asserted
+    /// rather than left to a comment.
+    #[test]
+    fn the_icon_fetch_budget_stays_inside_the_methods_deadline() {
+        let deadline = crate::service::protocol::Method::LibraryCacheIcons.timeout();
+
+        assert!(
+            ICON_BATCH_FETCH_BUDGET < deadline,
+            "a batch may not be allowed to run up to its own deadline: budget {ICON_BATCH_FETCH_BUDGET:?}, deadline {deadline:?}"
+        );
+        // Plus room for the fetch that was already in flight when the budget
+        // ran out, which carries the client's own 15-second timeout.
+        assert!(
+            ICON_BATCH_FETCH_BUDGET + std::time::Duration::from_secs(15) < deadline,
+            "no headroom for the in-flight fetch when the budget runs out"
         );
     }
 
