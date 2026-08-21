@@ -1,4 +1,6 @@
 use std::fs;
+use std::fs::File;
+use std::io::Read;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
@@ -775,11 +777,14 @@ fn is_binary_file(path: String) -> Result<bool, String> {
         return Err(format!("File does not exist: {}", path));
     }
 
-    // Read first 512 bytes to check for binary content
-    match fs::read(&path) {
-        Ok(bytes) => {
-            let sample_size = std::cmp::min(512, bytes.len());
-            let sample = &bytes[0..sample_size];
+    // A 512-byte sample, read as 512 bytes. This used to `fs::read` the whole
+    // file and then slice the front off it, so probing a config that config
+    // import happily accepts at up to 128 MB allocated 128 MB to look at half a
+    // kilobyte of it.
+    let mut sample = Vec::with_capacity(512);
+    match File::open(&path).and_then(|file| file.take(512).read_to_end(&mut sample)) {
+        Ok(_) => {
+            let sample = sample.as_slice();
 
             // Check for null bytes (common indicator of binary files)
             let has_null_bytes = sample.contains(&0);
@@ -908,6 +913,56 @@ mod tests {
         fs::create_dir_all(path.parent().expect("test file must have a parent"))
             .expect("failed to create test directory");
         fs::write(path, contents).expect("failed to write test file");
+    }
+
+    /// The probe reads 512 bytes rather than the file, so the window it decides
+    /// on has to stay the same 512 bytes it always was -- and a file far larger
+    /// than the sample must still be answered without loading it.
+    #[test]
+    fn the_binary_probe_looks_at_the_first_512_bytes_only() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+
+        let text = temp.path().join("settings.toml");
+        fs::write(
+            &text,
+            "enabled = true
+"
+            .repeat(500),
+        )
+        .expect("write text");
+        assert!(
+            !is_binary_file(text.to_string_lossy().to_string()).expect("probe text"),
+            "a large text file is not binary"
+        );
+
+        // A null byte past the sample window is out of scope by design: the
+        // probe answers from the head of the file, not from all of it.
+        let late_null = temp.path().join("late-null.txt");
+        let mut contents = vec![b'a'; 4096];
+        contents[2048] = 0;
+        fs::write(&late_null, &contents).expect("write late null");
+        assert!(!is_binary_file(late_null.to_string_lossy().to_string()).expect("probe late null"));
+
+        let early_null = temp.path().join("early-null.txt");
+        fs::write(&early_null, [b'a', 0, b'b']).expect("write early null");
+        assert!(is_binary_file(early_null.to_string_lossy().to_string()).expect("probe early null"));
+
+        // Shorter than the sample: the read stops at end of file rather than
+        // reporting a padded buffer.
+        let tiny = temp.path().join("tiny.txt");
+        fs::write(&tiny, b"hi").expect("write tiny");
+        assert!(!is_binary_file(tiny.to_string_lossy().to_string()).expect("probe tiny"));
+
+        assert!(
+            is_binary_file(
+                temp.path()
+                    .join("missing.txt")
+                    .to_string_lossy()
+                    .to_string()
+            )
+            .is_err(),
+            "a missing file is an error, not an answer"
+        );
     }
 
     #[test]
