@@ -2,6 +2,44 @@ import type { ConfigFileWithContent, Manifest } from '~/types'
 import { getErrorMessage, withNetworkRetry } from '~/utils/errorHandler'
 import { resolveModpackKey } from '~/utils/modpackKey'
 
+function parseInstalledManifest(content: string): Manifest
+{
+	let parsed: unknown
+	try
+	{
+		parsed = JSON.parse(content)
+	}
+	catch
+	{
+		throw new Error('The installed cemm-manifest.json is not valid JSON.')
+	}
+
+	if (typeof parsed !== 'object' || parsed === null)
+	{
+		throw new Error('The installed cemm-manifest.json does not contain a manifest object.')
+	}
+
+	const rawManifest = parsed as Record<string, unknown>
+	const candidate = rawManifest as Partial<Manifest>
+	const arrayFields: Array<keyof Pick<Manifest, 'mods' | 'resourcepacks' | 'shaderpacks' | 'datapacks' | 'config_files'>> = [
+		'mods',
+		'resourcepacks',
+		'shaderpacks',
+		'datapacks',
+		'config_files'
+	]
+	if (arrayFields.some((field) => !Array.isArray(candidate[field])))
+	{
+		throw new Error('The installed cemm-manifest.json is missing required manifest lists.')
+	}
+	if (rawManifest.updateType !== undefined && rawManifest.updateType !== 'full' && rawManifest.updateType !== 'config')
+	{
+		throw new Error('The installed cemm-manifest.json has an invalid update type.')
+	}
+
+	return candidate as Manifest
+}
+
 /**
  * Composable for user-specific API operations.
  * Extracts business logic from UserPanel.vue for better maintainability.
@@ -11,7 +49,7 @@ export function useUserApi()
 	const { downloadManifest, downloadConfigFiles: apiDownloadConfigFiles } = useGithubApi()
 	const appStore = useAppStore()
 	const manifestStore = useManifestStore()
-	const { readFile, parseMinecraftInstance, installUpdate: installUpdateTauri } = useTauri()
+	const { readFile, parseMinecraftInstance, validatePath, installUpdate: installUpdateTauri } = useTauri()
 	const { $logger: logger } = useNuxtApp()
 
 	/**
@@ -61,7 +99,11 @@ export function useUserApi()
 			const modpackPath = appStore.modpackPath
 			if (modpackPath && modpackPath.trim().length > 0)
 			{
-				await generatePreviousManifest(modpackPath, onProgress)
+				const baselineResult = await generatePreviousManifest(modpackPath, onProgress)
+				if (!baselineResult.success)
+				{
+					throw new Error(baselineResult.error ?? 'Could not read the installed update baseline.')
+				}
 				// The pack this manifest is about. Recorded because the deletion set
 				// is derived from that folder's own inventory, so anything later
 				// pairing the two has to be able to tell whether they still match.
@@ -73,6 +115,9 @@ export function useUserApi()
 		}
 		catch (err)
 		{
+			const preservedUpdateCode = manifestStore.updateCode
+			manifestStore.clearManifest()
+			manifestStore.updateCode = preservedUpdateCode
 			setStatus(getErrorMessage(err, 'download'), 'error')
 			logger.error({ error: err }, 'Download failed')
 			return { success: false }
@@ -234,8 +279,9 @@ export function useUserApi()
 	}
 
 	/**
-   * Generate previous manifest from minecraftinstance.json
-   */
+	 * Load the baseline from the last successful CEMM install, falling back to
+	 * CurseForge's instance inventory only before CEMM has installed this pack.
+	 */
 	async function generatePreviousManifest(
 		modpackPath: string,
 		onProgress: (progress: number, message?: string) => void
@@ -244,6 +290,24 @@ export function useUserApi()
 		try
 		{
 			onProgress(60, 'Reading the current installation...')
+
+			const installedManifestPath = `${modpackPath}/cemm-manifest.json`
+			const installedManifestContent = await readFile(installedManifestPath)
+			if (installedManifestContent !== null)
+			{
+				if (installedManifestContent.trim().length === 0)
+				{
+					throw new Error('The installed cemm-manifest.json could not be read.')
+				}
+
+				manifestStore.loadInstalledManifest(parseInstalledManifest(installedManifestContent))
+				return { success: true }
+			}
+			const installedManifestInfo = await validatePath(installedManifestPath)
+			if (installedManifestInfo.exists)
+			{
+				throw new Error('The installed cemm-manifest.json could not be read.')
+			}
 
 			const minecraftInstancePath = `${modpackPath}/minecraftinstance.json`
 			const minecraftInstanceContent = await readFile(minecraftInstancePath)
@@ -267,15 +331,20 @@ export function useUserApi()
 			}
 			else
 			{
-				logger.info('No minecraftinstance.json found, treating as fresh install')
+				const minecraftInstanceInfo = await validatePath(minecraftInstancePath)
+				if (minecraftInstanceInfo.exists)
+				{
+					throw new Error('The installed minecraftinstance.json could not be read.')
+				}
+				logger.info('No installed CEMM or CurseForge manifest found, treating as fresh install')
 				manifestStore.loadInstalledManifest(null)
-				return { success: false, error: 'No previous installation found - will perform fresh install' }
+				return { success: true }
 			}
 		}
 		catch (err)
 		{
 			const errorMsg = err instanceof Error ? err.message : 'Unknown error generating previous manifest'
-			logger.error({ error: errorMsg }, 'Failed to generate cemm-manifest_old.json')
+			logger.error({ error: errorMsg }, 'Failed to load the installed update baseline')
 			manifestStore.loadInstalledManifest(null)
 			return { success: false, error: errorMsg }
 		}
