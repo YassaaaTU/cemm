@@ -12,7 +12,7 @@
         {{ title }}
       </h3>
       <span class="font-mono text-[0.8125rem] text-base-content/50 tabular-nums">
-        {{ visibleRows.length }}<template v-if="visibleRows.length !== rows.length"> / {{ rows.length }}</template>
+        {{ visibleRows.length }}<template v-if="visibleRows.length !== totalCount"> / {{ totalCount }}</template>
       </span>
 
       <slot name="filters" />
@@ -50,6 +50,7 @@
       <span v-if="variant === 'review'">Status</span>
       <span v-else />
       <span>{{ variant === 'review' ? 'Addon' : 'Project' }}</span>
+      <span v-if="showType">Type</span>
       <span>Version</span>
       <span
         v-if="showActions"
@@ -157,6 +158,21 @@
             </span>
           </span>
 
+          <!-- The kind of addon, stated on the row rather than only in a filter:
+               a mixed list where a name is the only clue leaves the player
+               guessing which of the four categories a deletion belongs to. -->
+          <span
+            v-if="showType"
+            role="cell"
+            class="min-w-0"
+            :class="row.dimmed === true ? 'opacity-50' : ''"
+          >
+            <span
+              class="block truncate text-xs text-base-content/70"
+              :title="row.category !== undefined ? categoryNoun(row.category) : ''"
+            >{{ row.category !== undefined ? categoryNoun(row.category) : '—' }}</span>
+          </span>
+
           <span
             role="cell"
             class="min-w-0"
@@ -197,6 +213,7 @@
 import { VList } from 'virtua/vue'
 
 import type { StatusTone } from '~/components/shared/ui/StatusChip.vue'
+import { type AddonCategory, categoryNoun } from '~/utils/addonCategories'
 
 export interface AddonRow
 {
@@ -214,6 +231,12 @@ export interface AddonRow
 	struck?: boolean
 	/** Whole row de-emphasised. */
 	dimmed?: boolean
+	/**
+	 * Which manifest array the addon came from. Optional because the manage
+	 * variant lists one category at a time and has nothing to disambiguate;
+	 * required in practice wherever `showType` is set.
+	 */
+	category?: AddonCategory
 	thumbnailUrl?: string
 	/**
 	 * The addon's CurseForge project page, from the manifest's `webSiteURL`.
@@ -235,8 +258,16 @@ const props = withDefaults(
 		variant?: 'review' | 'manage'
 		emptyLabel?: string
 		showActions?: boolean
+		/** Render the Type column. For lists that mix categories. */
+		showType?: boolean
 		actionsLabel?: string
 		noun?: string
+		/**
+		 * How many rows there would be with nothing filtered out. Set it when the
+		 * caller narrows `rows` itself, so the header can still say "12 / 17"
+		 * rather than reporting the subset as if it were the whole list.
+		 */
+		total?: number
 		/** Cap the list height. Ignored when `fill` is set. */
 		maxHeight?: number
 		/** Grow to fill the available height instead of capping. Used where the
@@ -248,8 +279,10 @@ const props = withDefaults(
 		variant: 'review',
 		emptyLabel: 'Nothing here yet.',
 		showActions: false,
+		showType: false,
 		actionsLabel: 'Actions',
 		noun: 'addons',
+		total: undefined,
 		maxHeight: 340,
 		fill: false
 	}
@@ -288,14 +321,28 @@ const gridClass = computed(() =>
 {
 	if (props.variant === 'review')
 	{
+		if (props.showType)
+		{
+			return props.showActions
+				? 'grid-cols-[5.5rem_minmax(0,1fr)_7rem_10rem_5rem]'
+				: 'grid-cols-[5.5rem_minmax(0,1fr)_7rem_10rem]'
+		}
 		return props.showActions
 			? 'grid-cols-[5.5rem_minmax(0,1fr)_10rem_5rem]'
 			: 'grid-cols-[5.5rem_minmax(0,1fr)_10rem]'
+	}
+	if (props.showType)
+	{
+		return props.showActions
+			? 'grid-cols-[0_minmax(0,1fr)_7rem_11rem_5.5rem]'
+			: 'grid-cols-[0_minmax(0,1fr)_7rem_11rem]'
 	}
 	return props.showActions
 		? 'grid-cols-[0_minmax(0,1fr)_11rem_5.5rem]'
 		: 'grid-cols-[0_minmax(0,1fr)_11rem]'
 })
+
+const totalCount = computed(() => props.total ?? props.rows.length)
 
 const visibleRows = computed(() =>
 {

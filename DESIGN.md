@@ -303,10 +303,11 @@ exactly that.
 | `BrandMark` | The identity glyph, filled, inheriting `currentColor` |
 | `SettingsGroup` | Titled panel of setting rows; `as` lets it be a `<form>` |
 | `SettingsRow` | One setting: label and description left, control right |
-| `AddonTable` | The dense list — thumbnail, name + filename, version + note, action slot |
+| `AddonTable` | The dense list — thumbnail, name + filename, optional type, version + note, action slot |
 | `AddonThumb` | Addon icon with an offline-safe coloured initial fallback |
 | `StatusChip` | Word-first status label |
-| `UpdatePreview` | The diff: four tallies, deletions panel, filtered incoming list |
+| `FilterPills` | The one pill row: admin panes, and both axes of the diff |
+| `UpdatePreview` | The diff: four tallies, deletions panel, incoming list on two filter axes |
 | `InstallProgressDialog` | The install, run over the diff rather than instead of it |
 | `PackCard` | One modpack in the library: icon, name, version, group, CEMM history |
 | `PackUpdateDialog` | Asks for the update code against the pack that was clicked |
@@ -353,12 +354,37 @@ as a peer rather than a clone.
 The diff is the product's most consequential screen and its treatment is fixed:
 
 1. Deletions get their **own bordered panel, above everything else**, always
-   expanded, never behind a filter or tab.
-2. Deleted addons are **named individually**, not counted. "3 addons will be
-   removed" is not enough information to consent to deleting files.
+   expanded, never behind a tab and never reachable by the incoming list's
+   filters. Its own type filter is allowed and rests on **All types**, because
+   narrowing on request is not the same as concealing by default: the header
+   keeps the full total beside the visible count (`3 / 17`), the pills name
+   every category that is present, and the panel says the breakdown in prose
+   above them — so a filter that is never touched costs nothing.
+2. Deleted addons are **named individually**, not counted, and each row states
+   **which kind of addon it is**. "3 addons will be removed" is not enough
+   information to consent to deleting files, and neither is a list of names
+   whose types the player has to guess — a resource pack and a mod are not
+   equally cheap to lose.
 3. The commit button is `btn-error`, not `btn-primary`, when the update deletes.
 4. The acknowledgement checkbox gates the button, and **resets on every fetch** —
    consent to one diff is not consent to a different one.
+
+**The incoming list narrows on two axes, and neither is a tab.** What the update
+does to an addon (`New`, `Updated`, `Unchanged`) and what kind of addon it is
+(`Mods`, `Resource packs`, `Shaders`, `Data packs`) are independent questions,
+so they are two pill rows rather than one flattened set of eight. Each row
+counts what the *other* row currently allows — a pill states what pressing it
+would leave — but which pills exist is decided by the whole diff, so a category
+never vanishes from the row because the change filter happens to exclude it.
+
+Two consequences are load-bearing. **A filter combination that matches nothing
+leaves the list on screen**, saying so, with its pills intact; the first build
+hid the whole table behind `v-if` on the filtered rows, so choosing `New` on an
+update with no new addons removed the controls needed to choose anything else.
+And **a category that is not in the new diff resets to All types**, because a
+selection carried over from the last update would empty the list for a reason
+the player never chose. A change filter survives, since it means something
+against any diff.
 
 ## Micro-interactions
 
@@ -366,8 +392,9 @@ The diff is the product's most consequential screen and its treatment is fixed:
 `cursor: pointer` from `<button>`. daisyUI's `.btn` puts it back, so styled
 buttons were fine and the gap was invisible — but every *custom-styled* control
 in the app was silently on `cursor: default`: the three window controls, the
-rail's collapse toggle, the admin category pills, the diff filter pills, the
-rename button and the theme menu items. Any bare `<button>` added from here on
+rail's collapse toggle, the admin category pills, the diff filter pills (one
+`FilterPills` component now, in two sizes, rather than three copies of the same
+markup drifting apart), the rename button and the theme menu items. Any bare `<button>` added from here on
 needs `cursor-pointer` explicitly; there is no global rule doing it.
 
 **A native `<button>` centres its own content**, whatever its `display` says.

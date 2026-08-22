@@ -291,7 +291,8 @@
 
 <script setup lang="ts">
 import type { AddonRow } from '~/components/domains/addons/AddonTable.vue'
-import type { ConfigFileWithContent, UpdateDiff } from '~/types'
+import type { Addon, ConfigFileWithContent, UpdateDiff } from '~/types'
+import { ADDON_CATEGORIES } from '~/utils/addonCategories'
 
 const { downloadFromGithub, downloadConfigFiles, installUpdate } = useUserApi()
 const { getUpdateDiff } = useTauri()
@@ -441,61 +442,66 @@ const canApply = computed(() =>
 	&& (!hasDestructiveChanges.value || acknowledged.value)
 )
 
-const allIncomingAddons = computed(() =>
-{
-	if (manifest.value === null) return []
-	return [
-		...manifest.value.mods,
-		...manifest.value.resourcepacks,
-		...manifest.value.shaderpacks,
-		...manifest.value.datapacks
-	]
-})
+/**
+ * Every addon in the incoming manifest, paired with the category it was listed
+ * under. The diff itself carries only names and project IDs, so this is where a
+ * row learns whether it is a mod, a resource pack, a shader or a data pack —
+ * which the preview needs, because it puts all four in one list.
+ */
+const incomingEntries = computed(() =>
+	ADDON_CATEGORIES.flatMap((category) =>
+		(manifest.value?.[category] ?? []).map((addon) => ({ addon, category }))
+	)
+)
 
-const previousById = computed(() =>
-{
-	const map = new Map<number, string>()
-	const previous = previousManifest.value
-	if (previous === null) return map
-	for (const addon of [...previous.mods, ...previous.resourcepacks, ...previous.shaderpacks, ...previous.datapacks])
-	{
-		map.set(addon.addon_project_id, addon.version)
-	}
-	return map
-})
+/** The same, over the manifest being replaced. Deletions only exist here. */
+const previousEntries = computed(() =>
+	ADDON_CATEGORIES.flatMap((category) =>
+		(previousManifest.value?.[category] ?? []).map((addon) => ({ addon, category }))
+	)
+)
 
 /**
- * Project pages for addons the update removes. Keyed by name because that is
- * all `diff.removed_addons` carries; a name collision would at worst link to
- * the wrong project page, which is why the deletion itself is keyed on project
- * ID instead.
+ * Keyed on project ID, which is unique across all four categories — the same
+ * key `calculate_update_diff` decides deletions on.
  */
-const previousUrlByName = computed(() =>
-{
-	const map = new Map<string, string>()
-	const previous = previousManifest.value
-	if (previous === null) return map
-	for (const addon of [...previous.mods, ...previous.resourcepacks, ...previous.shaderpacks, ...previous.datapacks])
-	{
-		if (addon.webSiteURL != null && addon.webSiteURL.length > 0) map.set(addon.addon_name, addon.webSiteURL)
-	}
-	return map
-})
+const previousById = computed(() =>
+	new Map(previousEntries.value.map((entry) => [entry.addon.addon_project_id, entry]))
+)
+
+/**
+ * Keyed on name, and only ever a fallback: names are not an identity. Two
+ * CurseForge projects can share one, so a collision here would at worst label a
+ * row with the wrong category or link to the wrong project page — never change
+ * which addons the install deletes, which is keyed on project ID throughout.
+ */
+const previousByName = computed(() =>
+	new Map(previousEntries.value.map((entry) => [entry.addon.addon_name, entry]))
+)
+
+/**
+ * A link only counts when there is one behind it. `webSiteURL` is optional in
+ * the manifest and arrives empty often enough that passing it straight through
+ * put a hyperlinked name on rows that opened nothing.
+ */
+const projectUrlOf = (addon: Addon | undefined): string | undefined =>
+	addon?.webSiteURL != null && addon.webSiteURL.length > 0 ? addon.webSiteURL : undefined
 
 const addedRows = computed<AddonRow[]>(() =>
 	(previewData.value?.diff.new_addons ?? []).map((name) =>
 	{
-		const addon = allIncomingAddons.value.find((candidate) => candidate.addon_name === name)
+		const entry = incomingEntries.value.find((candidate) => candidate.addon.addon_name === name)
 		return {
 			key: `new-${name}`,
 			name,
-			subtitle: addon?.fileNameOnDisk ?? '',
-			version: addon?.version ?? '',
+			subtitle: entry?.addon.fileNameOnDisk ?? '',
+			version: entry?.addon.version ?? '',
 			versionNote: 'new install',
 			tone: 'new' as const,
 			label: 'New',
-			thumbnailUrl: addon?.thumbnailUrl,
-			projectUrl: addon?.webSiteURL ?? undefined
+			category: entry?.category,
+			thumbnailUrl: entry?.addon.thumbnailUrl,
+			projectUrl: projectUrlOf(entry?.addon)
 		}
 	})
 )
@@ -503,54 +509,70 @@ const addedRows = computed<AddonRow[]>(() =>
 const updatedRows = computed<AddonRow[]>(() =>
 	(previewData.value?.diff.updated_addon_ids ?? []).map((id) =>
 	{
-		const addon = allIncomingAddons.value.find((candidate) => candidate.addon_project_id === id)
-		const from = previousById.value.get(id)
+		const entry = incomingEntries.value.find((candidate) => candidate.addon.addon_project_id === id)
+		const previous = previousById.value.get(id)
 		return {
 			key: `upd-${id}`,
-			name: addon?.addon_name ?? `Unknown addon (id ${id})`,
-			subtitle: addon?.fileNameOnDisk ?? '',
-			version: addon?.version ?? '',
-			versionNote: from !== undefined ? `from ${from}` : 'replaced',
+			name: entry?.addon.addon_name ?? `Unknown addon (id ${id})`,
+			subtitle: entry?.addon.fileNameOnDisk ?? '',
+			version: entry?.addon.version ?? '',
+			versionNote: previous !== undefined ? `from ${previous.addon.version}` : 'replaced',
 			tone: 'updated' as const,
 			// Imperative until it happens, past tense afterwards — the diff stays
 			// on screen as the record of the install, so a row still saying
 			// "Update" is describing something that is already done.
 			label: updateApplied.value ? 'Updated' : 'Update',
-			thumbnailUrl: addon?.thumbnailUrl,
-			projectUrl: addon?.webSiteURL ?? undefined
+			// An addon cannot change category between two manifests, so the old
+			// one answers this just as well when the incoming lookup misses.
+			category: entry?.category ?? previous?.category,
+			thumbnailUrl: entry?.addon.thumbnailUrl,
+			projectUrl: projectUrlOf(entry?.addon)
 		}
 	})
 )
 
 const removedRows = computed<AddonRow[]>(() =>
-	(previewData.value?.diff.removed_addons ?? []).map((name) => ({
-		key: `del-${name}`,
-		name,
-		subtitle: '',
-		version: '',
-		versionNote: 'removed from disk',
-		tone: 'removed' as const,
-		label: updateApplied.value ? 'Deleted' : 'Delete',
-		struck: true,
-		// Resolved against the manifest being replaced, since a removed addon is
-		// by definition absent from the incoming one. This is the row where
-		// "what is this thing?" is most worth answering: it lists what the
-		// install is about to take off disk.
-		projectUrl: previousUrlByName.value.get(name)
-	}))
-)
+{
+	const ids = previewData.value?.diff.removed_addon_ids ?? []
+	return (previewData.value?.diff.removed_addons ?? []).map((name, index) =>
+	{
+		// Iterating the names, not the IDs: the two arrays are filled entry for
+		// entry by `calculate_update_diff`, and this list has to stay exactly as
+		// long as the count the panel headline and the acknowledgement quote. The
+		// ID is a better key for looking the addon up — so it is tried first —
+		// but it never decides whether a row exists.
+		const id = ids[index]
+		const byId = id === undefined ? undefined : previousById.value.get(id)
+		const previous = byId ?? previousByName.value.get(name)
+		return {
+			key: `del-${index}-${id ?? name}`,
+			name,
+			subtitle: '',
+			version: '',
+			versionNote: 'removed from disk',
+			tone: 'removed' as const,
+			label: updateApplied.value ? 'Deleted' : 'Delete',
+			struck: true,
+			// Resolved against the manifest being replaced, since a removed addon
+			// is by definition absent from the incoming one. This is the row where
+			// "what is this thing?" is most worth answering: it lists what the
+			// install is about to take off disk.
+			category: previous?.category,
+			projectUrl: projectUrlOf(previous?.addon)
+		}
+	})
+})
 
 const unchangedRows = computed<AddonRow[]>(() =>
 {
-	if (manifest.value === null) return []
 	const changed = new Set([
 		...addedRows.value.map((row) => row.name),
 		...updatedRows.value.map((row) => row.name),
 		...removedRows.value.map((row) => row.name)
 	])
-	return allIncomingAddons.value
-		.filter((addon) => !changed.has(addon.addon_name))
-		.map((addon) => ({
+	return incomingEntries.value
+		.filter((entry) => !changed.has(entry.addon.addon_name))
+		.map(({ addon, category }) => ({
 			key: `same-${addon.addon_project_id}-${addon.version}`,
 			name: addon.addon_name,
 			subtitle: addon.fileNameOnDisk,
@@ -558,8 +580,9 @@ const unchangedRows = computed<AddonRow[]>(() =>
 			versionNote: 'unchanged',
 			tone: 'unchanged' as const,
 			label: 'Same',
+			category,
 			thumbnailUrl: addon.thumbnailUrl,
-			projectUrl: addon.webSiteURL ?? undefined
+			projectUrl: projectUrlOf(addon)
 		}))
 })
 

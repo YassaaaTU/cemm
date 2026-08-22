@@ -58,6 +58,14 @@
           <p class="text-sm font-semibold text-error">
             {{ deletionHeadline }}
           </p>
+          <!-- Stated in prose as well as in the pills, so the make-up of the
+               deletion is on screen before anyone touches a control. -->
+          <p
+            v-if="deletionBreakdown.length > 0"
+            class="mt-0.5 text-xs font-medium text-base-content/80"
+          >
+            {{ deletionBreakdown }}
+          </p>
           <p class="mt-0.5 text-xs text-base-content/65">
             {{ deletionNote }}
           </p>
@@ -67,40 +75,58 @@
       <AddonTable
         id="preview-removed"
         :title="applied ? 'Deleted' : 'Being deleted'"
-        :rows="removed"
+        :rows="visibleRemoved"
+        :total="removed.length"
         :max-height="200"
         noun="addons"
-      />
+        show-type
+        empty-label="No addons of that type in this deletion."
+      >
+        <!-- A type filter here narrows, it never conceals: it starts on All,
+             the header keeps the full total beside the visible count, and the
+             breakdown above names every category regardless of it. -->
+        <template
+          v-if="removedTypeFilters.length > 2"
+          #filters
+        >
+          <FilterPills
+            v-model="removedType"
+            :options="removedTypeFilters"
+            label="Filter deletions by addon type"
+          />
+        </template>
+      </AddonTable>
     </div>
 
     <AddonTable
-      v-if="incoming.length > 0"
+      v-if="allIncoming.length > 0"
       id="preview-incoming"
       :title="applied ? 'Installed' : 'Incoming'"
       :rows="incoming"
+      :total="allIncoming.length"
       :max-height="300"
       noun="addons"
+      show-type
+      empty-label="No addons match both filters."
     >
       <template #filters>
-        <div
-          class="flex flex-wrap gap-1.5"
-          role="group"
-          aria-label="Filter by change"
-        >
-          <button
-            v-for="option in filters"
-            :key="option.value"
-            type="button"
-            class="cursor-pointer rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors duration-150 ease-(--ease-standard)"
-            :class="activeFilter === option.value
-              ? 'border-primary bg-primary/15 text-primary'
-              : 'border-base-300 bg-base-100 text-base-content/60 hover:text-base-content'"
-            :aria-pressed="activeFilter === option.value"
-            @click="activeFilter = option.value"
-          >
-            {{ option.label }}
-            <span class="ml-1 font-mono tabular-nums opacity-60">{{ option.count }}</span>
-          </button>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <FilterPills
+            v-if="incomingTypeFilters.length > 2"
+            v-model="incomingType"
+            :options="incomingTypeFilters"
+            label="Filter incoming addons by addon type"
+          />
+          <span
+            v-if="incomingTypeFilters.length > 2"
+            class="h-4 w-px bg-base-300"
+            aria-hidden="true"
+          />
+          <FilterPills
+            v-model="activeFilter"
+            :options="changeFilters"
+            label="Filter incoming addons by change"
+          />
         </div>
       </template>
     </AddonTable>
@@ -137,6 +163,7 @@
 
 <script setup lang="ts">
 import type { AddonRow } from '~/components/domains/addons/AddonTable.vue'
+import { ADDON_CATEGORIES, type AddonCategory, categoryCountPhrase, categoryLabel, joinPhrases } from '~/utils/addonCategories'
 
 const props = withDefaults(
 	defineProps<{
@@ -179,9 +206,22 @@ const deletionNote = computed(() =>
 		: 'Those files are removed from disk permanently. This cannot be undone.'
 })
 
-type FilterKey = 'all' | 'new' | 'updated' | 'same'
+type ChangeKey = 'all' | 'new' | 'updated' | 'same'
+/** `all` plus the four manifest categories. */
+type TypeKey = 'all' | AddonCategory
 
-const activeFilter = ref<FilterKey>('all')
+const activeFilter = ref<ChangeKey>('all')
+const incomingType = ref<TypeKey>('all')
+const removedType = ref<TypeKey>('all')
+
+const ofType = (rows: AddonRow[], type: TypeKey): AddonRow[] =>
+	type === 'all' ? rows : rows.filter((row) => row.category === type)
+
+const countOf = (rows: AddonRow[], type: TypeKey): number => ofType(rows, type).length
+
+/** Which categories a set actually contains, in manifest order. */
+const typesIn = (rows: AddonRow[]): AddonCategory[] =>
+	ADDON_CATEGORIES.filter((category) => rows.some((row) => row.category === category))
 
 const tallies = computed(() => [
 	{ label: 'Added', count: props.added.length, tone: 'text-success' },
@@ -190,23 +230,86 @@ const tallies = computed(() => [
 	{ label: 'Untouched', count: props.unchanged.length, tone: 'text-base-content/70' }
 ])
 
-const filters = computed(() => [
-	{ value: 'all' as const, label: 'All', count: props.added.length + props.updated.length + props.unchanged.length },
-	{ value: 'new' as const, label: 'New', count: props.added.length },
-	{ value: 'updated' as const, label: 'Updated', count: props.updated.length },
-	{ value: 'same' as const, label: 'Unchanged', count: props.unchanged.length }
-])
+const allIncoming = computed<AddonRow[]>(() => [...props.added, ...props.updated, ...props.unchanged])
 
 /**
- * Added, updated and unchanged share one list with a filter, rather than three
- * stacked tables. Deletions are deliberately NOT in here — they keep their own
- * panel above, where a filter can never hide them.
+ * Added, updated and unchanged share one list rather than three stacked tables,
+ * and are narrowed on two independent axes: what the update does to an addon,
+ * and what kind of addon it is. Deletions are deliberately NOT in here — they
+ * keep their own panel above, with its own type filter, where a change filter
+ * can never reach them.
  */
-const incoming = computed<AddonRow[]>(() =>
+const incomingByChange = computed<AddonRow[]>(() =>
 {
 	if (activeFilter.value === 'new') return props.added
 	if (activeFilter.value === 'updated') return props.updated
 	if (activeFilter.value === 'same') return props.unchanged
-	return [...props.added, ...props.updated, ...props.unchanged]
+	return allIncoming.value
+})
+
+const incoming = computed<AddonRow[]>(() => ofType(incomingByChange.value, incomingType.value))
+
+/**
+ * Each axis counts what the *other* axis currently allows, so a pill always
+ * reports what pressing it would leave. Which pills exist is decided by the
+ * whole set, though — a category must not disappear from the row because the
+ * change filter happens to exclude it, least of all the one selected.
+ */
+const incomingTypeFilters = computed(() => [
+	{ value: 'all' as TypeKey, label: 'All types', count: incomingByChange.value.length },
+	...typesIn(allIncoming.value).map((category) => ({
+		value: category as TypeKey,
+		label: categoryLabel(category),
+		count: countOf(incomingByChange.value, category)
+	}))
+])
+
+const changeFilters = computed(() => [
+	{ value: 'all' as ChangeKey, label: 'All', count: countOf(allIncoming.value, incomingType.value) },
+	{ value: 'new' as ChangeKey, label: 'New', count: countOf(props.added, incomingType.value) },
+	{ value: 'updated' as ChangeKey, label: 'Updated', count: countOf(props.updated, incomingType.value) },
+	{ value: 'same' as ChangeKey, label: 'Unchanged', count: countOf(props.unchanged, incomingType.value) }
+])
+
+const removedTypeFilters = computed(() => [
+	{ value: 'all' as TypeKey, label: 'All types', count: props.removed.length },
+	...typesIn(props.removed).map((category) => ({
+		value: category as TypeKey,
+		label: categoryLabel(category),
+		count: countOf(props.removed, category)
+	}))
+])
+
+const visibleRemoved = computed<AddonRow[]>(() => ofType(props.removed, removedType.value))
+
+/**
+ * "12 mods, 3 resource packs and 2 data packs".
+ *
+ * Withheld unless every deleted row is accounted for: a breakdown that does not
+ * add up to the headline is a worse answer than no breakdown, on the one panel
+ * where the numbers have to be trusted.
+ */
+const deletionBreakdown = computed(() =>
+{
+	const categories = typesIn(props.removed)
+	const counted = categories.reduce((sum, category) => sum + countOf(props.removed, category), 0)
+	if (counted !== props.removed.length) return ''
+	return joinPhrases(categories.map((category) => categoryCountPhrase(category, countOf(props.removed, category))))
+})
+
+/**
+ * A fetched update replaces the rows under a filter that was chosen for the
+ * previous one. A change filter still means something against any diff, but a
+ * category that is not in the new one leaves the list empty for a reason the
+ * player never chose, so those selections go back to All.
+ */
+watch(incomingTypeFilters, (options) =>
+{
+	if (!options.some((option) => option.value === incomingType.value)) incomingType.value = 'all'
+})
+
+watch(removedTypeFilters, (options) =>
+{
+	if (!options.some((option) => option.value === removedType.value)) removedType.value = 'all'
 })
 </script>

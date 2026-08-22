@@ -131,26 +131,13 @@
       >
         <!-- Category pills, with config files as a peer rather than a panel
            stranded below a 300-row table. -->
-        <div
-          class="flex shrink-0 flex-wrap gap-2"
-          role="group"
-          aria-label="Content category"
-        >
-          <button
-            v-for="pane in panes"
-            :key="pane.key"
-            type="button"
-            class="cursor-pointer rounded-full border px-3 py-1 text-[0.8125rem] font-medium transition-colors duration-150 ease-(--ease-standard)"
-            :class="activePane === pane.key
-              ? 'border-primary bg-primary/15 text-primary'
-              : 'border-base-300 bg-base-200 text-base-content/60 hover:text-base-content'"
-            :aria-pressed="activePane === pane.key"
-            @click="activePane = pane.key"
-          >
-            {{ pane.label }}
-            <span class="ml-1 font-mono tabular-nums opacity-60">{{ pane.count }}</span>
-          </button>
-        </div>
+        <FilterPills
+          v-model="activePane"
+          class="shrink-0"
+          :options="panes"
+          label="Content category"
+          size="md"
+        />
 
         <ConfigFilesSection
           v-if="activePane === 'config'"
@@ -296,6 +283,7 @@
 <script setup lang="ts">
 import type { AddonRow } from '~/components/domains/addons/AddonTable.vue'
 import type { Addon, ConfigFileWithContent } from '~/types'
+import { ADDON_CATEGORIES, categoryLabel } from '~/utils/addonCategories'
 
 const { loadInstance, saveManifest, uploadToGithub } = useAdminApi()
 const { notify } = useNotify()
@@ -424,14 +412,15 @@ const toRows = (addons: Addon[]): AddonRow[] =>
 		}
 	})
 
-const categories = computed(() => [
-	{ key: 'mods', label: 'Mods', rows: toRows(manifest.value?.mods ?? []) },
-	{ key: 'resourcepacks', label: 'Resource packs', rows: toRows(manifest.value?.resourcepacks ?? []) },
-	{ key: 'shaderpacks', label: 'Shaders', rows: toRows(manifest.value?.shaderpacks ?? []) },
-	{ key: 'datapacks', label: 'Data packs', rows: toRows(manifest.value?.datapacks ?? []) }
-])
+const categories = computed(() =>
+	ADDON_CATEGORIES.map((category) => ({
+		key: category as string,
+		label: categoryLabel(category),
+		rows: toRows(manifest.value?.[category] ?? [])
+	}))
+)
 
-const EMPTY_CATEGORY = { key: 'mods', label: 'Mods', rows: [] as AddonRow[] }
+const EMPTY_CATEGORY = { key: 'mods', label: categoryLabel('mods'), rows: [] as AddonRow[] }
 
 const activeCategory = computed(
 	() => categories.value.find((category) => category.key === activePane.value) ?? EMPTY_CATEGORY
@@ -440,11 +429,11 @@ const activeCategory = computed(
 /** Categories plus config files, which is a peer choice rather than a section. */
 const panes = computed(() => [
 	...categories.value.map((category) => ({
-		key: category.key,
+		value: category.key,
 		label: category.label,
 		count: category.rows.length
 	})),
-	{ key: 'config', label: 'Config files', count: selectedConfigFiles.value.length }
+	{ value: 'config', label: 'Config files', count: selectedConfigFiles.value.length }
 ])
 
 const totalAddons = computed(() =>
