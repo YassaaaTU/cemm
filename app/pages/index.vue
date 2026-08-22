@@ -4,80 +4,26 @@
       <!-- Where the settings that never change between updates get captured —
            which is what lets the workspaces be a single screen instead of a
            wizard that re-asks them every time. Shown unprompted on a first run,
-           and reachable again from Settings > Setup afterwards. -->
+           and reachable again from Settings > Setup afterwards.
+
+           It no longer opens by asking which counter you are on. That question
+           is answered better on a pack card, where there is a pack in hand to
+           answer it about. -->
       <header class="mb-6">
         <p class="text-xs text-base-content/50">
           {{ returning ? 'Setup' : 'First use' }}
         </p>
         <h1 class="mt-1 text-2xl font-bold tracking-tight">
-          {{ chosen === null ? 'Which side are you on?' : (returning ? 'Update your setup' : 'One-time setup') }}
+          {{ returning ? 'Update your setup' : 'One-time setup' }}
         </h1>
         <p class="mt-2 max-w-lg text-sm/relaxed  text-base-content/65">
-          <template v-if="chosen === null">
-            CEMM moves modpack changes between the person who makes them and
-            everyone who plays with them. You can switch any time from the rail.
-          </template>
-          <template v-else>
-            These stay saved, so from now on {{ chosen === 'user' ? 'installing an update is just pasting a code' : 'publishing is load, curate, publish' }}.
-          </template>
+          CEMM moves modpack changes between the person who makes them and
+          everyone who plays with them. These settings stay saved, so from now
+          on you start from your packs and pick what to do with one.
         </p>
       </header>
 
-      <!-- Phase 1 — pick a side -->
-      <div
-        v-if="chosen === null"
-        class="grid gap-3 sm:grid-cols-2"
-      >
-        <!--
-          An explicit flex column, and that is load-bearing rather than tidying.
-          A native <button> vertically CENTRES its content, so with one card's
-          description running to three lines and the other's to two, the shorter
-          card's icon sat 11.4px lower and its call to action 11.4px higher —
-          half a line-height — even though both cards were exactly the same
-          height. The two cards were anchored differently, which is what read as
-          crooked; matching the copy would only have hidden it.
-
-          Column layout tops the icon out, `mt-auto` pins the call to action to
-          the floor, and the descriptions are free to differ in length between
-          two fixed anchors.
-        -->
-        <button
-          v-for="counter in counters"
-          :key="counter.mode"
-          type="button"
-          class="group flex cursor-pointer flex-col rounded-box border border-base-300 bg-base-200 p-4 text-left transition-colors duration-200 ease-(--ease-standard) hover:border-primary/60 hover:bg-base-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          @click="chosen = counter.mode"
-        >
-          <span class="grid size-10 shrink-0 place-items-center rounded-box bg-primary/15 text-primary transition-colors duration-200 ease-(--ease-standard) group-hover:bg-primary/25">
-            <Icon
-              :name="counter.icon"
-              size="1.25rem"
-              aria-hidden="true"
-            />
-          </span>
-
-          <span class="mt-3 block text-base font-semibold">{{ counter.title }}</span>
-          <span class="mt-1 block text-sm/relaxed  text-base-content/65">
-            {{ counter.description }}
-          </span>
-
-          <span class="mt-auto flex items-center gap-1.5 pt-3 text-sm font-medium text-primary">
-            {{ counter.action }}
-            <Icon
-              name="mdi:arrow-right"
-              size="0.9375rem"
-              class="transition-transform duration-200 ease-out-quick group-hover:translate-x-1"
-              aria-hidden="true"
-            />
-          </span>
-        </button>
-      </div>
-
-      <!-- Phase 2 — the settings that never change -->
-      <div
-        v-else
-        class="space-y-5 rounded-box border border-base-300 bg-base-200 p-5"
-      >
+      <div class="space-y-5 rounded-box border border-base-300 bg-base-200 p-5">
         <fieldset class="fieldset">
           <label
             class="label text-sm font-medium text-base-content"
@@ -103,24 +49,18 @@
             />
           </label>
           <p class="label text-xs">
-            <template v-if="chosen === 'user'">
-              Your admin will tell you which one to use — it is the same for
-              everyone in your group.
-            </template>
-            <template v-else>
-              Where your updates get published. Players point CEMM at the same one.
-            </template>
+            The same one for everyone in your group — where updates get
+            published and where they get fetched from. Your admin will tell you
+            which to use.
           </p>
         </fieldset>
 
-        <!-- Only the player has a fixed destination; an admin picks the instance
-             per publish through the native dialog. -->
-        <fieldset
-          v-if="chosen === 'user'"
-          class="fieldset border-t border-base-300 pt-4"
-        >
+        <!-- Kept, but no longer required: opening a pack from Your packs sets
+             the destination too, and does it with the pack in hand. This is the
+             default for anyone who installs into the same folder every time. -->
+        <fieldset class="fieldset border-t border-base-300 pt-4">
           <p class="label text-sm font-medium text-base-content">
-            Your modpack folder
+            Your modpack folder <span class="font-normal text-base-content/50">(optional)</span>
           </p>
           <PathSelector
             type="directory"
@@ -130,16 +70,13 @@
             @update:model-value="onFolder"
             @error="(message: string) => notify(`Could not use that folder: ${message}`, 'error')"
           />
+          <p class="label text-xs">
+            Where updates install by default. Installing a pack from Your packs
+            sets this as well, so it is safe to leave empty.
+          </p>
         </fieldset>
 
         <div class="flex items-center gap-3 border-t border-base-300 pt-4">
-          <button
-            type="button"
-            class="btn btn-ghost btn-sm"
-            @click="chosen = null"
-          >
-            Back
-          </button>
           <div class="flex-1" />
           <button
             type="button"
@@ -163,14 +100,11 @@
 </template>
 
 <script setup lang="ts">
-import type { AppMode } from '~/stores/app'
 import { isValidGithubRepo } from '~/utils/githubRepo'
 
 const appStore = useAppStore()
-const manifestStore = useManifestStore()
 const { notify } = useNotify()
 
-const chosen = ref<AppMode | null>(null)
 const repo = ref(appStore.githubRepo)
 const folder = ref(appStore.modpackPath)
 
@@ -184,29 +118,12 @@ const returning = computed(
 	() => appStore.githubRepo.length > 0 || appStore.modpackPath.length > 0
 )
 
-const counters: Array<{ mode: AppMode, title: string, description: string, action: string, icon: string }> = [
-	{
-		mode: 'user',
-		title: 'Install an update',
-		description: 'Someone sent you a code. Paste it in, see exactly what changes, then apply it.',
-		action: 'Set this up',
-		icon: 'mdi:tray-arrow-down'
-	},
-	{
-		mode: 'admin',
-		title: 'Publish an update',
-		description: 'You changed the modpack. Package the difference, upload it, and get a code to hand out.',
-		action: 'Set this up',
-		icon: 'mdi:tray-arrow-up'
-	}
-]
-
-const canFinish = computed(() =>
-{
-	if (!isValidGithubRepo(repo.value)) return false
-	if (chosen.value === 'user' && folder.value.trim().length === 0) return false
-	return true
-})
+/**
+ * Only the repository gates the primary action. The folder has a second, better
+ * source now — a pack card — so requiring it here would block setup on a
+ * decision the library makes for you.
+ */
+const canFinish = computed(() => isValidGithubRepo(repo.value))
 
 const onFolder = (value: string | string[] | null) =>
 {
@@ -216,12 +133,10 @@ const onFolder = (value: string | string[] | null) =>
 
 /**
  * Skipping is allowed on purpose: a player who has not been given the repository
- * yet should still reach the workspace, where both settings are editable inline.
+ * yet should still reach their packs, where both settings are editable inline.
  */
 const finish = async () =>
 {
-	if (chosen.value === null) return
-
 	if (isValidGithubRepo(repo.value))
 	{
 		appStore.githubRepo = repo.value.trim()
@@ -231,25 +146,10 @@ const finish = async () =>
 		appStore.modpackPath = folder.value.trim()
 	}
 
-	// Re-running setup can now switch sides with a manifest already loaded. The
-	// rail clears it on a mode change for the same reason: a diff fetched as a
-	// player is not the admin's working set, and carrying it across would show
-	// one counter the other's data.
-	if (appStore.mode !== chosen.value)
-	{
-		manifestStore.clearManifest()
-	}
-
-	appStore.setMode(chosen.value)
-	await navigateTo('/dashboard')
+	appStore.completeSetup()
+	await navigateTo('/packs')
 }
 
-// A returning user never sees this screen.
-onMounted(async () =>
-{
-	if (appStore.modeChosen)
-	{
-		await navigateTo('/dashboard', { replace: true })
-	}
-})
+// A returning user never reaches this screen at all: setup.global.ts redirects
+// them to their packs before the route resolves.
 </script>

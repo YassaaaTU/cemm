@@ -220,7 +220,20 @@ fn pretty_loader(raw: &str) -> Option<String> {
     })
 }
 
-const MAX_ICON_BYTES: u64 = 512 * 1024;
+/// Ceiling for a single pack icon, applied to both the download and the read.
+///
+/// A cap is needed because the bytes come from a remote host named in a JSON
+/// file CEMM did not write, and because `as_data_uri` base64-encodes whatever
+/// it accepts straight into the webview — where the encoding costs a further
+/// third on top, once per card the library renders.
+///
+/// 512 KiB was too tight to be a size limit in practice: it was rejecting
+/// ordinary CurseForge artwork. The animated GIF thumbnails run well past it
+/// (2117344 and 1345987 bytes were both refused on a real library), so packs
+/// that had a picture on CurseForge showed none here. 4 MiB clears those with
+/// room to spare while still bounding what a doctored instance can talk CEMM
+/// into downloading and embedding.
+const MAX_ICON_BYTES: u64 = 4 * 1024 * 1024;
 
 /// The only host CurseForge serves pack artwork from. A `thumbnailUrl` comes out
 /// of a JSON file CEMM did not write, so it is treated as untrusted input: an

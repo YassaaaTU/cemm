@@ -309,13 +309,13 @@ const resetInstancesDir = async () =>
 }
 
 /**
- * Deliberately not behind a confirmation. Nothing is destroyed — the mode is
- * re-asked, the repository and folder are carried into the screen already
- * filled in, and the rail is still there to navigate away with.
+ * Deliberately not behind a confirmation. Nothing is destroyed — the repository
+ * and folder are carried into the screen already filled in, and the rail is
+ * still there to navigate away with.
  */
 const handleRerunSetup = async () =>
 {
-	appStore.resetModeChoice()
+	appStore.resetSetup()
 	await navigateTo('/')
 }
 

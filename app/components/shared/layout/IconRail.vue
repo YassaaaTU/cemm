@@ -146,9 +146,12 @@ interface Destination
  * still reachable directly, for anyone who already knows which side they are on
  * and has a pack loaded.
  *
- * It leads without being a landing screen. Nothing routes here automatically;
- * the job is still to ship or receive an update, and a library you must pass
- * through on every launch would be the interstitial this build already removed.
+ * It is also where every launch lands. That reverses an earlier call, which
+ * filed a landing library under the same heading as the old full-screen mode
+ * picker. They are not the same thing: the picker asked a question and showed
+ * nothing, so it stood between the user and the work. The library *is* the
+ * work — it shows the packs, and the click that starts a task is the click
+ * that sets the counter.
  */
 const destinations: Destination[] = [
 	{ label: 'Your packs', to: '/packs', icon: 'mdi:view-grid-outline' },
