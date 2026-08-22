@@ -48,7 +48,10 @@
               autocomplete="off"
             />
           </label>
-          <p class="label text-xs">
+          <!-- Not `.label`: daisyUI sets `white-space: nowrap` on it, which is
+               right for a field's name and wrong for a sentence — the text ran
+               straight out of the card instead of wrapping inside it. -->
+          <p class="mt-1 text-xs/relaxed text-base-content/60">
             The same one for everyone in your group — where updates get
             published and where they get fetched from. Your admin will tell you
             which to use.
@@ -70,7 +73,7 @@
             @update:model-value="onFolder"
             @error="(message: string) => notify(`Could not use that folder: ${message}`, 'error')"
           />
-          <p class="label text-xs">
+          <p class="mt-1 text-xs/relaxed text-base-content/60">
             Where updates install by default. Installing a pack from Your packs
             sets this as well, so it is safe to leave empty.
           </p>

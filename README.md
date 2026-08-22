@@ -1,9 +1,11 @@
 # CEMM - ChillEcke Modpack Manager
 
-CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes it easier for you and your friends to play pre-existing CurseForge modpacks with custom modifications. Built with a Nuxt 4 frontend, a Tauri native shell, and a local Rust sidecar service, it provides two main modes:
+CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes it easier for you and your friends to play pre-existing CurseForge modpacks with custom modifications. Built with a Nuxt 4 frontend, a Tauri native shell, and a local Rust sidecar service.
 
-- **Admin Mode**: Modify a downloaded CurseForge modpack (add, remove, or update addons and config files) → Generate an update code and upload changes to GitHub
-- **User Mode**: Paste the update code from admin → Select correct modpack directory → Install the modifications automatically
+CEMM opens on your CurseForge pack library. Picking what to do with a pack is what puts you on one of two sides — you are never asked to choose in the abstract:
+
+- **Publish** (admin): Modify a downloaded CurseForge modpack (add, remove, or update addons and config files) → Generate an update code and upload changes to GitHub
+- **Install** (user): Paste the update code from an admin → Review exactly what changes → Install it into the pack you chose
 
 ## Features
 - **Modpack Modification**: Add, remove, or update mods/resourcepacks/shaderpacks/datapacks from CurseForge modpacks
@@ -14,6 +16,24 @@ CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes
 - **Automatic Installation**: Users can install modifications with a single update code
 - **Recoverable Installation**: Add-ons, configs, and manifests finalize through a journaled transaction that rolls back interrupted or failed updates
 - **Cross-Platform**: Developed and used on Windows. macOS and Linux builds are produced by CI, and the compiled sidecar's lifecycle is tested on all three, but the full app has never been run on macOS or Linux — treat those as untested.
+
+## AI assistance
+
+CEMM has had AI involved throughout. What changed at 2.0.0 is how, and the
+commit history changes character at that boundary — this is here so anyone
+reading it knows why.
+
+Up to and including **v1.6.0**, the work was manual in the sense that mattered:
+AI lived in a chat window. I was learning Rust, so I asked it questions and it
+sometimes answered with code. Where that code was any good I read it, decided
+whether it made sense, and brought it in myself. Nothing reached the repository
+without going through my hands one piece at a time.
+
+**From 2.0.0 onward the project is AI-assisted in a stronger sense.** The rewrite
+and the work around it — the local sidecar architecture, the transactional
+installer, and much of the surrounding refactoring — were written with AI working
+directly in the codebase rather than beside it. I still set the scope, make the
+architecture decisions, and decide what ships.
 
 ## Usage
 
@@ -29,10 +49,11 @@ CEMM (ChillEcke Modpack Manager) is a lightweight desktop application that makes
 6. Share the update code.
 
 ### User Mode
-1. Configure your GitHub repository settings
-2. Enter the update code provided by the admin (`modpack-key/uuid`, or just the UUID for older updates)
-3. Preview what changes will be applied
-4. Install the update to your modpack directory
+1. Set your GitHub repository, either during first-run setup or in **Settings**.
+2. Open the pack library and choose **Install** on the modpack you want to update. That sets the destination for you. (A pack outside the CurseForge library can be pointed at by hand instead.)
+3. Enter the update code provided by the admin (`modpack-key/uuid`, or just the UUID for older updates).
+4. Preview exactly what will be added, updated and deleted before anything is written.
+5. Install. Nothing touches the pack until you confirm, and an interrupted install rolls back rather than leaving it half-written.
 
 ### Settings
 - GitHub repository the update code resolves against — the one an admin publishes to and a user downloads from.
@@ -81,7 +102,7 @@ cemm/
 │   ├── src/            # Native shell, sidecar client/service, and Rust domains
 │   └── Cargo.toml      # Rust dependencies
 ├── docs/architecture/  # Accepted architecture decisions
-└── .plan/              # Implementation plans for active rewrites
+└── .plan/              # Implementation plans for completed rewrites
 ```
 
 ### Runtime Architecture

@@ -147,11 +147,11 @@
           </button>
         </SettingsRow>
 
-        <SettingsRow label="First-time setup">
+        <SettingsRow label="Setup screen">
           <template #description>
-            Reopens the screen CEMM showed on first launch, where you chose
-            whether you install updates or publish them. Your repository and
-            modpack folder are kept and filled in for you.
+            Reopens the screen CEMM showed on first launch, with your repository
+            and modpack folder already filled in. Nothing is cleared — leaving it
+            unfinished keeps the settings you have.
           </template>
 
           <button

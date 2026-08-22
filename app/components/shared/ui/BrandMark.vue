@@ -1,20 +1,27 @@
 <template>
-  <!-- An isometric box with its lid lifted clear of the body: one pack, and the
-       part that is arriving to join it. CEMM never ships a whole modpack, only
-       the difference to one you already have, so the mark is a container
-       receiving something rather than a closed cube.
-
-       Faces are filled rather than outlined because this is drawn at 17px in
-       the title bar, where a 1.4px stroke closes up into a smudge. The same
-       geometry, on a violet tile, is `public/brand/cemm-icon.svg` — the source
-       the whole Tauri icon set is generated from, so the window icon and the
-       mark inside the window are the one shape. -->
   <svg
     viewBox="1.65 0.7 20.7 20.7"
     fill="currentColor"
     role="img"
     :aria-label="title"
   >
+    <!-- This comment, and the ones below, must stay INSIDE the <svg>.
+         A comment beside the root element makes the template a multi-root
+         fragment, and Vue silently stops forwarding `class` when a component
+         has more than one root. Dev builds hid it; production did not, and both
+         call sites lost their sizing — the title-bar mark collapsed to 0x0 and
+         the About mark rendered at 670px.
+
+         An isometric box with its lid lifted clear of the body: one pack, and
+         the part that is arriving to join it. CEMM never ships a whole modpack,
+         only the difference to one you already have, so the mark is a container
+         receiving something rather than a closed cube.
+
+         Faces are filled rather than outlined because this is drawn at 17px in
+         the title bar, where a 1.4px stroke closes up into a smudge. The same
+         geometry, on a violet tile, is `public/brand/cemm-icon.svg` — the source
+         the whole Tauri icon set is generated from, so the window icon and the
+         mark inside the window are the one shape. -->
     <title>{{ title }}</title>
 
     <!-- Lid — the arriving part. -->

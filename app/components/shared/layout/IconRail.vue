@@ -9,107 +9,89 @@
        The icon box is a fixed 38px at the start of every row in BOTH states, so
        widening the rail never moves an icon — only the labels arrive beside
        them. That is what keeps the transition readable rather than a slide. -->
+  <!-- No `overflow-hidden` here, deliberately. Each row already clips its own
+       sliding label, so this clipped nothing that was not clipped anyway — but
+       it did clip the tooltips, which daisyUI draws outside the rail's 54px by
+       design. Both clippers had to go for a tooltip to be visible at all. -->
   <nav
-    class="flex shrink-0 flex-col gap-1.5 overflow-hidden border-r border-base-300 bg-base-200 p-2 "
+    class="flex shrink-0 flex-col gap-1.5 border-r border-base-300 bg-base-200 p-2 "
     :class="[
       appStore.railExpanded ? 'w-50' : 'w-13.5',
       anim('transition-[width] duration-220 ease-out-quick'),
     ]"
     aria-label="Main"
   >
-    <NuxtLink
+    <!-- The tooltip sits on a wrapper, never on the row itself. daisyUI draws it
+         in a pseudo-element placed outside the box (`tooltip-right` puts it at
+         left: 100% + 0.5rem), and the row carries `overflow-hidden` to clip the
+         sliding label — which clipped the tooltip along with it. Splitting them
+         lets the row keep clipping its own contents while the tooltip escapes. -->
+    <div
       v-for="item in destinations"
       :key="item.label"
-      :to="item.to"
-      class="relative flex h-9.5 w-full items-center overflow-hidden rounded-lg transition-colors duration-150 ease-(--ease-standard) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-      :class="[
-        tooltipClass,
-        isActive(item)
-          ? 'bg-primary/15 text-primary'
-          : 'text-base-content/50 hover:bg-base-300 hover:text-base-content',
-      ]"
+      class="w-full"
+      :class="tooltipClass"
       :data-tip="item.label"
-      :aria-label="item.label"
-      :aria-current="isActive(item) ? 'page' : undefined"
-      @click="item.mode !== undefined && selectMode(item.mode)"
     >
-      <!-- The active marker is a shape as well as a colour, so the current
-           destination is not signalled by hue alone. -->
-      <span
-        v-if="isActive(item)"
-        class="absolute inset-y-2.5  -left-2 w-0.75 rounded-r bg-primary"
-        aria-hidden="true"
-      />
-      <span class="grid size-9.5 shrink-0 place-items-center">
-        <Icon
-          :name="item.icon"
-          size="1.1875rem"
+      <NuxtLink
+        :to="item.to"
+        class="relative flex h-9.5 w-full items-center overflow-hidden rounded-lg transition-colors duration-150 ease-(--ease-standard) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        :class="isActive(item)
+          ? 'bg-primary/15 text-primary'
+          : 'text-base-content/50 hover:bg-base-300 hover:text-base-content'"
+        :aria-label="item.label"
+        :aria-current="isActive(item) ? 'page' : undefined"
+        @click="item.mode !== undefined && selectMode(item.mode)"
+      >
+        <!-- The active marker is a shape as well as a colour, so the current
+             destination is not signalled by hue alone. -->
+        <span
+          v-if="isActive(item)"
+          class="absolute inset-y-2.5 -left-2 w-0.75 rounded-r bg-primary"
           aria-hidden="true"
         />
-      </span>
-      <!-- Decorative: the link is already named by aria-label, so the visible
-           text must not be announced a second time. -->
-      <span
-        class="min-w-0 pr-2 text-[0.8125rem] font-medium whitespace-nowrap"
-        :class="labelClass"
-        aria-hidden="true"
-      >{{ item.label }}</span>
-    </NuxtLink>
+        <span class="grid size-9.5 shrink-0 place-items-center">
+          <Icon
+            :name="item.icon"
+            size="1.1875rem"
+            aria-hidden="true"
+          />
+        </span>
+        <!-- Decorative: the link is already named by aria-label, so the visible
+             text must not be announced a second time. -->
+        <span
+          class="min-w-0 pr-2 text-[0.8125rem] leading-none font-medium whitespace-nowrap"
+          :class="labelClass"
+          aria-hidden="true"
+        >{{ item.label }}</span>
+      </NuxtLink>
+    </div>
 
     <div class="flex-1" />
 
-    <NuxtLink
-      to="/settings"
-      class="relative flex h-9.5 w-full items-center overflow-hidden rounded-lg transition-colors duration-150 ease-(--ease-standard) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-      :class="[
-        tooltipClass,
-        isSettings
-          ? 'bg-primary/15 text-primary'
-          : 'text-base-content/50 hover:bg-base-300 hover:text-base-content',
-      ]"
+    <div
+      class="w-full"
+      :class="tooltipClass"
       data-tip="Settings"
-      aria-label="Settings"
-      :aria-current="isSettings ? 'page' : undefined"
     >
-      <span
-        v-if="isSettings"
-        class="absolute inset-y-2.5  -left-2 w-0.75 rounded-r bg-primary"
-        aria-hidden="true"
-      />
-      <span class="grid size-9.5 shrink-0 place-items-center">
-        <Icon
-          name="mdi:cog-outline"
-          size="1.1875rem"
+      <NuxtLink
+        to="/settings"
+        class="relative flex h-9.5 w-full items-center overflow-hidden rounded-lg transition-colors duration-150 ease-(--ease-standard) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        :class="isSettings
+          ? 'bg-primary/15 text-primary'
+          : 'text-base-content/50 hover:bg-base-300 hover:text-base-content'"
+        aria-label="Settings"
+        :aria-current="isSettings ? 'page' : undefined"
+      >
+        <span
+          v-if="isSettings"
+          class="absolute inset-y-2.5  -left-2 w-0.75 rounded-r bg-primary"
           aria-hidden="true"
         />
-      </span>
-      <span
-        class="min-w-0 pr-2 text-[0.8125rem] font-medium whitespace-nowrap"
-        :class="labelClass"
-        aria-hidden="true"
-      >Settings</span>
-    </NuxtLink>
-
-    <!-- The width control sits at the foot of the rail it controls, on the same
-         38px grid as the destinations so the column reads as one stack. -->
-    <div class="mt-0.5 border-t border-base-300 pt-1.5">
-      <button
-        type="button"
-        class="relative flex h-9.5 w-full cursor-pointer items-center overflow-hidden rounded-lg text-base-content/40 transition-colors duration-150 ease-(--ease-standard) hover:bg-base-300 hover:text-base-content focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-        :class="tooltipClass"
-        :data-tip="appStore.railExpanded ? 'Collapse sidebar' : 'Expand sidebar'"
-        :aria-label="appStore.railExpanded ? 'Collapse sidebar' : 'Expand sidebar'"
-        :aria-expanded="appStore.railExpanded"
-        @click="appStore.toggleRail()"
-      >
         <span class="grid size-9.5 shrink-0 place-items-center">
           <Icon
-            name="mdi:chevron-right"
+            name="mdi:cog-outline"
             size="1.1875rem"
-            :class="[
-              appStore.railExpanded ? 'rotate-180' : 'rotate-0',
-              anim('transition-transform duration-220 ease-out-quick'),
-            ]"
             aria-hidden="true"
           />
         </span>
@@ -117,8 +99,43 @@
           class="min-w-0 pr-2 text-[0.8125rem] font-medium whitespace-nowrap"
           :class="labelClass"
           aria-hidden="true"
-        >Collapse</span>
-      </button>
+        >Settings</span>
+      </NuxtLink>
+    </div>
+
+    <!-- The width control sits at the foot of the rail it controls, on the same
+         38px grid as the destinations so the column reads as one stack. -->
+    <div class="mt-0.5 border-t border-base-300 pt-1.5">
+      <div
+        class="w-full"
+        :class="tooltipClass"
+        :data-tip="appStore.railExpanded ? 'Collapse sidebar' : 'Expand sidebar'"
+      >
+        <button
+          type="button"
+          class="relative flex h-9.5 w-full cursor-pointer items-center overflow-hidden rounded-lg text-base-content/40 transition-colors duration-150 ease-(--ease-standard) hover:bg-base-300 hover:text-base-content focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          :aria-label="appStore.railExpanded ? 'Collapse sidebar' : 'Expand sidebar'"
+          :aria-expanded="appStore.railExpanded"
+          @click="appStore.toggleRail()"
+        >
+          <span class="grid size-9.5 shrink-0 place-items-center">
+            <Icon
+              name="mdi:chevron-right"
+              size="1.1875rem"
+              :class="[
+                appStore.railExpanded ? 'rotate-180' : 'rotate-0',
+                anim('transition-transform duration-220 ease-out-quick'),
+              ]"
+              aria-hidden="true"
+            />
+          </span>
+          <span
+            class="min-w-0 pr-2 text-[0.8125rem] font-medium whitespace-nowrap"
+            :class="labelClass"
+            aria-hidden="true"
+          >Collapse</span>
+        </button>
+      </div>
     </div>
   </nav>
 </template>
