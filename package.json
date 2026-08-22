@@ -62,7 +62,7 @@
 		"@typescript-eslint/parser": "8.67.0",
 		"@vueuse/nuxt": "^14.4.0",
 		"baseline-browser-mapping": "^2.11.14",
-		"bumpp": "^11.1.0",
+		"bumpp": "^12.2.1",
 		"caniuse-lite": "^1.0.30001809",
 		"daisyui": "5.7.17",
 		"eslint": "^10.8.1",
