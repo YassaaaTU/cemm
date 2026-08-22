@@ -84,7 +84,14 @@ jobs:
         with:
           tagName: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag_name }}
           releaseName: ${{ github.event_name == 'release' && github.event.release.name || inputs.release_name }}
-          releaseBody: ${{ github.event_name == 'release' && github.event.release.body || inputs.release_body }}
+          # Same collapse risk as `prerelease` below: an empty release body would
+          # silently fall through to the dispatch input.
+          releaseBody: ${{ github.event_name == 'release' && github.event.release.body != '' && github.event.release.body || inputs.release_body }}
           releaseDraft: false
-          prerelease: ${{ github.event_name == 'release' && github.event.release.prerelease || inputs.prerelease }}
+          # Do NOT write this as `A && B || C`. That expression collapses to C
+          # whenever B is falsy, so a normal (non-prerelease) published release
+          # fell through to inputs.prerelease -- which is empty on a `release`
+          # event -- and tauri-action rejected "" as a non-boolean. Comparing to
+          # `== true` on both sides always yields a real boolean.
+          prerelease: ${{ github.event_name == 'release' && github.event.release.prerelease == true || inputs.prerelease == true }}
           args: ${{ matrix.args }} --verbose
