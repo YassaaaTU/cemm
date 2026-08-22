@@ -55,7 +55,7 @@
 		"@pinia/nuxt": "1.0.2",
 		"@stylistic/eslint-plugin": "^5.10.0",
 		"@tailwindcss/vite": "4.3.3",
-		"@tauri-apps/api": "2.10.1",
+		"@tauri-apps/api": "2.11.1",
 		"@tauri-apps/cli": "2.11.4",
 		"@types/bun": "^1.4.0",
 		"@typescript-eslint/eslint-plugin": "8.67.0",
