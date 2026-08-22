@@ -19,6 +19,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # @typescript-eslint/parser refuses to load against TS 7.0 outright, so a
+      # major bump takes lint down for the whole repo -- it is not a problem any
+      # change here can fix. Drop this ignore once typescript-eslint ships TS
+      # >=7.1 support: https://github.com/typescript-eslint/typescript-eslint/issues/10940
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       # The build toolchain moves as a unit; separate PRs for each transitive
       # bump would be noise nobody reads.
