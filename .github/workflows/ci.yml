@@ -87,15 +87,15 @@ jobs:
       # Rust carries every network call and filesystem write CEMM makes, so an
       # advisory here is a real finding and fails the build.
       #
-      # The three ignores below are pinned by upstream Tauri and cannot be
-      # resolved from this repository. Re-check them on every Tauri upgrade and
-      # delete the ignore as soon as the bump lands:
-      #   RUSTSEC-2026-0194 quick-xml  <- plist <- tauri, macOS bundle parsing only
-      #   RUSTSEC-2026-0195 quick-xml  <- same path; absent from Windows builds
-      #   RUSTSEC-2026-0235 rkyv       <- transitive, needs a semver-major bump
+      # This step runs with no --ignore flags, and it should stay that way. The
+      # three that used to live here are all resolved: quick-xml reached the
+      # patched 0.41.0 via plist 1.10.0, and rkyv left the tree entirely.
+      #
+      # If a new advisory lands that genuinely cannot be actioned here, add a
+      # single --ignore with the crate, the reason, and the condition for
+      # removing it -- never restore a block of them wholesale.
       - name: cargo audit
-        run: |
-          cargo audit --file src-tauri/Cargo.lock             --ignore RUSTSEC-2026-0194             --ignore RUSTSEC-2026-0195             --ignore RUSTSEC-2026-0235
+        run: cargo audit --file src-tauri/Cargo.lock
 
       - name: setup bun
         uses: oven-sh/setup-bun@v2
