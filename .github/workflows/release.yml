@@ -76,7 +76,7 @@ jobs:
         if: matrix.args == '--target aarch64-apple-darwin'
         run: rustup target add aarch64-apple-darwin
       
-      - uses: tauri-apps/tauri-action@v0.5
+      - uses: tauri-apps/tauri-action@v1.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
