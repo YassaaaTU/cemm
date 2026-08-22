@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: setup bun
-        uses: oven-sh/setup-bun@v1
+        uses: oven-sh/setup-bun@v2
 
       - name: install dependencies
         run: bun install --frozen-lockfile
@@ -98,7 +98,7 @@ jobs:
           cargo audit --file src-tauri/Cargo.lock             --ignore RUSTSEC-2026-0194             --ignore RUSTSEC-2026-0195             --ignore RUSTSEC-2026-0235
 
       - name: setup bun
-        uses: oven-sh/setup-bun@v1
+        uses: oven-sh/setup-bun@v2
 
       - name: install dependencies
         run: bun install --frozen-lockfile
