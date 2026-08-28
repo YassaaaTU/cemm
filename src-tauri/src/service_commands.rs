@@ -3,6 +3,7 @@ use tauri::State;
 
 use crate::composables::instances::{CachedIcon, PackLibrary};
 use crate::composables::manifest::ConfigFileWithContent;
+use crate::composables::manifest::InstallBaseline;
 use crate::composables::manifest::Manifest;
 use crate::installer::{InstallOptions, UpdateDiff};
 use crate::service::protocol::Method;
@@ -50,6 +51,21 @@ pub async fn read_directory_recursive(
         .await
 }
 
+/// Data packs in the instance that CurseForge did not install, as content
+/// ready to publish. See `collect_custom_datapacks` for why they travel this way.
+#[tauri::command]
+pub async fn collect_custom_datapacks(
+    service: State<'_, ServiceClient>,
+    modpack_path: String,
+) -> Result<Vec<ConfigFileWithContent>, String> {
+    service
+        .call_typed(
+            Method::ConfigCollectDatapacks,
+            json!({ "modpackPath": modpack_path }),
+        )
+        .await
+}
+
 #[tauri::command]
 pub async fn is_binary_file(
     service: State<'_, ServiceClient>,
@@ -77,6 +93,21 @@ pub async fn parse_minecraft_instance(
 ) -> Result<Manifest, String> {
     service
         .call_typed(Method::ManifestParseInstance, json!({ "path": path }))
+        .await
+}
+
+/// The reconciled state of a pack, for the preview to diff an update against.
+/// `None` means CEMM has no record of the pack at all.
+#[tauri::command]
+pub async fn resolve_install_baseline(
+    service: State<'_, ServiceClient>,
+    modpack_path: String,
+) -> Result<Option<InstallBaseline>, String> {
+    service
+        .call_typed(
+            Method::ManifestResolveBaseline,
+            json!({ "modpackPath": modpack_path }),
+        )
         .await
 }
 

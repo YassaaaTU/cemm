@@ -141,6 +141,44 @@ enum Category {
     DataPacks,
 }
 
+/// In manifest order, which is the order every list in the UI is built in.
+const CATEGORIES: [Category; 4] = [
+    Category::Mods,
+    Category::ResourcePacks,
+    Category::ShaderPacks,
+    Category::DataPacks,
+];
+
+impl Category {
+    /// The directory under the modpack root this category installs into.
+    const fn directory(self) -> &'static str {
+        match self {
+            Self::Mods => "mods",
+            Self::ResourcePacks => "resourcepacks",
+            Self::ShaderPacks => "shaderpacks",
+            Self::DataPacks => "datapacks",
+        }
+    }
+
+    fn addons(self, manifest: &Manifest) -> &Vec<Addon> {
+        match self {
+            Self::Mods => &manifest.mods,
+            Self::ResourcePacks => &manifest.resourcepacks,
+            Self::ShaderPacks => &manifest.shaderpacks,
+            Self::DataPacks => &manifest.datapacks,
+        }
+    }
+
+    fn addons_mut(self, manifest: &mut Manifest) -> &mut Vec<Addon> {
+        match self {
+            Self::Mods => &mut manifest.mods,
+            Self::ResourcePacks => &mut manifest.resourcepacks,
+            Self::ShaderPacks => &mut manifest.shaderpacks,
+            Self::DataPacks => &mut manifest.datapacks,
+        }
+    }
+}
+
 fn folder_leaf(mod_folder_path: &str) -> &str {
     mod_folder_path
         .rsplit(['/', '\\'])
@@ -297,6 +335,153 @@ pub fn parse_minecraft_instance(path: String) -> Result<Manifest, String> {
         datapacks,
         config_files: Vec::new(), // Empty for MinecraftInstance conversion
     })
+}
+
+/// The pack's actual contents, reconciled from both records CEMM keeps of them,
+/// plus which of those contents CEMM did not put there itself.
+///
+/// Neither record is trustworthy alone, and they go stale in opposite
+/// directions. `cemm-manifest.json` is what CEMM last installed, so it goes
+/// stale the moment the pack is changed through CurseForge — which is the
+/// admin's entire workflow, and a normal player's too. `minecraftinstance.json`
+/// is CurseForge's inventory, so it goes stale the moment CEMM installs
+/// anything, because CEMM writes jars into `mods/` without telling CurseForge.
+/// Preferring either one outright produced a diff describing a pack nobody has:
+/// deletions for files that are already gone, and "new" rows for addons sitting
+/// on disk the whole time.
+///
+/// Disk settles it. An entry survives into the baseline only if its file is
+/// really there, and an addon CurseForge knows about is folded in when CEMM's
+/// own record misses it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "generated/")]
+pub struct InstallBaseline {
+    /// What is installed right now, as far as CEMM can tell. The diff runs
+    /// against this.
+    pub manifest: Manifest,
+    /// Project IDs in `manifest` that CEMM did not install: present on disk and
+    /// known to CurseForge, but absent from `cemm-manifest.json`. They belong in
+    /// the baseline — an update that ships one of them is not installing it
+    /// anew — but they are not CEMM's to delete without being asked, so the
+    /// preview lists them apart from the removals it performs by default.
+    #[ts(type = "number[]")]
+    pub unmanaged_addon_ids: Vec<u64>,
+}
+
+/// Whether an addon's file is actually in the pack.
+///
+/// Both spellings count. An addon switched off in CurseForge sits on disk as
+/// `X.jar.disabled` while every manifest still calls it `X.jar`, which is the
+/// same reason `collect_old_file_paths` sweeps both names.
+fn addon_file_present(modpack_path: &Path, category: Category, file_name: &str) -> bool {
+    let directory = modpack_path.join(category.directory());
+    directory.join(file_name).exists() || directory.join(format!("{file_name}.disabled")).exists()
+}
+
+/// Reads and parses `cemm-manifest.json`, distinguishing "not there" from
+/// "unreadable". A pack CEMM has never installed into legitimately has no
+/// manifest; one whose manifest cannot be parsed is a problem the caller has to
+/// hear about rather than silently treat as a fresh install.
+fn read_installed_manifest(path: &Path) -> Result<Option<Manifest>, String> {
+    let content = match fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "Failed to read the installed manifest at {}: {error}",
+                path.display()
+            ))
+        }
+    };
+
+    serde_json::from_str(&content)
+        .map(Some)
+        .map_err(|error| format!("The installed cemm-manifest.json is not valid: {error}"))
+}
+
+/// Builds the baseline an incoming update is diffed against. See
+/// [`InstallBaseline`] for why it is assembled from two records and disk rather
+/// than read from one file.
+///
+/// `Ok(None)` means CEMM has nothing to go on — neither record exists — which is
+/// a genuinely fresh install, not an empty pack.
+pub fn resolve_install_baseline(modpack_path: String) -> Result<Option<InstallBaseline>, String> {
+    let root = Path::new(&modpack_path);
+    log::info!("resolve_install_baseline: reconciling {modpack_path}");
+
+    let installed = read_installed_manifest(&root.join(crate::installer::INSTALLED_MANIFEST_FILE))?;
+
+    let instance_path = root.join("minecraftinstance.json");
+    let instance = if instance_path.exists() {
+        Some(parse_minecraft_instance(
+            instance_path.to_string_lossy().into_owned(),
+        )?)
+    } else {
+        None
+    };
+
+    if installed.is_none() && instance.is_none() {
+        log::info!("resolve_install_baseline: no CEMM or CurseForge record, treating as fresh");
+        return Ok(None);
+    }
+
+    let mut manifest = Manifest {
+        // A baseline is a state snapshot, not an update of either kind.
+        update_type: None,
+        mods: Vec::new(),
+        resourcepacks: Vec::new(),
+        shaderpacks: Vec::new(),
+        datapacks: Vec::new(),
+        config_files: installed
+            .as_ref()
+            .map(|installed| installed.config_files.clone())
+            .unwrap_or_default(),
+    };
+    let mut unmanaged_addon_ids = Vec::new();
+    let mut pruned = 0usize;
+
+    for category in CATEGORIES {
+        let mut present: Vec<Addon> = Vec::new();
+
+        if let Some(installed) = installed.as_ref() {
+            for addon in category.addons(installed) {
+                if addon_file_present(root, category, &addon.file_name_on_disk) {
+                    present.push(addon.clone());
+                } else {
+                    pruned += 1;
+                }
+            }
+        }
+
+        if let Some(instance) = instance.as_ref() {
+            for addon in category.addons(instance) {
+                let already_known = present
+                    .iter()
+                    .any(|known| known.addon_project_id == addon.addon_project_id);
+                if already_known || !addon_file_present(root, category, &addon.file_name_on_disk) {
+                    continue;
+                }
+                unmanaged_addon_ids.push(addon.addon_project_id);
+                present.push(addon.clone());
+            }
+        }
+
+        *category.addons_mut(&mut manifest) = present;
+    }
+
+    log::info!(
+        "resolve_install_baseline: {} addons on disk ({} of them not installed by CEMM), {pruned} manifest entries dropped as missing",
+        CATEGORIES
+            .iter()
+            .map(|category| category.addons(&manifest).len())
+            .sum::<usize>(),
+        unmanaged_addon_ids.len()
+    );
+
+    Ok(Some(InstallBaseline {
+        manifest,
+        unmanaged_addon_ids,
+    }))
 }
 
 fn find_disabled_files(dir: PathBuf) -> Vec<String> {
@@ -586,6 +771,205 @@ mod tests {
 
         assert_eq!(manifest.mods.len(), 1);
         assert_eq!(manifest.mods[0].disabled, Some(true));
+    }
+
+    /// A pack directory holding one CurseForge instance record, whatever files
+    /// `on_disk` names under `mods/`, and optionally a `cemm-manifest.json`.
+    fn write_pack(
+        addons: serde_json::Value,
+        installed: Option<&Manifest>,
+        on_disk: &[&str],
+    ) -> tempfile::TempDir {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        let body = serde_json::json!({ "installedAddons": addons });
+        fs::write(
+            temp.path().join("minecraftinstance.json"),
+            serde_json::to_string(&body).expect("serialize"),
+        )
+        .expect("write instance");
+
+        let mods_dir = temp.path().join("mods");
+        fs::create_dir_all(&mods_dir).expect("mods dir");
+        for file in on_disk {
+            fs::write(mods_dir.join(file), b"").expect("plant file");
+        }
+
+        if let Some(installed) = installed {
+            fs::write(
+                temp.path().join("cemm-manifest.json"),
+                serde_json::to_string(installed).expect("serialize"),
+            )
+            .expect("write installed manifest");
+        }
+
+        temp
+    }
+
+    fn baseline_of(pack: &tempfile::TempDir) -> InstallBaseline {
+        resolve_install_baseline(pack.path().to_string_lossy().into_owned())
+            .expect("baseline should resolve")
+            .expect("pack has records, so a baseline exists")
+    }
+
+    fn installed_manifest_of(mods: Vec<Addon>) -> Manifest {
+        Manifest {
+            update_type: Some("full".to_string()),
+            mods,
+            resourcepacks: Vec::new(),
+            shaderpacks: Vec::new(),
+            datapacks: Vec::new(),
+            config_files: Vec::new(),
+        }
+    }
+
+    fn manifest_addon(project_id: u64, name: &str, file_name: &str) -> Addon {
+        Addon {
+            addon_file_id: project_id,
+            addon_name: name.to_string(),
+            addon_project_id: project_id,
+            cdn_download_url: format!("https://edge.forgecdn.net/{file_name}"),
+            mod_folder_path: "mods".to_string(),
+            version: file_name.to_string(),
+            web_site_url: None,
+            disabled: None,
+            file_name_on_disk: file_name.to_string(),
+        }
+    }
+
+    fn instance_addon(project_id: u64, name: &str, file_name: &str) -> serde_json::Value {
+        serde_json::json!({
+            "addonID": project_id,
+            "name": name,
+            "modFolderPath": r"D:\Games\Instances\Pack\mods",
+            "categorySection": { "name": "Mods" },
+            "installedFile": {
+                "id": project_id,
+                "fileName": file_name,
+                "downloadUrl": format!("https://edge.forgecdn.net/{file_name}"),
+            },
+        })
+    }
+
+    #[test]
+    fn baseline_drops_addons_whose_files_are_gone() {
+        // The admin's own workflow: CEMM installed three mods, then the pack was
+        // edited through CurseForge and Lithium was removed. Trusting
+        // cemm-manifest.json alone had the next update offer to delete a file
+        // that is not there, which is what "removing mods no longer present"
+        // looked like on screen.
+        let pack = write_pack(
+            serde_json::json!([]),
+            Some(&installed_manifest_of(vec![
+                manifest_addon(1, "Sodium", "sodium-1.jar"),
+                manifest_addon(2, "Lithium", "lithium-1.jar"),
+            ])),
+            &["sodium-1.jar"],
+        );
+
+        let baseline = baseline_of(&pack);
+
+        assert_eq!(baseline.manifest.mods.len(), 1);
+        assert_eq!(baseline.manifest.mods[0].addon_name, "Sodium");
+        assert!(baseline.unmanaged_addon_ids.is_empty());
+    }
+
+    #[test]
+    fn baseline_keeps_an_addon_curseforge_has_switched_off() {
+        // Its file is `X.jar.disabled` while every manifest still calls it
+        // `X.jar`. Checking only the canonical name pruned every disabled addon
+        // out of the baseline and then reinstalled it as new.
+        let pack = write_pack(
+            serde_json::json!([]),
+            Some(&installed_manifest_of(vec![manifest_addon(
+                1,
+                "Sodium",
+                "sodium-1.jar",
+            )])),
+            &["sodium-1.jar.disabled"],
+        );
+
+        assert_eq!(baseline_of(&pack).manifest.mods.len(), 1);
+    }
+
+    #[test]
+    fn baseline_folds_in_addons_curseforge_installed_and_marks_them_unmanaged() {
+        // The other half of the same drift: a mod added through CurseForge is on
+        // disk but absent from cemm-manifest.json. Left out of the baseline it
+        // came back as "new" in a preview of an update that already contains it.
+        let pack = write_pack(
+            serde_json::json!([
+                instance_addon(1, "Sodium", "sodium-1.jar"),
+                instance_addon(9, "Iris", "iris-1.jar"),
+            ]),
+            Some(&installed_manifest_of(vec![manifest_addon(
+                1,
+                "Sodium",
+                "sodium-1.jar",
+            )])),
+            &["sodium-1.jar", "iris-1.jar"],
+        );
+
+        let baseline = baseline_of(&pack);
+
+        assert_eq!(baseline.manifest.mods.len(), 2);
+        // CEMM installed Sodium, so it stays CEMM's to remove; Iris does not.
+        assert_eq!(baseline.unmanaged_addon_ids, vec![9]);
+    }
+
+    #[test]
+    fn a_pack_curseforge_lists_but_has_not_written_yet_contributes_nothing() {
+        let pack = write_pack(
+            serde_json::json!([instance_addon(1, "Sodium", "sodium-1.jar")]),
+            None,
+            &[],
+        );
+
+        let baseline = baseline_of(&pack);
+
+        assert!(baseline.manifest.mods.is_empty());
+        assert!(baseline.unmanaged_addon_ids.is_empty());
+    }
+
+    #[test]
+    fn every_addon_of_a_pack_cemm_has_never_touched_is_unmanaged() {
+        // Nothing here was installed by CEMM, so a first install deletes none of
+        // it by default -- including addons the admin deliberately excluded from
+        // the upload, which the old baseline swept away silently.
+        let pack = write_pack(
+            serde_json::json!([
+                instance_addon(1, "Sodium", "sodium-1.jar"),
+                instance_addon(2, "Lithium", "lithium-1.jar"),
+            ]),
+            None,
+            &["sodium-1.jar", "lithium-1.jar"],
+        );
+
+        let baseline = baseline_of(&pack);
+
+        assert_eq!(baseline.manifest.mods.len(), 2);
+        assert_eq!(baseline.unmanaged_addon_ids, vec![1, 2]);
+    }
+
+    #[test]
+    fn a_folder_with_neither_record_has_no_baseline_at_all() {
+        let temp = tempfile::tempdir().expect("temp dir");
+
+        assert!(
+            resolve_install_baseline(temp.path().to_string_lossy().into_owned())
+                .expect("resolving should succeed")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn an_unreadable_installed_manifest_is_reported_rather_than_ignored() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        fs::write(temp.path().join("cemm-manifest.json"), "{ not json").expect("write");
+
+        let error = resolve_install_baseline(temp.path().to_string_lossy().into_owned())
+            .expect_err("a corrupt manifest must not pass as a fresh install");
+
+        assert!(error.contains("cemm-manifest.json"), "got: {error}");
     }
 
     #[test]

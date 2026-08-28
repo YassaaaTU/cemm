@@ -470,6 +470,9 @@ const handleStatus = (message: string, type: 'success' | 'error' | 'info' | 'war
 	setStatus(message, type)
 }
 
+/** The prefix every auto-collected custom data pack file carries. */
+const CUSTOM_DATAPACK_PREFIX = 'datapacks/'
+
 async function handleLoadInstance()
 {
 	clearStatus()
@@ -477,6 +480,18 @@ async function handleLoadInstance()
 	if (result.success && typeof result.instanceDir === 'string')
 	{
 		packsStore.recordOpened(result.instanceDir)
+	}
+	if (result.success && result.customDatapacks !== undefined)
+	{
+		// Replaced rather than merged: these describe the instance just loaded,
+		// and anything already under `datapacks/` describes whichever pack was
+		// loaded before. Hand-picked config files are left exactly as they were.
+		selectedConfigFiles.value = [
+			...selectedConfigFiles.value.filter(
+				(file) => !file.relative_path.startsWith(CUSTOM_DATAPACK_PREFIX)
+			),
+			...result.customDatapacks
+		]
 	}
 	if (manifest.value !== null)
 	{

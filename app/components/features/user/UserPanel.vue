@@ -175,13 +175,16 @@
         </div>
 
         <UpdatePreview
+          v-model:remove-extras="removeExtras"
           :added="addedRows"
           :updated="updatedRows"
           :removed="removedRows"
+          :extras="extraRows"
           :unchanged="unchangedRows"
           :config-files="configFilesPreview"
           :update-type="manifest.updateType"
           :applied="updateApplied"
+          :locked="installing || updateApplied"
         />
       </div>
 
@@ -229,7 +232,7 @@
           type="checkbox"
           class="checkbox border-error checkbox-sm"
         />
-        I understand {{ removedRows.length }} {{ removedRows.length === 1 ? 'file' : 'files' }}
+        I understand {{ deletionCount }} {{ deletionCount === 1 ? 'file' : 'files' }}
         will be permanently deleted
       </label>
 
@@ -408,6 +411,14 @@ watch(
 	{ immediate: true }
 )
 
+/**
+ * Whether the player has asked CEMM to also remove the addons it did not
+ * install. Off every time an update is fetched — see `resetFetchedState` — for
+ * the same reason the destructive acknowledgement resets: a decision made about
+ * one update is not a decision about the next one.
+ */
+const removeExtras = ref(false)
+
 const previewData = computed(() =>
 {
 	if (manifest.value === null || diff.value === null) return null
@@ -423,9 +434,12 @@ const previewData = computed(() =>
 
 const hasAnyChange = computed(() => previewData.value?.hasChanges === true)
 
-const hasDestructiveChanges = computed(() =>
-	previewData.value !== null && previewData.value.diff.removed_addons.length > 0
+/** Everything this install will actually take off disk, given the opt-in. */
+const deletionCount = computed(() =>
+	removedRows.value.length + (removeExtras.value ? extraRows.value.length : 0)
 )
+
+const hasDestructiveChanges = computed(() => deletionCount.value > 0)
 
 const previewMatchesSelection = computed(() =>
 	manifest.value !== null
@@ -531,7 +545,24 @@ const updatedRows = computed<AddonRow[]>(() =>
 	})
 )
 
-const removedRows = computed<AddonRow[]>(() =>
+/**
+ * Addons CEMM did not install: present on disk and known to CurseForge, but
+ * absent from `cemm-manifest.json` — the player's own additions, and base-pack
+ * addons the admin deliberately excluded from the upload. Resolved in Rust
+ * alongside the baseline itself.
+ */
+const unmanagedIds = computed(() => new Set(manifestStore.unmanagedAddonIds))
+
+/**
+ * Everything in the pack that this update does not carry, before the question
+ * of who is entitled to delete it.
+ *
+ * One pass rather than two, because the row and its provenance come from the
+ * same entry: splitting the diff twice invited the two lists to disagree about
+ * how many addons are leaving, on the one panel whose numbers have to be
+ * trusted.
+ */
+const departingEntries = computed(() =>
 {
 	const ids = previewData.value?.diff.removed_addon_ids ?? []
 	return (previewData.value?.diff.removed_addons ?? []).map((name, index) =>
@@ -545,8 +576,21 @@ const removedRows = computed<AddonRow[]>(() =>
 		const byId = id === undefined ? undefined : previousById.value.get(id)
 		const previous = byId ?? previousByName.value.get(name)
 		return {
-			key: `del-${index}-${id ?? name}`,
+			id,
+			unmanaged: id !== undefined && unmanagedIds.value.has(id),
 			name,
+			index,
+			previous
+		}
+	})
+})
+
+const removedRows = computed<AddonRow[]>(() =>
+	departingEntries.value
+		.filter((entry) => !entry.unmanaged)
+		.map((entry) => ({
+			key: `del-${entry.index}-${entry.id ?? entry.name}`,
+			name: entry.name,
 			subtitle: '',
 			version: '',
 			versionNote: 'removed from disk',
@@ -557,10 +601,70 @@ const removedRows = computed<AddonRow[]>(() =>
 			// is by definition absent from the incoming one. This is the row where
 			// "what is this thing?" is most worth answering: it lists what the
 			// install is about to take off disk.
-			category: previous?.category,
-			projectUrl: projectUrlOf(previous?.addon)
-		}
-	})
+			category: entry.previous?.category,
+			projectUrl: projectUrlOf(entry.previous?.addon)
+		}))
+)
+
+/**
+ * The same list for addons CEMM never installed. They are shown apart, and left
+ * alone unless the player opts in: an update is the admin's statement about
+ * their own pack, not a licence to remove a mod the player added themselves —
+ * or one the admin excluded from the upload precisely to keep it local.
+ */
+const extraRows = computed<AddonRow[]>(() =>
+	departingEntries.value
+		.filter((entry) => entry.unmanaged)
+		.map((entry) => ({
+			key: `extra-${entry.index}-${entry.id ?? entry.name}`,
+			name: entry.name,
+			subtitle: '',
+			version: entry.previous?.addon.version ?? '',
+			versionNote: removeExtras.value ? 'removed from disk' : 'left in place',
+			tone: removeExtras.value ? 'removed' as const : 'unchanged' as const,
+			label: removeExtras.value
+				? (updateApplied.value ? 'Deleted' : 'Delete')
+				: 'Kept',
+			struck: removeExtras.value,
+			category: entry.previous?.category,
+			projectUrl: projectUrlOf(entry.previous?.addon)
+		}))
+)
+
+/** Project IDs of the addons in `extraRows`, for the baseline filter below. */
+const extraIds = computed(() =>
+	new Set(
+		departingEntries.value
+			.filter((entry) => entry.unmanaged && entry.id !== undefined)
+			.map((entry) => entry.id as number)
+	)
+)
+
+/**
+ * The baseline the install actually runs against, which is what decides its
+ * deletions: `calculate_update_diff` derives them from whatever manifest is
+ * handed to it.
+ *
+ * Opting out is therefore expressed by withholding those addons from the
+ * baseline rather than by asking the installer to make an exception — the
+ * preview and the install then read the same document, and cannot disagree
+ * about what is about to be deleted. Unmanaged addons the update *does* carry
+ * stay in: dropping them would make the installer download files already on
+ * disk.
+ */
+const installBaseline = computed<Manifest | null>(() =>
+{
+	const baseline = previousManifest.value
+	if (baseline === null || removeExtras.value || extraIds.value.size === 0) return baseline
+
+	const kept = (addons: Addon[]) => addons.filter((addon) => !extraIds.value.has(addon.addon_project_id))
+	return {
+		...baseline,
+		mods: kept(baseline.mods),
+		resourcepacks: kept(baseline.resourcepacks),
+		shaderpacks: kept(baseline.shaderpacks),
+		datapacks: kept(baseline.datapacks)
+	}
 })
 
 const unchangedRows = computed<AddonRow[]>(() =>
@@ -660,6 +764,7 @@ const resetFetchedState = (clearUpdateCode: boolean) =>
 	if (!clearUpdateCode) uuid.value = preservedCode
 	fetchedUpdateCode.value = null
 	acknowledged.value = false
+	removeExtras.value = false
 	downloadedConfigFiles.value = []
 	downloadedConfigUpdateCode.value = null
 	progress.value = 0
@@ -734,10 +839,12 @@ async function handleFetch()
 			downloadedConfigFiles.value = []
 			downloadedConfigUpdateCode.value = null
 			// Consent resets for every fetched update: acknowledging one diff is
-			// not consent to a different one. The applied flag goes with it, or a
+			// not consent to a different one, and neither is agreeing to sweep up
+			// addons CEMM did not install. The applied flag goes with them, or a
 			// freshly fetched diff would inherit the previous one's "installed"
 			// banner and claim to already be on disk.
 			acknowledged.value = false
+			removeExtras.value = false
 			updateApplied.value = false
 			editingDestination.value = false
 		}
@@ -836,7 +943,7 @@ async function performInstall()
 	// narrowing, which TypeScript does not carry across a closure boundary when
 	// it comes from a property access.
 	const installingManifest = manifest.value
-	const baseline = previousManifest.value
+	const baseline = installBaseline.value
 	const configFiles = downloadedConfigFiles.value
 
 	if (installingManifest === null) return

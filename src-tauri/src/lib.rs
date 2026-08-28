@@ -28,7 +28,9 @@ mod composables {
 
 pub use composables::github::{download_config_files, download_manifest};
 pub use composables::instances::{CachedIcon, PackGroup, PackLibrary, PackSummary};
-pub use composables::manifest::{open_url, parse_minecraft_instance, Addon, Manifest};
+pub use composables::manifest::{
+    open_url, parse_minecraft_instance, resolve_install_baseline, Addon, InstallBaseline, Manifest,
+};
 mod installer;
 pub use installer::InstallOptions;
 
@@ -45,6 +47,7 @@ pub fn run() {
             service_commands::read_file,
             service_commands::write_file,
             service_commands::parse_minecraft_instance,
+            service_commands::resolve_install_baseline,
             service_commands::get_update_diff,
             open_url,
             service_commands::upload_update,
@@ -53,6 +56,7 @@ pub fn run() {
             service_commands::install_update,
             select_multiple_files,
             service_commands::read_directory_recursive,
+            service_commands::collect_custom_datapacks,
             service_commands::is_binary_file,
             service_commands::validate_path,
             service_commands::scan_pack_library,
@@ -452,6 +456,42 @@ impl ScanLimits {
             max_total_bytes: 1024 * 1024 * 1024,
         }
     }
+
+    /// Tighter than a config import, because every byte collected here is
+    /// base64-encoded into a GitHub blob and pushed as part of one commit. A
+    /// hand-written data pack is kilobytes; anything approaching these numbers
+    /// is a mistake worth stopping rather than uploading.
+    const fn datapacks() -> Self {
+        Self {
+            max_depth: 32,
+            max_files: 5_000,
+            max_file_bytes: 64 * 1024 * 1024,
+            max_total_bytes: 128 * 1024 * 1024,
+        }
+    }
+}
+
+/// Which files a directory walk collects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ScanFilter {
+    /// Config import: only the text and binary formats CEMM knows are settings.
+    /// Sweeping up everything under `config/` would pull in caches and logs.
+    ConfigExtensions,
+    /// Custom content import: every file, because a data pack is whatever its
+    /// author put in it -- `pack.mcmeta` and JSON, but also `pack.png`, `.ogg`,
+    /// `.nbt` structures, and for a zipped pack a single archive.
+    EveryFile,
+}
+
+impl ScanFilter {
+    fn accepts(self, path: &std::path::Path) -> bool {
+        match self {
+            Self::EveryFile => true,
+            Self::ConfigExtensions => path.extension().is_some_and(|extension| {
+                is_supported_config_extension(&extension.to_string_lossy().to_lowercase())
+            }),
+        }
+    }
 }
 
 fn is_supported_config_extension(extension: &str) -> bool {
@@ -543,6 +583,21 @@ fn read_directory_recursive_with_limits(
     base: &std::path::Path,
     limits: ScanLimits,
 ) -> Result<Vec<ConfigFileWithContent>, String> {
+    read_directory_filtered(dir, base, limits, ScanFilter::ConfigExtensions, &[])
+}
+
+/// The sandboxed directory walk both imports run on.
+///
+/// `skip_top_level` names entries of `dir` itself to leave alone, and applies at
+/// that level only -- it is how the data pack scan steps over the packs
+/// CurseForge already installed without having to guess at their contents.
+fn read_directory_filtered(
+    dir: &std::path::Path,
+    base: &std::path::Path,
+    limits: ScanLimits,
+    filter: ScanFilter,
+    skip_top_level: &[String],
+) -> Result<Vec<ConfigFileWithContent>, String> {
     use cap_fs_ext::{OpenOptionsFollowExt, OpenOptionsMaybeDirExt};
     use cap_primitives::fs::{
         open, open_ambient_dir, open_dir_nofollow, read_base_dir, stat, FollowSymlinks, OpenOptions,
@@ -613,6 +668,14 @@ fn read_directory_recursive_with_limits(
                 continue;
             }
 
+            if depth == 0
+                && skip_top_level
+                    .iter()
+                    .any(|skipped| skipped.as_str() == name.to_string_lossy())
+            {
+                continue;
+            }
+
             if metadata.is_dir() {
                 let child_depth = depth + 1;
                 if child_depth > limits.max_depth {
@@ -652,13 +715,13 @@ fn read_directory_recursive_with_limits(
                 continue;
             }
 
-            let Some(extension) = path.extension() else {
-                continue;
-            };
-            let extension = extension.to_string_lossy().to_lowercase();
-            if !is_supported_config_extension(&extension) {
+            if !filter.accepts(&path) {
                 continue;
             }
+            let extension = path
+                .extension()
+                .map(|extension| extension.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
 
             let mut options = OpenOptions::new();
             options
@@ -762,6 +825,65 @@ fn read_directory_recursive_with_limits(
     }
 
     Ok(config_files)
+}
+
+/// Data packs an admin wrote themselves, ready to travel with an update.
+///
+/// A published manifest is built entirely from `minecraftinstance.json`, which
+/// lists only what CurseForge installed. A data pack you authored has no
+/// CurseForge project behind it, so it appeared nowhere in the manifest and was
+/// silently left out of every update — and it could not have been listed there
+/// anyway, because a manifest entry is a CDN download URL and a hand-written
+/// pack has no URL to give.
+///
+/// So it travels the way config files do: as content. That also handles the
+/// shape data packs actually come in — a folder of `pack.mcmeta` plus `data/`
+/// as readily as a single zip — because a folder is just several relative paths.
+///
+/// Packs CurseForge did install are skipped by name: the manifest already
+/// carries them, and shipping their bytes as well would upload the same pack
+/// twice.
+fn collect_custom_datapacks(modpack_path: String) -> Result<Vec<ConfigFileWithContent>, String> {
+    let root = std::path::Path::new(&modpack_path);
+    let datapacks_dir = root.join("datapacks");
+    if !datapacks_dir.is_dir() {
+        log::info!("collect_custom_datapacks: no datapacks folder in {modpack_path}");
+        return Ok(Vec::new());
+    }
+
+    let mut skip: Vec<String> = Vec::new();
+    let instance_path = root.join("minecraftinstance.json");
+    if instance_path.exists() {
+        let instance = composables::manifest::parse_minecraft_instance(
+            instance_path.to_string_lossy().into_owned(),
+        )?;
+        for addon in &instance.datapacks {
+            skip.push(addon.file_name_on_disk.clone());
+            skip.push(format!("{}.disabled", addon.file_name_on_disk));
+        }
+    }
+
+    let collected = read_directory_filtered(
+        &datapacks_dir,
+        root,
+        ScanLimits::datapacks(),
+        ScanFilter::EveryFile,
+        &skip,
+    )?;
+
+    // A pack switched off by renaming it stays off: shipping it would turn it
+    // back on in every player's game under a name Minecraft does not load.
+    let collected: Vec<ConfigFileWithContent> = collected
+        .into_iter()
+        .filter(|file| !file.relative_path.to_lowercase().ends_with(".disabled"))
+        .collect();
+
+    log::info!(
+        "collect_custom_datapacks: {} file(s) from {}",
+        collected.len(),
+        datapacks_dir.display()
+    );
+    Ok(collected)
 }
 
 fn is_binary_file(path: String) -> Result<bool, String> {
@@ -1214,6 +1336,134 @@ mod tests {
             .join("sub")
             .join("file.toml")
             .exists());
+    }
+
+    /// A pack directory with a `datapacks/` folder and, when `addons` is given,
+    /// a `minecraftinstance.json` listing those data pack filenames as
+    /// CurseForge-installed.
+    fn write_datapack_instance(addons: &[&str]) -> tempfile::TempDir {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        let entries: Vec<serde_json::Value> = addons
+            .iter()
+            .enumerate()
+            .map(|(index, file_name)| {
+                serde_json::json!({
+                    "addonID": index as u64 + 1,
+                    "name": file_name,
+                    "modFolderPath": "datapacks",
+                    "categorySection": { "name": "Data Packs" },
+                    "installedFile": {
+                        "id": index as u64 + 1,
+                        "fileName": file_name,
+                        "downloadUrl": format!("https://edge.forgecdn.net/{file_name}"),
+                    },
+                })
+            })
+            .collect();
+        fs::write(
+            temp.path().join("minecraftinstance.json"),
+            serde_json::to_string(&serde_json::json!({ "installedAddons": entries }))
+                .expect("serialize"),
+        )
+        .expect("write instance");
+        temp
+    }
+
+    #[test]
+    fn a_hand_written_data_pack_folder_is_collected_whole() {
+        // The shape a data pack actually comes in: a directory, not an addon.
+        // `installedAddons` cannot describe it and a manifest entry cannot carry
+        // it, so it travels as content, every file under its own relative path.
+        let temp = write_datapack_instance(&[]);
+        write_test_file(temp.path(), "datapacks/my-pack/pack.mcmeta", b"{}");
+        write_test_file(
+            temp.path(),
+            "datapacks/my-pack/data/my/recipe.json",
+            b"{ \"type\": \"crafting_shaped\" }",
+        );
+        // Not a config extension, and still part of the pack.
+        write_test_file(
+            temp.path(),
+            "datapacks/my-pack/pack.png",
+            &[0x89, b'P', 0, 1],
+        );
+
+        let collected = collect_custom_datapacks(temp.path().to_string_lossy().into_owned())
+            .expect("collection should succeed");
+
+        let mut paths: Vec<String> = collected
+            .iter()
+            .map(|file| file.relative_path.clone())
+            .collect();
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![
+                "datapacks/my-pack/data/my/recipe.json".to_string(),
+                "datapacks/my-pack/pack.mcmeta".to_string(),
+                "datapacks/my-pack/pack.png".to_string(),
+            ]
+        );
+        // The binary one round-trips as base64 rather than as lossy text.
+        let png = collected
+            .iter()
+            .find(|file| file.relative_path.ends_with("pack.png"))
+            .expect("pack.png should be collected");
+        assert_eq!(png.is_binary, Some(true));
+        assert!(png.content.starts_with(BINARY_CONTENT_PREFIX));
+    }
+
+    #[test]
+    fn data_packs_curseforge_installed_are_left_to_the_manifest() {
+        // The manifest already carries these as addons with a CDN URL. Shipping
+        // their bytes as well would upload the same pack twice.
+        let temp = write_datapack_instance(&["vanilla-tweaks.zip"]);
+        write_test_file(temp.path(), "datapacks/vanilla-tweaks.zip", b"PK");
+        write_test_file(temp.path(), "datapacks/mine.zip", b"PK");
+
+        let collected = collect_custom_datapacks(temp.path().to_string_lossy().into_owned())
+            .expect("collection should succeed");
+
+        assert_eq!(collected.len(), 1);
+        assert_eq!(collected[0].relative_path, "datapacks/mine.zip");
+    }
+
+    #[test]
+    fn a_data_pack_switched_off_on_disk_stays_off() {
+        let temp = write_datapack_instance(&[]);
+        write_test_file(temp.path(), "datapacks/paused.zip.disabled", b"PK");
+
+        assert!(
+            collect_custom_datapacks(temp.path().to_string_lossy().into_owned())
+                .expect("collection should succeed")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_pack_with_no_datapacks_folder_collects_nothing() {
+        let temp = write_datapack_instance(&[]);
+
+        assert!(
+            collect_custom_datapacks(temp.path().to_string_lossy().into_owned())
+                .expect("a missing folder is not an error")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn config_import_still_ignores_files_that_are_not_settings() {
+        // The walk is shared with the data pack scan now; only that scan takes
+        // everything.
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        write_test_file(temp.path(), "options.txt", b"fov:80");
+        write_test_file(temp.path(), "cache.bin", b" ");
+
+        let files = read_directory_recursive_with_limits(temp.path(), temp.path(), test_limits())
+            .expect("scan should succeed");
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].relative_path, "options.txt");
     }
 
     #[test]

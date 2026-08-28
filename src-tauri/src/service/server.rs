@@ -69,6 +69,10 @@ async fn dispatch(
                 params.base_path,
             ))
         }
+        Method::ConfigCollectDatapacks => {
+            let params: ModpackPathParams = decode_params(request)?;
+            encode_result(crate::collect_custom_datapacks(params.modpack_path))
+        }
         Method::PathIsBinary => {
             let params: PathParams = decode_params(request)?;
             encode_result(crate::is_binary_file(params.path))
@@ -81,6 +85,12 @@ async fn dispatch(
             let params: PathParams = decode_params(request)?;
             encode_result(crate::composables::manifest::parse_minecraft_instance(
                 params.path,
+            ))
+        }
+        Method::ManifestResolveBaseline => {
+            let params: ModpackPathParams = decode_params(request)?;
+            encode_result(crate::composables::manifest::resolve_install_baseline(
+                params.modpack_path,
             ))
         }
         Method::ManifestDiff => {
@@ -222,6 +232,12 @@ struct WriteFileParams {
 struct ReadDirectoryParams {
     dir_path: String,
     base_path: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ModpackPathParams {
+    modpack_path: String,
 }
 
 #[derive(Deserialize)]

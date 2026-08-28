@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 
-import type { Manifest, UpdateDiff } from '~/types'
+import type { InstallBaseline, Manifest, UpdateDiff } from '~/types'
 
 const invoke = mock(() => Promise.resolve<unknown>(null))
 mock.module('@tauri-apps/api/core', () => ({ invoke }))
@@ -121,6 +121,90 @@ describe('openUrl', () =>
 
 		await useTauri().openUrl('https://evil.example.com/')
 
+		expect(logger.error).toHaveBeenCalled()
+	})
+})
+
+/**
+ * The baseline decides what an install deletes, so the two states this call can
+ * report have to stay distinguishable: a pack CEMM has no record of (fresh
+ * install, nothing to remove) and a lookup that failed (hold the preview back).
+ * Reconciliation itself is Rust's, and is covered beside it in `manifest.rs`.
+ */
+describe('resolveInstallBaseline', () =>
+{
+	beforeEach(() =>
+	{
+		invoke.mockReset()
+		logger.error.mockReset()
+	})
+
+	it('asks the backend for the pack it was given', async () =>
+	{
+		const baseline: InstallBaseline = { manifest: manifest(), unmanaged_addon_ids: [42] }
+		invoke.mockResolvedValue(baseline)
+
+		const outcome = await useTauri().resolveInstallBaseline('D:/Instances/ATM10')
+
+		expect(invoke).toHaveBeenCalledWith('resolve_install_baseline', {
+			modpackPath: 'D:/Instances/ATM10'
+		})
+		expect(outcome).toEqual({ ok: true, value: baseline })
+	})
+
+	// A pack with no records at all, which is not the same thing as a failure.
+	it('reports a pack CEMM knows nothing about as a successful null', async () =>
+	{
+		invoke.mockResolvedValue(null)
+
+		expect(await useTauri().resolveInstallBaseline('D:/Instances/New')).toEqual({
+			ok: true,
+			value: null
+		})
+	})
+
+	it('keeps the backend message when the lookup fails', async () =>
+	{
+		invoke.mockRejectedValue(new Error('The installed cemm-manifest.json is not valid'))
+
+		const outcome = await useTauri().resolveInstallBaseline('D:/Instances/ATM10')
+
+		expect(outcome.ok).toBe(false)
+		expect(logger.error).toHaveBeenCalled()
+	})
+})
+
+/**
+ * Custom data packs have no CurseForge project and so cannot be manifest
+ * entries; they travel as file content. The wrapper's job is only to hand the
+ * pack folder over and keep a failure legible — the scan is Rust's, tested in
+ * `lib.rs`.
+ */
+describe('collectCustomDatapacks', () =>
+{
+	beforeEach(() =>
+	{
+		invoke.mockReset()
+		logger.error.mockReset()
+	})
+
+	it('asks the backend for the pack it was given', async () =>
+	{
+		invoke.mockResolvedValue([])
+
+		const outcome = await useTauri().collectCustomDatapacks('D:/Instances/ATM10')
+
+		expect(invoke).toHaveBeenCalledWith('collect_custom_datapacks', {
+			modpackPath: 'D:/Instances/ATM10'
+		})
+		expect(outcome).toEqual({ ok: true, value: [] })
+	})
+
+	it('reports a failed scan rather than passing off an empty list as a result', async () =>
+	{
+		invoke.mockRejectedValue(new Error('Config import file limit (5000) exceeded'))
+
+		expect((await useTauri().collectCustomDatapacks('D:/Instances/ATM10')).ok).toBe(false)
 		expect(logger.error).toHaveBeenCalled()
 	})
 })

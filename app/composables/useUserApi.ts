@@ -2,44 +2,6 @@ import type { ConfigFileWithContent, Manifest } from '~/types'
 import { getErrorMessage, withNetworkRetry } from '~/utils/errorHandler'
 import { resolveModpackKey } from '~/utils/modpackKey'
 
-function parseInstalledManifest(content: string): Manifest
-{
-	let parsed: unknown
-	try
-	{
-		parsed = JSON.parse(content)
-	}
-	catch
-	{
-		throw new Error('The installed cemm-manifest.json is not valid JSON.')
-	}
-
-	if (typeof parsed !== 'object' || parsed === null)
-	{
-		throw new Error('The installed cemm-manifest.json does not contain a manifest object.')
-	}
-
-	const rawManifest = parsed as Record<string, unknown>
-	const candidate = rawManifest as Partial<Manifest>
-	const arrayFields: Array<keyof Pick<Manifest, 'mods' | 'resourcepacks' | 'shaderpacks' | 'datapacks' | 'config_files'>> = [
-		'mods',
-		'resourcepacks',
-		'shaderpacks',
-		'datapacks',
-		'config_files'
-	]
-	if (arrayFields.some((field) => !Array.isArray(candidate[field])))
-	{
-		throw new Error('The installed cemm-manifest.json is missing required manifest lists.')
-	}
-	if (rawManifest.updateType !== undefined && rawManifest.updateType !== 'full' && rawManifest.updateType !== 'config')
-	{
-		throw new Error('The installed cemm-manifest.json has an invalid update type.')
-	}
-
-	return candidate as Manifest
-}
-
 /**
  * Composable for user-specific API operations.
  * Extracts business logic from UserPanel.vue for better maintainability.
@@ -49,7 +11,7 @@ export function useUserApi()
 	const { downloadManifest, downloadConfigFiles: apiDownloadConfigFiles } = useGithubApi()
 	const appStore = useAppStore()
 	const manifestStore = useManifestStore()
-	const { readFile, parseMinecraftInstance, validatePath, installUpdate: installUpdateTauri } = useTauri()
+	const { readFile, resolveInstallBaseline, installUpdate: installUpdateTauri } = useTauri()
 	const { $logger: logger } = useNuxtApp()
 
 	/**
@@ -91,8 +53,8 @@ export function useUserApi()
 			manifestStore.setManifest(downloadedManifest)
 			onProgress(50, 'Manifest downloaded. Ready to preview update.')
 
-			// Load existing manifest for comparison if modpack path is selected.
-			// cemm-manifest.json itself is NOT written here — only once the user
+			// Load what the pack currently holds, to compare against. Nothing is
+			// written here — cemm-manifest.json is recorded only once the user
 			// actually confirms the install (see installUpdate below). Writing it
 			// at download time meant cancelling after seeing a scary preview still
 			// left disk state describing an update that was never applied (F-P1-5).
@@ -279,74 +241,48 @@ export function useUserApi()
 	}
 
 	/**
-	 * Load the baseline from the last successful CEMM install, falling back to
-	 * CurseForge's instance inventory only before CEMM has installed this pack.
+	 * Load what the pack currently holds, for the incoming update to be diffed
+	 * against.
+	 *
+	 * This used to read `cemm-manifest.json` and prefer it outright, falling back
+	 * to CurseForge's inventory only when CEMM had never installed the pack. But
+	 * that file records what CEMM last installed, not what is installed: edit the
+	 * pack through CurseForge — which is the admin's whole workflow, and a normal
+	 * player's too — and it describes a pack nobody has. The preview then offered
+	 * to delete mods whose files were already gone and to install addons that had
+	 * been sitting on disk the whole time.
+	 *
+	 * Rust reconciles both records against the files actually present and reports
+	 * which of them CEMM did not install itself, so the deletions CEMM performs by
+	 * default stay the ones CEMM is responsible for.
 	 */
 	async function generatePreviousManifest(
 		modpackPath: string,
 		onProgress: (progress: number, message?: string) => void
 	): Promise<{ success: boolean, error?: string }>
 	{
-		try
+		onProgress(60, 'Reading the current installation...')
+
+		const baseline = await resolveInstallBaseline(modpackPath)
+		if (!baseline.ok)
 		{
-			onProgress(60, 'Reading the current installation...')
-
-			const installedManifestPath = `${modpackPath}/cemm-manifest.json`
-			const installedManifestContent = await readFile(installedManifestPath)
-			if (installedManifestContent !== null)
-			{
-				if (installedManifestContent.trim().length === 0)
-				{
-					throw new Error('The installed cemm-manifest.json could not be read.')
-				}
-
-				manifestStore.loadInstalledManifest(parseInstalledManifest(installedManifestContent))
-				return { success: true }
-			}
-			const installedManifestInfo = await validatePath(installedManifestPath)
-			if (installedManifestInfo.exists)
-			{
-				throw new Error('The installed cemm-manifest.json could not be read.')
-			}
-
-			const minecraftInstancePath = `${modpackPath}/minecraftinstance.json`
-			const minecraftInstanceContent = await readFile(minecraftInstancePath)
-
-			if (minecraftInstanceContent !== null && minecraftInstanceContent.trim().length > 0)
-			{
-				const parsedManifest = await parseMinecraftInstance(minecraftInstancePath)
-
-				if (parsedManifest.ok)
-				{
-					manifestStore.loadInstalledManifest(parsedManifest.value)
-					return { success: true }
-				}
-				else
-				{
-					logger.error({ error: parsedManifest.message }, 'Failed to parse minecraftinstance.json')
-					manifestStore.loadInstalledManifest(null)
-					return { success: false, error: parsedManifest.message }
-				}
-			}
-			else
-			{
-				const minecraftInstanceInfo = await validatePath(minecraftInstancePath)
-				if (minecraftInstanceInfo.exists)
-				{
-					throw new Error('The installed minecraftinstance.json could not be read.')
-				}
-				logger.info('No installed CEMM or CurseForge manifest found, treating as fresh install')
-				manifestStore.loadInstalledManifest(null)
-				return { success: true }
-			}
-		}
-		catch (err)
-		{
-			const errorMsg = err instanceof Error ? err.message : 'Unknown error generating previous manifest'
-			logger.error({ error: errorMsg }, 'Failed to load the installed update baseline')
+			logger.error({ error: baseline.message }, 'Failed to load the installed update baseline')
 			manifestStore.loadInstalledManifest(null)
-			return { success: false, error: errorMsg }
+			return { success: false, error: baseline.message }
 		}
+
+		if (baseline.value === null)
+		{
+			logger.info('No installed CEMM or CurseForge record found, treating as fresh install')
+			manifestStore.loadInstalledManifest(null)
+			return { success: true }
+		}
+
+		manifestStore.loadInstalledManifest(
+			baseline.value.manifest,
+			baseline.value.unmanaged_addon_ids
+		)
+		return { success: true }
 	}
 
 	return {

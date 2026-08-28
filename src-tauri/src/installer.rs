@@ -281,7 +281,7 @@ pub struct InstallProgress {
 pub type InstallProgressCallback = Arc<dyn Fn(InstallProgress) + Send + Sync>;
 
 const INSTALL_TRANSACTION_DIR: &str = ".cemm-transaction";
-const INSTALLED_MANIFEST_FILE: &str = "cemm-manifest.json";
+pub(crate) const INSTALLED_MANIFEST_FILE: &str = "cemm-manifest.json";
 const INSTALL_JOURNAL_FILE: &str = "journal.json";
 const INSTALL_COMMITTED_FILE: &str = "committed";
 
@@ -686,8 +686,32 @@ pub async fn install_update_with_progress(
         prepared_configs.push((dest, bytes));
     }
 
-    let installed_manifest = serde_json::to_vec_pretty(&manifest)
-        .map_err(|error| format!("Failed to encode installed manifest: {error}"))?;
+    // `cemm-manifest.json` records the pack's *state*, not the payload of the
+    // update that produced it. For a full update the two are the same document.
+    // For a config-only one they are deliberately not: its addon arrays are
+    // empty by construction (see `buildUpdateManifest` in useAdminApi.ts), so
+    // writing it verbatim erased the addon baseline. The next full update then
+    // diffed against nothing and reported every addon already installed as new.
+    let installed_manifest = if is_config_only {
+        let baseline = options.old_manifest.as_ref();
+        let carry = |select: fn(&Manifest) -> &Vec<crate::composables::manifest::Addon>| {
+            baseline.map(select).cloned().unwrap_or_default()
+        };
+        let snapshot = Manifest {
+            // A state snapshot is neither kind of update, and calling it "config"
+            // would describe the file's provenance rather than its contents.
+            update_type: None,
+            mods: carry(|manifest| &manifest.mods),
+            resourcepacks: carry(|manifest| &manifest.resourcepacks),
+            shaderpacks: carry(|manifest| &manifest.shaderpacks),
+            datapacks: carry(|manifest| &manifest.datapacks),
+            config_files: manifest.config_files.clone(),
+        };
+        serde_json::to_vec_pretty(&snapshot)
+    } else {
+        serde_json::to_vec_pretty(&manifest)
+    }
+    .map_err(|error| format!("Failed to encode installed manifest: {error}"))?;
 
     // Calculate diff once for both cleanup and selective downloads.
     // Skipped entirely for config-only updates so the cleanup step below can never run.
@@ -1806,7 +1830,10 @@ mod tests {
                 .expect("installed manifest should be readable"),
         )
         .expect("installed manifest should be valid JSON");
-        assert_eq!(installed_manifest, manifest);
+        // The recorded baseline is a state snapshot, so it drops the incoming
+        // manifest's "config" discriminator; there is no prior install here for
+        // it to carry addons over from.
+        assert_eq!(installed_manifest, make_manifest(None, Vec::new()));
 
         let events = progress_events
             .lock()
@@ -1816,6 +1843,55 @@ mod tests {
             events.last().map(|event| event.message.as_str()),
             Some("Installation complete!")
         );
+    }
+
+    /// A config-only update leaves every addon alone, so the baseline it records
+    /// has to keep describing them. Writing the update's own (empty by
+    /// construction) addon arrays instead made the next full update diff against
+    /// nothing: every already-installed addon came back as "new".
+    #[tokio::test]
+    async fn config_only_install_keeps_the_addon_baseline() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        let baseline = make_manifest(Some("full"), three_installed_addons());
+
+        let progress: InstallProgressCallback = Arc::new(|_| {});
+        install_update_with_progress(
+            temp.path().to_string_lossy().into_owned(),
+            make_manifest(Some("config"), Vec::new()),
+            vec![ConfigFile {
+                filename: "settings.toml".to_string(),
+                relative_path: "config/settings.toml".to_string(),
+                content: "enabled = true".to_string(),
+                is_binary: None,
+            }],
+            Some(InstallOptions {
+                old_manifest: Some(baseline.clone()),
+                cleanup_old: true,
+            }),
+            progress,
+        )
+        .await
+        .expect("config-only installation should succeed");
+
+        let installed_manifest: Manifest = serde_json::from_slice(
+            &async_fs::read(temp.path().join("cemm-manifest.json"))
+                .await
+                .expect("installed manifest should be readable"),
+        )
+        .expect("installed manifest should be valid JSON");
+
+        assert_eq!(installed_manifest.mods, baseline.mods);
+        assert_eq!(installed_manifest.resourcepacks, baseline.resourcepacks);
+        assert_eq!(installed_manifest.shaderpacks, baseline.shaderpacks);
+        assert_eq!(installed_manifest.datapacks, baseline.datapacks);
+        assert_eq!(installed_manifest.update_type, None);
+
+        // And the addons it names still diff as unchanged against the same set.
+        let diff =
+            calculate_update_diff(&installed_manifest, &baseline).expect("diff should compute");
+        assert!(diff.new_addons.is_empty(), "got: {:?}", diff.new_addons);
+        assert!(diff.removed_addons.is_empty());
+        assert!(diff.updated_addon_ids.is_empty());
     }
 
     #[tokio::test]

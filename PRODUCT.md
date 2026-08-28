@@ -84,9 +84,21 @@ streams back over a Tauri `install-progress` event.
 - Addon categories: mods, resourcepacks, shaderpacks, datapacks.
 - Addon exclusion, persisted per session, with bulk exclude and clear-all.
 - Config file distribution, including binary files (base64 data URIs).
-- Two update types: `full` (addons + config) and `config` (config only).
+- Custom Data packs — no CurseForge project, so no manifest
+  entry is possible — are collected from `datapacks/` when an instance is loaded
+  and distributed as file content, folder or zip alike.
+- Two update types: `full` (addons + config) and `config` (config only). A
+  config-only install records the addon baseline it inherited rather than the
+  update's own empty addon lists.
+- The install baseline is reconciled from `cemm-manifest.json`,
+  `minecraftinstance.json` and the files actually on disk. Neither record is
+  authoritative alone: the first goes stale when the pack is edited through
+  CurseForge, the second when CEMM installs.
 - Diff computation matches updated addons by `addon_project_id`, removals by
   addon name, and resolves files on disk by `fileNameOnDisk`.
+- Deletions are limited to addons CEMM installed. Addons already in the pack
+  that CEMM did not put there are previewed separately and removed only if the
+  player opts in.
 - Detection of `.disabled` addon files.
 - GitHub token stored in the OS keyring via `tauri-plugin-keyring-api`; only the
   admin needs one.

@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { CachedIcon, ConfigFileWithContent, Manifest, PackLibrary, TauriOutcome, UpdateDiff } from '~/types'
+import type { CachedIcon, ConfigFileWithContent, InstallBaseline, Manifest, PackLibrary, TauriOutcome, UpdateDiff } from '~/types'
 import { getErrorMessage } from '~/utils/errorHandler'
 
 export const useTauri = () =>
@@ -127,6 +127,59 @@ export const useTauri = () =>
 		catch (error)
 		{
 			logger.error({ path, error }, '[useTauri] parseMinecraftInstance failed')
+			return { ok: false, message: getErrorMessage(error) }
+		}
+	}
+
+	/**
+	 * What the pack currently holds, for an incoming update to be diffed against.
+	 *
+	 * Deliberately not `cemm-manifest.json`, which is only what CEMM last
+	 * installed: it goes stale the moment the pack is edited through CurseForge,
+	 * and preferring it produced previews that offered to delete files already
+	 * gone and to install addons already on disk. Rust reconciles both records
+	 * against the files that are actually there — see `resolve_install_baseline`.
+	 *
+	 * `null` inside a successful outcome means CEMM has no record of this pack
+	 * at all, which is a genuinely fresh install.
+	 */
+	const resolveInstallBaseline = async (modpackPath: string): Promise<TauriOutcome<InstallBaseline | null>> =>
+	{
+		try
+		{
+			return {
+				ok: true,
+				value: await invoke<InstallBaseline | null>('resolve_install_baseline', { modpackPath })
+			}
+		}
+		catch (error)
+		{
+			logger.error({ modpackPath, error }, '[useTauri] resolveInstallBaseline failed')
+			return { ok: false, message: getErrorMessage(error) }
+		}
+	}
+
+	/**
+	 * Data packs in the instance that CurseForge did not install, as content
+	 * ready to publish.
+	 *
+	 * A manifest entry is a CurseForge project plus a CDN URL, so a data pack
+	 * the admin wrote themselves cannot be described by one. It travels as file
+	 * content instead, which also handles the shape data packs come in — a
+	 * folder as readily as a zip.
+	 */
+	const collectCustomDatapacks = async (modpackPath: string): Promise<TauriOutcome<ConfigFileWithContent[]>> =>
+	{
+		try
+		{
+			return {
+				ok: true,
+				value: await invoke<ConfigFileWithContent[]>('collect_custom_datapacks', { modpackPath })
+			}
+		}
+		catch (error)
+		{
+			logger.error({ modpackPath, error }, '[useTauri] collectCustomDatapacks failed')
 			return { ok: false, message: getErrorMessage(error) }
 		}
 	}
@@ -321,6 +374,8 @@ export const useTauri = () =>
 		writeFile,
 		isBinaryFile,
 		parseMinecraftInstance,
+		resolveInstallBaseline,
+		collectCustomDatapacks,
 		getUpdateDiff,
 		openUrl,
 		installUpdate,

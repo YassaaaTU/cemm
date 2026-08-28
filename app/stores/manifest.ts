@@ -23,6 +23,16 @@ export const useManifestStore = defineStore('manifest', () =>
 	const excludedAddons = ref<string[]>([])
 
 	/**
+	 * Project IDs in `previousManifest` that CEMM did not install — addons the
+	 * player added through CurseForge, or base-pack addons the admin excluded
+	 * from the upload. They count as installed, so an update shipping one is not
+	 * installing it anew; but CEMM did not put them there, so it does not take
+	 * them away unless the player asks. The preview lists them apart from the
+	 * removals it performs by default.
+	 */
+	const unmanagedAddonIds = ref<number[]>([])
+
+	/**
 	 * Where the loaded manifest came from, and the code it came from — both
 	 * belong to the manifest rather than to whichever panel happens to be
 	 * mounted. The pack library sets these before navigating, so a manifest
@@ -70,10 +80,11 @@ export const useManifestStore = defineStore('manifest', () =>
 		excludedAddons.value = disabledAddonNames(newManifest)
 	}
 
-	function loadInstalledManifest(installedManifest: Manifest | null)
+	function loadInstalledManifest(installedManifest: Manifest | null, unmanaged: number[] = [])
 	{
 		// Set as previous manifest without updating current
 		previousManifest.value = installedManifest
+		unmanagedAddonIds.value = installedManifest === null ? [] : unmanaged
 	}
 
 	function setPreviousManifest(prev: Manifest | null)
@@ -120,6 +131,7 @@ export const useManifestStore = defineStore('manifest', () =>
 	{
 		manifest.value = null
 		previousManifest.value = null
+		unmanagedAddonIds.value = []
 		excludedAddons.value = []
 		sourcePath.value = ''
 		updateCode.value = ''
@@ -128,6 +140,7 @@ export const useManifestStore = defineStore('manifest', () =>
 	return {
 		manifest,
 		previousManifest,
+		unmanagedAddonIds,
 		excludedAddons,
 		sourcePath,
 		updateCode,

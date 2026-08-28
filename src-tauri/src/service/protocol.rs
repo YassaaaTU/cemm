@@ -24,9 +24,11 @@ pub enum Method {
     FileRead,
     FileWrite,
     ConfigReadDirectory,
+    ConfigCollectDatapacks,
     PathIsBinary,
     PathValidate,
     ManifestParseInstance,
+    ManifestResolveBaseline,
     ManifestDiff,
     GithubUploadUpdate,
     GithubDownloadManifest,
@@ -43,9 +45,11 @@ impl Method {
             Self::FileRead => "file.read",
             Self::FileWrite => "file.write",
             Self::ConfigReadDirectory => "config.read_directory",
+            Self::ConfigCollectDatapacks => "config.collect_datapacks",
             Self::PathIsBinary => "path.is_binary",
             Self::PathValidate => "path.validate",
             Self::ManifestParseInstance => "manifest.parse_instance",
+            Self::ManifestResolveBaseline => "manifest.resolve_baseline",
             Self::ManifestDiff => "manifest.diff",
             Self::GithubUploadUpdate => "github.upload_update",
             Self::GithubDownloadManifest => "github.download_manifest",
@@ -62,9 +66,11 @@ impl Method {
             "file.read" => Self::FileRead,
             "file.write" => Self::FileWrite,
             "config.read_directory" => Self::ConfigReadDirectory,
+            "config.collect_datapacks" => Self::ConfigCollectDatapacks,
             "path.is_binary" => Self::PathIsBinary,
             "path.validate" => Self::PathValidate,
             "manifest.parse_instance" => Self::ManifestParseInstance,
+            "manifest.resolve_baseline" => Self::ManifestResolveBaseline,
             "manifest.diff" => Self::ManifestDiff,
             "github.upload_update" => Self::GithubUploadUpdate,
             "github.download_manifest" => Self::GithubDownloadManifest,
@@ -84,9 +90,11 @@ impl Method {
             Self::FileRead
             | Self::FileWrite
             | Self::ConfigReadDirectory
+            | Self::ConfigCollectDatapacks
             | Self::PathIsBinary
             | Self::PathValidate
             | Self::ManifestParseInstance
+            | Self::ManifestResolveBaseline
             | Self::ManifestDiff
             | Self::LibraryScan => Duration::from_secs(120),
             // Bounded by ICON_BATCH_FETCH_BUDGET on the sidecar side, so this
@@ -123,9 +131,11 @@ impl Method {
             | Self::FileRead
             | Self::FileWrite
             | Self::ConfigReadDirectory
+            | Self::ConfigCollectDatapacks
             | Self::PathIsBinary
             | Self::PathValidate
             | Self::ManifestParseInstance
+            | Self::ManifestResolveBaseline
             | Self::ManifestDiff
             | Self::LibraryScan
             | Self::LibraryCacheIcons => false,
@@ -150,14 +160,16 @@ impl Method {
     }
 
     /// Every method, for tests that assert the wire mapping is a bijection.
-    pub const ALL: [Method; 14] = [
+    pub const ALL: [Method; 16] = [
         Self::Ping,
         Self::FileRead,
         Self::FileWrite,
         Self::ConfigReadDirectory,
+        Self::ConfigCollectDatapacks,
         Self::PathIsBinary,
         Self::PathValidate,
         Self::ManifestParseInstance,
+        Self::ManifestResolveBaseline,
         Self::ManifestDiff,
         Self::GithubUploadUpdate,
         Self::GithubDownloadManifest,

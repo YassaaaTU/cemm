@@ -98,6 +98,72 @@
       </AddonTable>
     </div>
 
+    <!-- Addons CEMM did not install and this update does not carry. Kept apart
+         from the deletions above because nothing here happens unless the player
+         asks: an update describes the admin's pack, not what a player is
+         allowed to keep in their own. -->
+    <div
+      v-if="extras.length > 0"
+      class="overflow-hidden rounded-box border border-base-300"
+      :class="removeExtras ? 'border-error/60' : ''"
+    >
+      <div
+        class="flex items-start gap-2.5 px-3.5 py-3"
+        :class="removeExtras ? 'bg-error/10' : 'bg-base-200'"
+      >
+        <span
+          class="grid size-6 shrink-0 place-items-center rounded-md"
+          :class="removeExtras ? 'bg-error/20 text-error' : 'bg-base-300 text-base-content/60'"
+        >
+          <Icon
+            :name="removeExtras ? 'mdi:alert-outline' : 'mdi:shield-outline'"
+            size="0.875rem"
+            aria-hidden="true"
+          />
+        </span>
+        <div class="min-w-0">
+          <p
+            class="text-sm font-semibold"
+            :class="removeExtras ? 'text-error' : ''"
+          >
+            {{ extrasHeadline }}
+          </p>
+          <p class="mt-0.5 text-xs text-base-content/65">
+            {{ extrasNote }}
+          </p>
+
+          <label
+            v-if="!applied"
+            class="mt-2 flex cursor-pointer items-start gap-2.5 text-xs text-base-content/80"
+          >
+            <input
+              :checked="removeExtras"
+              type="checkbox"
+              class="checkbox mt-px checkbox-xs"
+              :class="removeExtras ? 'border-error' : ''"
+              :disabled="locked"
+              @change="removeExtras = ($event.target as HTMLInputElement).checked"
+            />
+            <span>
+              Delete {{ extras.length === 1 ? 'it' : 'them' }} too, so this pack
+              matches the update exactly
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <AddonTable
+        id="preview-extras"
+        :title="removeExtras ? 'Also being deleted' : 'Staying put'"
+        :rows="extras"
+        :total="extras.length"
+        :max-height="200"
+        noun="addons"
+        show-type
+        empty-label="Nothing here."
+      />
+    </div>
+
     <AddonTable
       v-if="allIncoming.length > 0"
       id="preview-incoming"
@@ -131,21 +197,29 @@
       </template>
     </AddonTable>
 
-    <!-- Config files, listed by path — that is how a player recognises whether
-         a change touches something they customised. -->
+    <!-- Files, listed by path — that is how a player recognises whether a change
+         touches something they customised. Data packs the admin wrote by hand
+         travel as file content rather than as manifest addons (they have no
+         CurseForge project and so no download URL), which is exactly why they
+         get their own heading here instead of being filed under "config". -->
     <div
-      v-if="configFiles.length > 0"
+      v-for="group in fileGroups"
+      :key="group.title"
       class="overflow-hidden rounded-box border border-base-300 bg-base-200"
     >
       <div class="flex items-center gap-3 border-b border-base-300 px-3 py-2.5">
         <h3 class="text-sm font-semibold">
-          Config files
+          {{ group.title }}
         </h3>
-        <span class="font-mono text-xs text-base-content/50 tabular-nums">{{ configFiles.length }}</span>
+        <span class="font-mono text-xs text-base-content/50 tabular-nums">{{ group.files.length }}</span>
+        <span
+          v-if="group.note.length > 0"
+          class="min-w-0 truncate text-xs text-base-content/55"
+        >{{ group.note }}</span>
       </div>
       <ul class="max-h-40 overflow-y-auto">
         <li
-          v-for="file in configFiles"
+          v-for="file in group.files"
           :key="file.relativePath"
           class="flex items-center gap-2 border-b border-base-300/40 px-3 py-1.5 last:border-b-0"
         >
@@ -170,6 +244,12 @@ const props = withDefaults(
 		added: AddonRow[]
 		updated: AddonRow[]
 		removed: AddonRow[]
+		/**
+		 * Installed addons this update does not carry and CEMM did not put there:
+		 * the player's own, or ones the admin kept back from the upload. They are
+		 * not deletions until the player says so, which is what `removeExtras` is.
+		 */
+		extras: AddonRow[]
 		unchanged: AddonRow[]
 		configFiles: Array<{ relativePath: string, badge: 'BIN' | 'CFG' | null }>
 		updateType?: 'full' | 'config'
@@ -179,9 +259,13 @@ const props = withDefaults(
 		 * described something about to happen has to stop claiming that.
 		 */
 		applied?: boolean
+		/** An install in flight, or already finished — the opt-in stops taking input. */
+		locked?: boolean
 	}>(),
-	{ updateType: undefined, applied: false }
+	{ updateType: undefined, applied: false, locked: false }
 )
+
+const removeExtras = defineModel<boolean>('removeExtras', { default: false })
 
 const deletionHeadline = computed(() =>
 {
@@ -206,6 +290,59 @@ const deletionNote = computed(() =>
 		: 'Those files are removed from disk permanently. This cannot be undone.'
 })
 
+const extrasHeadline = computed(() =>
+{
+	const single = props.extras.length === 1
+	const noun = single ? 'addon' : 'addons'
+	if (removeExtras.value)
+	{
+		return props.applied
+			? `${props.extras.length} extra ${noun} ${single ? 'was' : 'were'} deleted as well`
+			: `${props.extras.length} extra ${noun} will be deleted as well`
+	}
+	return props.applied
+		? `${props.extras.length} ${noun} ${single ? 'was' : 'were'} left alone`
+		: `${props.extras.length} ${noun} in this pack ${single ? 'is' : 'are'} not part of this update`
+})
+
+const extrasNote = computed(() =>
+{
+	const single = props.extras.length === 1
+	if (removeExtras.value)
+	{
+		return single
+			? 'It is removed from disk permanently, along with the deletions above.'
+			: 'They are removed from disk permanently, along with the deletions above.'
+	}
+	return single
+		? 'CEMM did not install it, so it stays where it is.'
+		: 'CEMM did not install them, so they stay where they are.'
+})
+
+/**
+ * Custom data packs first, under their own heading, then everything else.
+ *
+ * Both arrive over the same wire — a data pack the admin authored has no
+ * CurseForge project and so no CDN URL for a manifest entry, and travels as
+ * file content instead. Listing them together filed a whole data pack under
+ * "config files", where nobody would recognise it.
+ */
+const fileGroups = computed(() =>
+{
+	const isDatapack = (file: { relativePath: string }) => file.relativePath.startsWith('datapacks/')
+	const datapacks = props.configFiles.filter(isDatapack)
+	const configs = props.configFiles.filter((file) => !isDatapack(file))
+
+	return [
+		{
+			title: 'Custom data packs',
+			note: 'Written by your admin, not from CurseForge.',
+			files: datapacks
+		},
+		{ title: 'Config files', note: '', files: configs }
+	].filter((group) => group.files.length > 0)
+})
+
 type ChangeKey = 'all' | 'new' | 'updated' | 'same'
 /** `all` plus the four manifest categories. */
 type TypeKey = 'all' | AddonCategory
@@ -223,10 +360,20 @@ const countOf = (rows: AddonRow[], type: TypeKey): number => ofType(rows, type).
 const typesIn = (rows: AddonRow[]): AddonCategory[] =>
 	ADDON_CATEGORIES.filter((category) => rows.some((row) => row.category === category))
 
+/**
+ * Four figures, not five: the extras panel below carries its own count, and the
+ * decision these numbers exist for is what the update does. "Deleted" follows
+ * the opt-in, though — a tally that disagreed with the acknowledgement wording
+ * on the same screen would be the worst kind of wrong.
+ */
 const tallies = computed(() => [
 	{ label: 'Added', count: props.added.length, tone: 'text-success' },
 	{ label: 'Updated', count: props.updated.length, tone: 'text-info' },
-	{ label: 'Deleted', count: props.removed.length, tone: 'text-error' },
+	{
+		label: 'Deleted',
+		count: props.removed.length + (removeExtras.value ? props.extras.length : 0),
+		tone: 'text-error'
+	},
 	{ label: 'Untouched', count: props.unchanged.length, tone: 'text-base-content/70' }
 ])
 
