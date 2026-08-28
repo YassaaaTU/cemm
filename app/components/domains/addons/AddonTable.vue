@@ -146,10 +146,22 @@
               </button>
               <span
                 v-else
-                class="block truncate text-[0.9375rem] font-medium"
-                :class="row.struck === true ? 'text-base-content/60 line-through decoration-error' : ''"
-                :title="row.name"
-              >{{ row.name }}</span>
+                class="flex min-w-0 items-center gap-1.5"
+              >
+                <span
+                  class="truncate text-[0.9375rem] font-medium"
+                  :class="row.struck === true ? 'text-base-content/60 line-through decoration-error' : ''"
+                  :title="row.name"
+                >{{ row.name }}</span>
+                <!-- Sits with the name rather than in the Type column, which is
+                     about which of the four categories a row is. This says
+                     something else: that within its category, this one did not
+                     come from CurseForge. -->
+                <span
+                  v-if="row.badge !== undefined"
+                  class="shrink-0 rounded-sm border border-primary/40 bg-primary/10 px-1 py-px text-[0.625rem] leading-none font-medium tracking-wide text-primary uppercase"
+                >{{ row.badge }}</span>
+              </span>
               <span
                 v-if="row.subtitle.length > 0"
                 class="block truncate font-mono text-xs text-base-content/60"
@@ -227,6 +239,13 @@ export interface AddonRow
 	versionNote: string
 	tone: StatusTone
 	label: string
+	/**
+	 * Short chip beside the name, for what makes a row unlike its neighbours in
+	 * a list that mixes kinds — a data pack from outside CurseForge sitting
+	 * among CurseForge ones, say. Left off when every row is the same kind,
+	 * where it would be noise on every line.
+	 */
+	badge?: string
 	/** Struck through: being removed or excluded. */
 	struck?: boolean
 	/** Whole row de-emphasised. */
