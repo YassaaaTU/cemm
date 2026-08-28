@@ -67,6 +67,33 @@ impl ConfigFileWithContent {
     }
 }
 
+/// A data pack that did not come from CurseForge, and the files it consists of.
+///
+/// It is not an `Addon`: there is no CurseForge project id behind it and no CDN
+/// URL to fetch it from, so it cannot be described by a manifest addon entry.
+/// It is not a `ConfigFile` either, whatever the transport has in common — it is
+/// content the game loads as a data pack, and filing it under "config files"
+/// hid a whole pack somewhere nobody would look for it.
+///
+/// So it is its own thing on the wire. The files travel exactly the way config
+/// files do, by relative path under the update folder, because that mechanism
+/// already handles both text and binary and needs no CDN.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "generated/")]
+pub struct CustomDatapack {
+    /// What the pack is called: the zip's filename, or the folder's name. Unique
+    /// within an update, and the key the admin's include/exclude toggle works on.
+    pub name: String,
+    /// Whether the pack is a single archive rather than a directory. Display
+    /// only -- installation is identical either way, since both are just
+    /// relative paths -- but "one zip" and "a folder of 40 files" are different
+    /// enough that a row claiming to be one when it is the other reads as wrong.
+    pub archived: bool,
+    /// Every file the pack is made of, relative to the modpack root and always
+    /// under `datapacks/`. One entry for a zip, many for a folder.
+    pub files: Vec<ConfigFile>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[ts(export, export_to = "generated/")]
 pub struct Manifest {
@@ -80,6 +107,12 @@ pub struct Manifest {
     pub resourcepacks: Vec<Addon>,
     pub shaderpacks: Vec<Addon>,
     pub datapacks: Vec<Addon>,
+    /// Data packs from outside CurseForge, which the four addon arrays above
+    /// structurally cannot hold. Defaulted rather than required: every manifest
+    /// published before this field existed must still parse, and skipping it
+    /// when empty keeps those manifests round-tripping byte for byte.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub custom_datapacks: Vec<CustomDatapack>,
     pub config_files: Vec<ConfigFile>,
 }
 
@@ -333,7 +366,9 @@ pub fn parse_minecraft_instance(path: String) -> Result<Manifest, String> {
         resourcepacks,
         shaderpacks,
         datapacks,
-        config_files: Vec::new(), // Empty for MinecraftInstance conversion
+        // Both are about an update, and this is an inventory of an instance.
+        custom_datapacks: Vec::new(),
+        config_files: Vec::new(),
     })
 }
 
@@ -432,6 +467,7 @@ pub fn resolve_install_baseline(modpack_path: String) -> Result<Option<InstallBa
         resourcepacks: Vec::new(),
         shaderpacks: Vec::new(),
         datapacks: Vec::new(),
+        custom_datapacks: Vec::new(),
         config_files: installed
             .as_ref()
             .map(|installed| installed.config_files.clone())
@@ -818,6 +854,7 @@ mod tests {
             resourcepacks: Vec::new(),
             shaderpacks: Vec::new(),
             datapacks: Vec::new(),
+            custom_datapacks: Vec::new(),
             config_files: Vec::new(),
         }
     }
@@ -970,6 +1007,38 @@ mod tests {
             .expect_err("a corrupt manifest must not pass as a fresh install");
 
         assert!(error.contains("cemm-manifest.json"), "got: {error}");
+    }
+
+    #[test]
+    fn a_manifest_published_before_custom_data_packs_existed_still_parses() {
+        // Every update already out there was written without this field. Reading
+        // one must not fail, and must not invent packs that are not in it.
+        let manifest: Manifest = serde_json::from_str(
+            r#"{"updateType":"full","mods":[],"resourcepacks":[],"shaderpacks":[],
+                "datapacks":[],"config_files":[]}"#,
+        )
+        .expect("an older manifest must still parse");
+
+        assert!(manifest.custom_datapacks.is_empty());
+    }
+
+    #[test]
+    fn a_manifest_with_no_custom_data_packs_serializes_exactly_as_before() {
+        // The field is skipped when empty, so updates that do not use it keep
+        // round-tripping byte for byte against clients that never knew it.
+        let manifest = Manifest {
+            update_type: Some("full".to_string()),
+            mods: Vec::new(),
+            resourcepacks: Vec::new(),
+            shaderpacks: Vec::new(),
+            datapacks: Vec::new(),
+            custom_datapacks: Vec::new(),
+            config_files: Vec::new(),
+        };
+
+        let json = serde_json::to_string(&manifest).expect("serialize");
+
+        assert!(!json.contains("custom_datapacks"), "got: {json}");
     }
 
     #[test]

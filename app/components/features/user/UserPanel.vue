@@ -182,6 +182,7 @@
           :extras="extraRows"
           :unchanged="unchangedRows"
           :config-files="configFilesPreview"
+          :custom-datapacks="customDatapacksPreview"
           :update-type="manifest.updateType"
           :applied="updateApplied"
           :locked="installing || updateApplied"
@@ -695,20 +696,42 @@ const unchangedRows = computed<AddonRow[]>(() =>
 // though the manifest already lists which files are coming (F-P3-13). Falling
 // back to manifest.config_files shows the file list immediately; the BIN/CFG
 // badge only becomes available once content — and with it is_binary — exists.
+//
+// The download arrives flat, config files and custom data pack files in one
+// list, because both are fetched the same way. The manifest is what separates
+// them, so this reads the split from there rather than from the payload.
 const configFilesPreview = computed(() =>
 {
+	const configPaths = new Set((manifest.value?.config_files ?? []).map((file) => file.relative_path))
 	if (downloadedConfigFiles.value.length > 0)
 	{
-		return downloadedConfigFiles.value.map((file) => ({
-			relativePath: file.relative_path,
-			badge: file.is_binary === true ? 'BIN' as const : 'CFG' as const
-		}))
+		return downloadedConfigFiles.value
+			.filter((file) => configPaths.has(file.relative_path))
+			.map((file) => ({
+				relativePath: file.relative_path,
+				badge: file.is_binary === true ? 'BIN' as const : 'CFG' as const
+			}))
 	}
 	return (manifest.value?.config_files ?? []).map((file) => ({
 		relativePath: file.relative_path,
 		badge: null
 	}))
 })
+
+/**
+ * Data packs the update carries that did not come from CurseForge.
+ *
+ * Read straight off the manifest's own section: they are not addons and not
+ * config files, and the point of that section is that a player sees a data pack
+ * arriving as a data pack.
+ */
+const customDatapacksPreview = computed(() =>
+	(manifest.value?.custom_datapacks ?? []).map((datapack) => ({
+		name: datapack.name,
+		archived: datapack.archived,
+		fileCount: datapack.files.length
+	}))
+)
 
 const progressLabel = computed(() =>
 {

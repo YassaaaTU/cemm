@@ -705,6 +705,9 @@ pub async fn install_update_with_progress(
             resourcepacks: carry(|manifest| &manifest.resourcepacks),
             shaderpacks: carry(|manifest| &manifest.shaderpacks),
             datapacks: carry(|manifest| &manifest.datapacks),
+            custom_datapacks: baseline
+                .map(|baseline| baseline.custom_datapacks.clone())
+                .unwrap_or_default(),
             config_files: manifest.config_files.clone(),
         };
         serde_json::to_vec_pretty(&snapshot)
@@ -1169,6 +1172,7 @@ mod tests {
             resourcepacks: Vec::new(),
             shaderpacks: Vec::new(),
             datapacks: Vec::new(),
+            custom_datapacks: Vec::new(),
             config_files: Vec::new(),
         }
     }

@@ -827,23 +827,36 @@ fn read_directory_filtered(
     Ok(config_files)
 }
 
-/// Data packs that did not come from CurseForge, ready to travel with an update.
+/// A custom data pack plus the bytes of every file in it, ready to publish.
 ///
-/// A published manifest is built entirely from `minecraftinstance.json`, which
-/// lists only what CurseForge installed. A pack from anywhere else — Vanilla
-/// Tweaks, a Modrinth download, a hand-written one — has no CurseForge project
-/// behind it, so it appeared nowhere in the manifest and was silently left out
-/// of every update. It could not have been listed there anyway: a manifest
-/// entry is a project id plus a CDN download URL, and such a pack has neither.
+/// The manifest form (`CustomDatapack`) carries paths only, like `ConfigFile`
+/// does; this is the wire type the admin side collects and uploads.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "generated/")]
+pub struct CustomDatapackWithContent {
+    pub name: String,
+    pub archived: bool,
+    pub files: Vec<ConfigFileWithContent>,
+}
+
+/// Data packs in the instance that did not come from CurseForge, grouped by pack.
 ///
-/// So it travels the way config files do: as content. That also handles the
-/// shape data packs actually come in — a folder of `pack.mcmeta` plus `data/`
-/// as readily as a single zip — because a folder is just several relative paths.
+/// A published manifest's addon arrays are built entirely from
+/// `minecraftinstance.json`, which lists only what CurseForge installed. A pack
+/// from anywhere else — Vanilla Tweaks, a Modrinth download, a hand-written one
+/// — has no CurseForge project behind it, so it appeared nowhere in the manifest
+/// and was silently left out of every update. It could not have been listed
+/// there anyway: an addon entry is a project id plus a CDN download URL, and
+/// such a pack has neither.
 ///
-/// Packs CurseForge did install are skipped by name: the manifest already
-/// carries them, and shipping their bytes as well would upload the same pack
-/// twice.
-fn collect_custom_datapacks(modpack_path: String) -> Result<Vec<ConfigFileWithContent>, String> {
+/// Grouped rather than returned as loose files because a pack is the unit a
+/// person thinks in and toggles: one row for `vanillatweaks`, whether that is a
+/// single zip or a folder of forty files. Packs CurseForge did install are
+/// skipped by name — the manifest already describes them as addons, and
+/// shipping their bytes as well would upload the same pack twice.
+fn collect_custom_datapacks(
+    modpack_path: String,
+) -> Result<Vec<CustomDatapackWithContent>, String> {
     let root = std::path::Path::new(&modpack_path);
     let datapacks_dir = root.join("datapacks");
     if !datapacks_dir.is_dir() {
@@ -871,19 +884,42 @@ fn collect_custom_datapacks(modpack_path: String) -> Result<Vec<ConfigFileWithCo
         &skip,
     )?;
 
-    // A pack switched off by renaming it stays off: shipping it would turn it
-    // back on in every player's game under a name Minecraft does not load.
-    let collected: Vec<ConfigFileWithContent> = collected
-        .into_iter()
-        .filter(|file| !file.relative_path.to_lowercase().ends_with(".disabled"))
-        .collect();
+    // Grouped on the first path segment below `datapacks/`, which is the pack:
+    // `datapacks/foo.zip` is one, and every file under `datapacks/foo/` belongs
+    // to another. Order follows first appearance so a scan is reproducible.
+    let mut packs: Vec<CustomDatapackWithContent> = Vec::new();
+    for file in collected {
+        // A pack switched off by renaming it stays off: shipping it would turn
+        // it back on in every player's game, under a name Minecraft cannot load.
+        if file.relative_path.to_lowercase().ends_with(".disabled") {
+            continue;
+        }
+
+        let Some(remainder) = file.relative_path.strip_prefix("datapacks/") else {
+            continue;
+        };
+        let (name, archived) = match remainder.split_once('/') {
+            Some((folder, _)) => (folder.to_string(), false),
+            None => (remainder.to_string(), true),
+        };
+
+        match packs.iter_mut().find(|pack| pack.name == name) {
+            Some(pack) => pack.files.push(file),
+            None => packs.push(CustomDatapackWithContent {
+                name,
+                archived,
+                files: vec![file],
+            }),
+        }
+    }
 
     log::info!(
-        "collect_custom_datapacks: {} file(s) from {}",
-        collected.len(),
+        "collect_custom_datapacks: {} pack(s), {} file(s) from {}",
+        packs.len(),
+        packs.iter().map(|pack| pack.files.len()).sum::<usize>(),
         datapacks_dir.display()
     );
-    Ok(collected)
+    Ok(packs)
 }
 
 fn is_binary_file(path: String) -> Result<bool, String> {
@@ -1391,7 +1427,13 @@ mod tests {
         let collected = collect_custom_datapacks(temp.path().to_string_lossy().into_owned())
             .expect("collection should succeed");
 
-        let mut paths: Vec<String> = collected
+        // One pack, not three files: the folder is the unit a person toggles.
+        assert_eq!(collected.len(), 1);
+        assert_eq!(collected[0].name, "my-pack");
+        assert!(!collected[0].archived, "a folder is not an archive");
+
+        let mut paths: Vec<String> = collected[0]
+            .files
             .iter()
             .map(|file| file.relative_path.clone())
             .collect();
@@ -1405,12 +1447,48 @@ mod tests {
             ]
         );
         // The binary one round-trips as base64 rather than as lossy text.
-        let png = collected
+        let png = collected[0]
+            .files
             .iter()
             .find(|file| file.relative_path.ends_with("pack.png"))
             .expect("pack.png should be collected");
         assert_eq!(png.is_binary, Some(true));
         assert!(png.content.starts_with(BINARY_CONTENT_PREFIX));
+    }
+
+    #[test]
+    fn a_zipped_data_pack_is_one_pack_of_one_file() {
+        let temp = write_datapack_instance(&[]);
+        write_test_file(temp.path(), "datapacks/mine.zip", b"PK");
+
+        let collected = collect_custom_datapacks(temp.path().to_string_lossy().into_owned())
+            .expect("collection should succeed");
+
+        assert_eq!(collected.len(), 1);
+        assert_eq!(collected[0].name, "mine.zip");
+        assert!(collected[0].archived);
+        assert_eq!(collected[0].files.len(), 1);
+        assert_eq!(collected[0].files[0].relative_path, "datapacks/mine.zip");
+    }
+
+    #[test]
+    fn two_packs_stay_two_packs() {
+        let temp = write_datapack_instance(&[]);
+        write_test_file(temp.path(), "datapacks/alpha/pack.mcmeta", b"{}");
+        write_test_file(temp.path(), "datapacks/alpha/data/a/x.json", b"{}");
+        write_test_file(temp.path(), "datapacks/beta.zip", b"PK");
+
+        let collected = collect_custom_datapacks(temp.path().to_string_lossy().into_owned())
+            .expect("collection should succeed");
+
+        let mut names: Vec<&str> = collected.iter().map(|pack| pack.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, vec!["alpha", "beta.zip"]);
+        let alpha = collected
+            .iter()
+            .find(|pack| pack.name == "alpha")
+            .expect("alpha should be collected");
+        assert_eq!(alpha.files.len(), 2);
     }
 
     #[test]
@@ -1425,7 +1503,7 @@ mod tests {
             .expect("collection should succeed");
 
         assert_eq!(collected.len(), 1);
-        assert_eq!(collected[0].relative_path, "datapacks/mine.zip");
+        assert_eq!(collected[0].name, "mine.zip");
     }
 
     #[test]

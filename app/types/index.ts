@@ -3,6 +3,8 @@ import type { Manifest as WireManifest } from './generated/Manifest'
 
 export type { ConfigFile } from './generated/ConfigFile'
 export type { ConfigFileWithContent } from './generated/ConfigFileWithContent'
+export type { CustomDatapack } from './generated/CustomDatapack'
+export type { CustomDatapackWithContent } from './generated/CustomDatapackWithContent'
 export type { InstallBaseline } from './generated/InstallBaseline'
 export type { UpdateDiff } from './generated/UpdateDiff'
 

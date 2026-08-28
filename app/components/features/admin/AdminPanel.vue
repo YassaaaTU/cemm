@@ -179,11 +179,14 @@
                the upload. The wrapping label names the control per row. -->
             <label class="flex cursor-pointer items-center">
               <span class="sr-only">Include {{ row.name }} in the upload</span>
+              <!-- Two lists behind one control. A custom data pack has no
+                   CurseForge project, so it is not in the addon exclusion list
+                   and cannot be keyed into it. -->
               <input
                 type="checkbox"
                 class="toggle rounded-full toggle-primary toggle-sm"
-                :checked="!manifestStore.isExcluded(row.name)"
-                @change="manifestStore.toggleExclusion(row.name)"
+                :checked="isCustomRow(row) ? !isDatapackExcluded(row.name) : !manifestStore.isExcluded(row.name)"
+                @change="isCustomRow(row) ? toggleDatapack(row.name) : manifestStore.toggleExclusion(row.name)"
               />
             </label>
           </template>
@@ -282,10 +285,11 @@
 
 <script setup lang="ts">
 import type { AddonRow } from '~/components/domains/addons/AddonTable.vue'
-import type { Addon, ConfigFileWithContent } from '~/types'
+import type { Addon, ConfigFileWithContent, CustomDatapackWithContent } from '~/types'
 import { ADDON_CATEGORIES, categoryLabel } from '~/utils/addonCategories'
 
 const { loadInstance, saveManifest, uploadToGithub } = useAdminApi()
+const { collectCustomDatapacks } = useTauri()
 const { notify } = useNotify()
 const { paneTransition } = useMotion()
 const manifestStore = useManifestStore()
@@ -300,6 +304,39 @@ const { displayed: smoothProgress } = useSmoothProgress(progress)
  *  repeatedly and would spam the corner. */
 const progressMessage = ref('')
 const selectedConfigFiles = ref<ConfigFileWithContent[]>([])
+
+/**
+ * Data packs in the instance that CurseForge did not install, grouped by pack.
+ *
+ * Held apart from `selectedConfigFiles` because they are not config files —
+ * that was the whole complaint. They list under Data packs, beside the packs
+ * CurseForge did install, and ship in the manifest's own `custom_datapacks`
+ * section rather than smuggled into `config_files`.
+ */
+const customDatapacks = ref<CustomDatapackWithContent[]>([])
+
+/**
+ * Custom data packs the admin has switched off, by pack name.
+ *
+ * Deliberately not `manifestStore.excludedAddons`: that list is keyed on addon
+ * names and is reset from the instance's own disabled addons, and a data pack
+ * with no CurseForge project has no business in it.
+ */
+const excludedDatapacks = ref<string[]>([])
+
+const isDatapackExcluded = (name: string) => excludedDatapacks.value.includes(name)
+
+const toggleDatapack = (name: string) =>
+{
+	excludedDatapacks.value = isDatapackExcluded(name)
+		? excludedDatapacks.value.filter((excluded) => excluded !== name)
+		: [...excludedDatapacks.value, name]
+}
+
+/** What actually ships: everything the admin has not switched off. */
+const shippingDatapacks = computed(() =>
+	customDatapacks.value.filter((datapack) => !isDatapackExcluded(datapack.name))
+)
 const customModpackName = ref('')
 const latestUpdateReference = ref('')
 const copied = ref(false)
@@ -412,13 +449,56 @@ const toRows = (addons: Addon[]): AddonRow[] =>
 		}
 	})
 
+/**
+ * Custom data packs as table rows, for the Data packs pane they belong in.
+ *
+ * Badged, because the two kinds sitting in one list have to stay tellable
+ * apart: a CurseForge pack has a project page and a version behind it, and one
+ * of these has neither — what it has is a file count and an origin outside
+ * CurseForge.
+ */
+const customDatapackRows = computed<AddonRow[]>(() =>
+	customDatapacks.value.map((datapack) =>
+	{
+		const excluded = isDatapackExcluded(datapack.name)
+		const fileCount = datapack.files.length
+		return {
+			key: `custom-${datapack.name}`,
+			name: datapack.name,
+			subtitle: excluded
+				? 'Excluded — stays in your instance'
+				: (datapack.archived
+					? 'Zipped data pack'
+					: `Folder · ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`),
+			version: '',
+			versionNote: '',
+			badge: 'Custom',
+			tone: excluded ? 'excluded' as const : 'shipping' as const,
+			label: excluded ? 'Excluded' : 'Ships',
+			struck: excluded,
+			dimmed: excluded
+		}
+	})
+)
+
 const categories = computed(() =>
 	ADDON_CATEGORIES.map((category) => ({
 		key: category as string,
 		label: categoryLabel(category),
-		rows: toRows(manifest.value?.[category] ?? [])
+		rows: category === 'datapacks'
+			// CurseForge's own first, then the ones only CEMM knows about.
+			? [...toRows(manifest.value?.datapacks ?? []), ...customDatapackRows.value]
+			: toRows(manifest.value?.[category] ?? [])
 	}))
 )
+
+/** Which rows in the Data packs pane the addon exclusion list does not govern. */
+const customDatapackNames = computed(
+	() => new Set(customDatapacks.value.map((datapack) => datapack.name))
+)
+
+const isCustomRow = (row: AddonRow) =>
+	activePane.value === 'datapacks' && customDatapackNames.value.has(row.name)
 
 const EMPTY_CATEGORY = { key: 'mods', label: categoryLabel('mods'), rows: [] as AddonRow[] }
 
@@ -443,7 +523,12 @@ const totalAddons = computed(() =>
 const shippingCount = computed(() => totalAddons.value - excludedCount.value)
 
 const canPublish = computed(() =>
-	!uploading.value && (manifest.value !== null || selectedConfigFiles.value.length > 0)
+	!uploading.value
+	&& (
+		manifest.value !== null
+		|| selectedConfigFiles.value.length > 0
+		|| shippingDatapacks.value.length > 0
+	)
 )
 
 const clearStatus = () =>
@@ -470,8 +555,36 @@ const handleStatus = (message: string, type: 'success' | 'error' | 'info' | 'war
 	setStatus(message, type)
 }
 
-/** The prefix every auto-collected custom data pack file carries. */
-const CUSTOM_DATAPACK_PREFIX = 'datapacks/'
+/**
+ * Pick up the data packs CurseForge did not install, for whichever instance is
+ * loaded — however it came to be loaded.
+ *
+ * Keyed on the loaded instance rather than run inside the load, because there
+ * are two ways in and only one of them passes through this panel. The button
+ * below loads through this component; the pack library loads from its own
+ * screen and then navigates here, mounting this panel fresh afterwards.
+ * Collecting inside `loadInstance` meant the library path threw the result away
+ * and a custom data pack never reached an update published that way — which,
+ * since CEMM opens on the pack library, is the path almost every publish takes.
+ */
+watch(instanceDir, async (directory) =>
+{
+	// Replaced, never merged: these describe the instance now loaded, and an
+	// exclusion made against a different pack means nothing here.
+	customDatapacks.value = []
+	excludedDatapacks.value = []
+	if (directory.trim().length === 0) return
+
+	const collected = await collectCustomDatapacks(directory)
+	if (!collected.ok)
+	{
+		logger.error({ error: collected.message, directory }, 'Failed to collect custom data packs')
+		setStatus(`Custom data packs could not be read: ${collected.message}`, 'warning')
+		return
+	}
+
+	customDatapacks.value = collected.value
+}, { immediate: true })
 
 async function handleLoadInstance()
 {
@@ -480,18 +593,6 @@ async function handleLoadInstance()
 	if (result.success && typeof result.instanceDir === 'string')
 	{
 		packsStore.recordOpened(result.instanceDir)
-	}
-	if (result.success && result.customDatapacks !== undefined)
-	{
-		// Replaced rather than merged: these describe the instance just loaded,
-		// and anything already under `datapacks/` describes whichever pack was
-		// loaded before. Hand-picked config files are left exactly as they were.
-		selectedConfigFiles.value = [
-			...selectedConfigFiles.value.filter(
-				(file) => !file.relative_path.startsWith(CUSTOM_DATAPACK_PREFIX)
-			),
-			...result.customDatapacks
-		]
 	}
 	if (manifest.value !== null)
 	{
@@ -506,13 +607,17 @@ async function handleSaveManifest()
 	clearStatus()
 	if (manifest.value !== null)
 	{
-		await saveManifest(manifest.value, selectedConfigFiles.value, setStatus)
+		await saveManifest(manifest.value, selectedConfigFiles.value, shippingDatapacks.value, setStatus)
 	}
 }
 
 async function handleUploadToGithub()
 {
-	if (manifest.value === null && selectedConfigFiles.value.length === 0)
+	if (
+		manifest.value === null
+		&& selectedConfigFiles.value.length === 0
+		&& shippingDatapacks.value.length === 0
+	)
 	{
 		return
 	}
@@ -527,6 +632,7 @@ async function handleUploadToGithub()
 		const result: { success: boolean, updateReference?: string } = await uploadToGithub(
 			manifest.value,
 			selectedConfigFiles.value,
+			shippingDatapacks.value,
 			customModpackName.value,
 			(value: number, message?: string) =>
 			{

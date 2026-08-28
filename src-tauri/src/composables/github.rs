@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::composables::manifest::{ConfigFileWithContent, Manifest, BINARY_CONTENT_PREFIX};
+use crate::composables::manifest::{
+    ConfigFile, ConfigFileWithContent, Manifest, BINARY_CONTENT_PREFIX,
+};
 
 const MAX_REMOTE_CONFIG_FILES: usize = 1_000;
 const MAX_REMOTE_CONFIG_FILE_BYTES: usize = 128 * 1024 * 1024;
@@ -79,16 +81,31 @@ fn checked_config_download_total(current: usize, next: usize) -> Result<usize, S
     Ok(total)
 }
 
+/// Every file an update asks the player to download, config files and custom
+/// data pack files alike.
+///
+/// One list rather than two loops, because the two are identical in every way
+/// that matters here: both are attacker-controlled relative paths fetched from
+/// the update folder and written into the instance. Only their meaning differs,
+/// and meaning is the manifest's business, not the downloader's.
+fn remote_files(manifest: &Manifest) -> impl Iterator<Item = &ConfigFile> {
+    manifest.config_files.iter().chain(
+        manifest
+            .custom_datapacks
+            .iter()
+            .flat_map(|datapack| datapack.files.iter()),
+    )
+}
+
 fn validate_remote_config_manifest(manifest: &Manifest) -> Result<(), String> {
-    if manifest.config_files.len() > MAX_REMOTE_CONFIG_FILES {
+    let count = remote_files(manifest).count();
+    if count > MAX_REMOTE_CONFIG_FILES {
         return Err(format!(
-            "Manifest contains {} config files; the download limit is {}",
-            manifest.config_files.len(),
-            MAX_REMOTE_CONFIG_FILES
+            "Manifest lists {count} files to download; the limit is {MAX_REMOTE_CONFIG_FILES}"
         ));
     }
-    for config_file in &manifest.config_files {
-        validate_config_repo_relative_path(&config_file.relative_path)?;
+    for file in remote_files(manifest) {
+        validate_config_repo_relative_path(&file.relative_path)?;
     }
     Ok(())
 }
@@ -669,15 +686,20 @@ pub async fn download_config_files(
 
     validate_remote_config_manifest(&manifest)?;
 
+    // Cloned out before the loop consumes them: `remote_files` borrows the
+    // manifest, and the loop below needs owned paths.
+    let wanted: Vec<ConfigFile> = remote_files(&manifest).cloned().collect();
     log::debug!(
-        "download_config_files: {} files listed in the manifest",
-        manifest.config_files.len()
+        "download_config_files: {} file(s) listed in the manifest ({} config, {} across {} custom data pack(s))",
+        wanted.len(),
+        manifest.config_files.len(),
+        wanted.len() - manifest.config_files.len(),
+        manifest.custom_datapacks.len()
     );
 
-    // Download config files based on manifest list
-    let mut config_files = Vec::with_capacity(manifest.config_files.len());
+    let mut config_files = Vec::with_capacity(wanted.len());
     let mut total_downloaded_bytes = 0usize;
-    for config_file in manifest.config_files {
+    for config_file in wanted {
         let mut downloaded_content: Option<Vec<u8>> = None;
         let mut last_error = String::new();
 
@@ -695,7 +717,7 @@ pub async fn download_config_files(
 
             if !content_res.status().is_success() {
                 last_error = format!(
-                    "Failed to download config file {} (status {})",
+                    "Failed to download {} (status {})",
                     config_file.relative_path,
                     content_res.status()
                 );
@@ -749,6 +771,68 @@ pub async fn download_config_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_file_an_update_ships_is_validated_and_downloaded() {
+        // Custom data pack files are attacker-controlled relative paths exactly
+        // like config files, and are fetched the same way. Validating only
+        // `config_files` would have let a traversing data pack path through the
+        // one check standing between a downloaded manifest and disk.
+        let manifest = Manifest {
+            update_type: Some("full".to_string()),
+            mods: Vec::new(),
+            resourcepacks: Vec::new(),
+            shaderpacks: Vec::new(),
+            datapacks: Vec::new(),
+            custom_datapacks: vec![crate::composables::manifest::CustomDatapack {
+                name: "vanillatweaks".to_string(),
+                archived: false,
+                files: vec![ConfigFile {
+                    filename: "pack.mcmeta".to_string(),
+                    relative_path: "datapacks/vanillatweaks/pack.mcmeta".to_string(),
+                }],
+            }],
+            config_files: vec![ConfigFile {
+                filename: "server.properties".to_string(),
+                relative_path: "config/server.properties".to_string(),
+            }],
+        };
+
+        let paths: Vec<&str> = remote_files(&manifest)
+            .map(|file| file.relative_path.as_str())
+            .collect();
+
+        assert_eq!(
+            paths,
+            vec![
+                "config/server.properties",
+                "datapacks/vanillatweaks/pack.mcmeta"
+            ]
+        );
+        assert!(validate_remote_config_manifest(&manifest).is_ok());
+    }
+
+    #[test]
+    fn a_traversing_custom_data_pack_path_is_refused() {
+        let manifest = Manifest {
+            update_type: Some("full".to_string()),
+            mods: Vec::new(),
+            resourcepacks: Vec::new(),
+            shaderpacks: Vec::new(),
+            datapacks: Vec::new(),
+            custom_datapacks: vec![crate::composables::manifest::CustomDatapack {
+                name: "evil".to_string(),
+                archived: true,
+                files: vec![ConfigFile {
+                    filename: "evil.zip".to_string(),
+                    relative_path: "../../../evil.zip".to_string(),
+                }],
+            }],
+            config_files: Vec::new(),
+        };
+
+        assert!(validate_remote_config_manifest(&manifest).is_err());
+    }
 
     #[test]
     fn github_json_error_retains_the_api_message_and_status() {
@@ -954,6 +1038,7 @@ mod tests {
             resourcepacks: Vec::new(),
             shaderpacks: Vec::new(),
             datapacks: Vec::new(),
+            custom_datapacks: Vec::new(),
             config_files: vec![config_file; MAX_REMOTE_CONFIG_FILES + 1],
         };
 

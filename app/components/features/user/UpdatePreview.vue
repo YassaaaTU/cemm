@@ -197,29 +197,54 @@
       </template>
     </AddonTable>
 
-    <!-- Files, listed by path — that is how a player recognises whether a change
-         touches something they customised. Data packs the admin wrote by hand
-         travel as file content rather than as manifest addons (they have no
-         CurseForge project and so no download URL), which is exactly why they
-         get their own heading here instead of being filed under "config". -->
+    <!-- Data packs that are not CurseForge projects, listed as data packs. They
+         cannot be manifest addons — no project id, no CDN URL — so they travel
+         as file content, but a player should see a data pack arriving, not a
+         handful of paths filed under "config files". -->
     <div
-      v-for="group in fileGroups"
-      :key="group.title"
+      v-if="customDatapacks.length > 0"
       class="overflow-hidden rounded-box border border-base-300 bg-base-200"
     >
       <div class="flex items-center gap-3 border-b border-base-300 px-3 py-2.5">
         <h3 class="text-sm font-semibold">
-          {{ group.title }}
+          Data packs
         </h3>
-        <span class="font-mono text-xs text-base-content/50 tabular-nums">{{ group.files.length }}</span>
-        <span
-          v-if="group.note.length > 0"
-          class="min-w-0 truncate text-xs text-base-content/55"
-        >{{ group.note }}</span>
+        <span class="font-mono text-xs text-base-content/50 tabular-nums">{{ customDatapacks.length }}</span>
+        <span class="min-w-0 truncate text-xs text-base-content/55">
+          Included by your admin, not from CurseForge.
+        </span>
       </div>
       <ul class="max-h-40 overflow-y-auto">
         <li
-          v-for="file in group.files"
+          v-for="datapack in customDatapacks"
+          :key="datapack.name"
+          class="flex items-center gap-2 border-b border-base-300/40 px-3 py-2 last:border-b-0"
+        >
+          <StatusChip
+            tone="new"
+            label="Custom"
+          />
+          <span class="min-w-0 flex-1 truncate text-sm">{{ datapack.name }}</span>
+          <span class="shrink-0 font-mono text-xs text-base-content/55">{{ datapackSummary(datapack) }}</span>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Config files, listed by path — that is how a player recognises whether
+         a change touches something they customised. -->
+    <div
+      v-if="configFiles.length > 0"
+      class="overflow-hidden rounded-box border border-base-300 bg-base-200"
+    >
+      <div class="flex items-center gap-3 border-b border-base-300 px-3 py-2.5">
+        <h3 class="text-sm font-semibold">
+          Config files
+        </h3>
+        <span class="font-mono text-xs text-base-content/50 tabular-nums">{{ configFiles.length }}</span>
+      </div>
+      <ul class="max-h-40 overflow-y-auto">
+        <li
+          v-for="file in configFiles"
           :key="file.relativePath"
           class="flex items-center gap-2 border-b border-base-300/40 px-3 py-1.5 last:border-b-0"
         >
@@ -252,6 +277,12 @@ const props = withDefaults(
 		extras: AddonRow[]
 		unchanged: AddonRow[]
 		configFiles: Array<{ relativePath: string, badge: 'BIN' | 'CFG' | null }>
+		/**
+		 * Data packs the update carries that are not CurseForge projects. Their
+		 * own section, because that is what they are — listing them among config
+		 * files hid a whole data pack where nobody would look for it.
+		 */
+		customDatapacks: Array<{ name: string, archived: boolean, fileCount: number }>
 		updateType?: 'full' | 'config'
 		/**
 		 * The same diff, after it has been written to disk. The screen stays up
@@ -319,29 +350,10 @@ const extrasNote = computed(() =>
 		: 'CEMM did not install them, so they stay where they are.'
 })
 
-/**
- * Custom data packs first, under their own heading, then everything else.
- *
- * Both arrive over the same wire — a data pack that did not come from
- * CurseForge has no project id and so no CDN URL for a manifest entry, and
- * travels as file content instead. Listing them together filed a whole data
- * pack under "config files", where nobody would recognise it.
- */
-const fileGroups = computed(() =>
-{
-	const isDatapack = (file: { relativePath: string }) => file.relativePath.startsWith('datapacks/')
-	const datapacks = props.configFiles.filter(isDatapack)
-	const configs = props.configFiles.filter((file) => !isDatapack(file))
-
-	return [
-		{
-			title: 'Custom data packs',
-			note: 'Included by your admin, not from CurseForge.',
-			files: datapacks
-		},
-		{ title: 'Config files', note: '', files: configs }
-	].filter((group) => group.files.length > 0)
-})
+const datapackSummary = (datapack: { archived: boolean, fileCount: number }) =>
+	datapack.archived
+		? 'Zipped data pack'
+		: `Folder · ${datapack.fileCount} ${datapack.fileCount === 1 ? 'file' : 'files'}`
 
 type ChangeKey = 'all' | 'new' | 'updated' | 'same'
 /** `all` plus the four manifest categories. */

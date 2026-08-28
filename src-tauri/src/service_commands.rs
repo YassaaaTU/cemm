@@ -8,6 +8,7 @@ use crate::composables::manifest::Manifest;
 use crate::installer::{InstallOptions, UpdateDiff};
 use crate::service::protocol::Method;
 use crate::service::ServiceClient;
+use crate::CustomDatapackWithContent;
 
 #[tauri::command]
 pub async fn read_file(service: State<'_, ServiceClient>, path: String) -> Result<String, String> {
@@ -57,7 +58,7 @@ pub async fn read_directory_recursive(
 pub async fn collect_custom_datapacks(
     service: State<'_, ServiceClient>,
     modpack_path: String,
-) -> Result<Vec<ConfigFileWithContent>, String> {
+) -> Result<Vec<CustomDatapackWithContent>, String> {
     service
         .call_typed(
             Method::ConfigCollectDatapacks,

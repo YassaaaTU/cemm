@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { CachedIcon, ConfigFileWithContent, InstallBaseline, Manifest, PackLibrary, TauriOutcome, UpdateDiff } from '~/types'
+import type { CachedIcon, ConfigFileWithContent, CustomDatapackWithContent, InstallBaseline, Manifest, PackLibrary, TauriOutcome, UpdateDiff } from '~/types'
 import { getErrorMessage } from '~/utils/errorHandler'
 
 export const useTauri = () =>
@@ -160,21 +160,24 @@ export const useTauri = () =>
 	}
 
 	/**
-	 * Data packs in the instance that CurseForge did not install, as content
-	 * ready to publish.
+	 * Data packs in the instance that CurseForge did not install, grouped by
+	 * pack and carrying their content, ready to publish.
 	 *
-	 * A manifest entry is a CurseForge project plus a CDN URL, so a data pack
+	 * An addon entry is a CurseForge project id plus a CDN URL, so a data pack
 	 * from anywhere else — Vanilla Tweaks, Modrinth, a hand-written one — cannot
-	 * be described by one. It travels as file content instead, which also
-	 * handles the shape data packs come in — a folder as readily as a zip.
+	 * be described by one. It gets its own manifest section instead, and its
+	 * files travel by relative path the way config files do.
+	 *
+	 * Grouped because a pack is the unit a person sees and toggles: one row for
+	 * `vanillatweaks`, whether that is a single zip or a folder of forty files.
 	 */
-	const collectCustomDatapacks = async (modpackPath: string): Promise<TauriOutcome<ConfigFileWithContent[]>> =>
+	const collectCustomDatapacks = async (modpackPath: string): Promise<TauriOutcome<CustomDatapackWithContent[]>> =>
 	{
 		try
 		{
 			return {
 				ok: true,
-				value: await invoke<ConfigFileWithContent[]>('collect_custom_datapacks', { modpackPath })
+				value: await invoke<CustomDatapackWithContent[]>('collect_custom_datapacks', { modpackPath })
 			}
 		}
 		catch (error)
