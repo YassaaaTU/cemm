@@ -294,7 +294,7 @@
 
 <script setup lang="ts">
 import type { AddonRow } from '~/components/domains/addons/AddonTable.vue'
-import type { Addon, ConfigFileWithContent, UpdateDiff } from '~/types'
+import type { Addon, ConfigFileWithContent, Manifest, UpdateDiff } from '~/types'
 import { ADDON_CATEGORIES } from '~/utils/addonCategories'
 
 const { downloadFromGithub, downloadConfigFiles, installUpdate } = useUserApi()
