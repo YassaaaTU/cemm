@@ -322,10 +322,10 @@ const extrasNote = computed(() =>
 /**
  * Custom data packs first, under their own heading, then everything else.
  *
- * Both arrive over the same wire — a data pack the admin authored has no
- * CurseForge project and so no CDN URL for a manifest entry, and travels as
- * file content instead. Listing them together filed a whole data pack under
- * "config files", where nobody would recognise it.
+ * Both arrive over the same wire — a data pack that did not come from
+ * CurseForge has no project id and so no CDN URL for a manifest entry, and
+ * travels as file content instead. Listing them together filed a whole data
+ * pack under "config files", where nobody would recognise it.
  */
 const fileGroups = computed(() =>
 {
@@ -336,7 +336,7 @@ const fileGroups = computed(() =>
 	return [
 		{
 			title: 'Custom data packs',
-			note: 'Written by your admin, not from CurseForge.',
+			note: 'Included by your admin, not from CurseForge.',
 			files: datapacks
 		},
 		{ title: 'Config files', note: '', files: configs }

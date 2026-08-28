@@ -135,9 +135,9 @@ export function useAdminApi()
 			// exactly the case when the pack library loads a card and navigates.
 			manifestStore.sourcePath = instanceDir
 
-			// Data packs the admin wrote themselves are not in `installedAddons`,
-			// so the manifest above cannot describe them and never did — which is
-			// why a custom data pack was silently missing from every update. They
+			// Data packs that did not come from CurseForge are not in
+			// `installedAddons`, so the manifest above cannot describe them and
+			// never did — which is why they were silently missing from updates. They
 			// are collected here instead, as content, and travel the way config
 			// files do. Collected on load rather than at publish time so they are
 			// visible and removable in the config list like anything else.

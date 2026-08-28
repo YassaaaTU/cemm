@@ -827,14 +827,14 @@ fn read_directory_filtered(
     Ok(config_files)
 }
 
-/// Data packs an admin wrote themselves, ready to travel with an update.
+/// Data packs that did not come from CurseForge, ready to travel with an update.
 ///
 /// A published manifest is built entirely from `minecraftinstance.json`, which
-/// lists only what CurseForge installed. A data pack you authored has no
-/// CurseForge project behind it, so it appeared nowhere in the manifest and was
-/// silently left out of every update — and it could not have been listed there
-/// anyway, because a manifest entry is a CDN download URL and a hand-written
-/// pack has no URL to give.
+/// lists only what CurseForge installed. A pack from anywhere else — Vanilla
+/// Tweaks, a Modrinth download, a hand-written one — has no CurseForge project
+/// behind it, so it appeared nowhere in the manifest and was silently left out
+/// of every update. It could not have been listed there anyway: a manifest
+/// entry is a project id plus a CDN download URL, and such a pack has neither.
 ///
 /// So it travels the way config files do: as content. That also handles the
 /// shape data packs actually come in — a folder of `pack.mcmeta` plus `data/`

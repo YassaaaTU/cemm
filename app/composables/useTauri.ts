@@ -164,9 +164,9 @@ export const useTauri = () =>
 	 * ready to publish.
 	 *
 	 * A manifest entry is a CurseForge project plus a CDN URL, so a data pack
-	 * the admin wrote themselves cannot be described by one. It travels as file
-	 * content instead, which also handles the shape data packs come in — a
-	 * folder as readily as a zip.
+	 * from anywhere else — Vanilla Tweaks, Modrinth, a hand-written one — cannot
+	 * be described by one. It travels as file content instead, which also
+	 * handles the shape data packs come in — a folder as readily as a zip.
 	 */
 	const collectCustomDatapacks = async (modpackPath: string): Promise<TauriOutcome<ConfigFileWithContent[]>> =>
 	{
