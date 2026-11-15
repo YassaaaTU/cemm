@@ -36,6 +36,14 @@ pub enum Method {
     InstallApplyUpdate,
     LibraryScan,
     LibraryCacheIcons,
+    ReleaseReadSpec,
+    ReleaseCapture,
+    ReleasePublish,
+    ReleaseReviewUpgrade,
+    ReleaseFetch,
+    ReleasePlan,
+    ReleaseApply,
+    ReleaseStatus,
 }
 
 impl Method {
@@ -57,6 +65,14 @@ impl Method {
             Self::InstallApplyUpdate => "install.apply_update",
             Self::LibraryScan => "library.scan",
             Self::LibraryCacheIcons => "library.cache_icons",
+            Self::ReleaseReadSpec => "release.read_spec",
+            Self::ReleaseCapture => "release.capture",
+            Self::ReleasePublish => "release.publish",
+            Self::ReleaseReviewUpgrade => "release.review_upgrade",
+            Self::ReleaseFetch => "release.fetch",
+            Self::ReleasePlan => "release.plan",
+            Self::ReleaseApply => "release.apply",
+            Self::ReleaseStatus => "release.status",
         }
     }
 
@@ -78,6 +94,14 @@ impl Method {
             "install.apply_update" => Self::InstallApplyUpdate,
             "library.scan" => Self::LibraryScan,
             "library.cache_icons" => Self::LibraryCacheIcons,
+            "release.read_spec" => Self::ReleaseReadSpec,
+            "release.capture" => Self::ReleaseCapture,
+            "release.publish" => Self::ReleasePublish,
+            "release.review_upgrade" => Self::ReleaseReviewUpgrade,
+            "release.fetch" => Self::ReleaseFetch,
+            "release.plan" => Self::ReleasePlan,
+            "release.apply" => Self::ReleaseApply,
+            "release.status" => Self::ReleaseStatus,
             _ => return None,
         })
     }
@@ -96,6 +120,8 @@ impl Method {
             | Self::ManifestParseInstance
             | Self::ManifestResolveBaseline
             | Self::ManifestDiff
+            | Self::ReleaseReadSpec
+            | Self::ReleaseStatus
             | Self::LibraryScan => Duration::from_secs(120),
             // Bounded by ICON_BATCH_FETCH_BUDGET on the sidecar side, so this
             // is headroom over a batch that stops itself rather than a cap the
@@ -103,9 +129,18 @@ impl Method {
             Self::LibraryCacheIcons => Duration::from_secs(2 * 60),
             Self::GithubUploadUpdate
             | Self::GithubDownloadManifest
-            | Self::GithubDownloadConfigFiles => Duration::from_secs(30 * 60),
-            // A large modpack legitimately takes hours to install.
-            Self::InstallApplyUpdate => Duration::from_secs(2 * 60 * 60),
+            | Self::GithubDownloadConfigFiles
+            | Self::ReleaseFetch => Duration::from_secs(30 * 60),
+            // These hash a whole profile -- a couple of gigabytes of jars and
+            // tens of thousands of small files -- before they can answer.
+            Self::ReleaseCapture | Self::ReleasePlan | Self::ReleaseReviewUpgrade => {
+                Duration::from_secs(30 * 60)
+            }
+            // A large modpack legitimately takes hours to install, and a first
+            // release uploads every hosted file one request at a time.
+            Self::InstallApplyUpdate | Self::ReleaseApply | Self::ReleasePublish => {
+                Duration::from_secs(2 * 60 * 60)
+            }
         }
     }
 
@@ -126,7 +161,13 @@ impl Method {
             Self::GithubUploadUpdate
             | Self::GithubDownloadManifest
             | Self::GithubDownloadConfigFiles
-            | Self::InstallApplyUpdate => true,
+            | Self::InstallApplyUpdate
+            | Self::ReleaseCapture
+            | Self::ReleasePublish
+            | Self::ReleaseReviewUpgrade
+            | Self::ReleaseFetch
+            | Self::ReleasePlan
+            | Self::ReleaseApply => true,
             Self::Ping
             | Self::FileRead
             | Self::FileWrite
@@ -138,7 +179,9 @@ impl Method {
             | Self::ManifestResolveBaseline
             | Self::ManifestDiff
             | Self::LibraryScan
-            | Self::LibraryCacheIcons => false,
+            | Self::LibraryCacheIcons
+            | Self::ReleaseReadSpec
+            | Self::ReleaseStatus => false,
         }
     }
 
@@ -152,15 +195,24 @@ impl Method {
             Self::GithubDownloadManifest | Self::GithubDownloadConfigFiles => {
                 "CEMM is downloading an update. Wait for it to finish, then try again."
             }
-            Self::InstallApplyUpdate => {
+            Self::InstallApplyUpdate | Self::ReleaseApply => {
                 "CEMM is installing an update. Wait for it to finish, then try again."
+            }
+            Self::ReleasePublish => {
+                "CEMM is publishing a release. Wait for it to finish, then try again."
+            }
+            Self::ReleaseFetch => {
+                "CEMM is downloading an update. Wait for it to finish, then try again."
+            }
+            Self::ReleaseCapture | Self::ReleasePlan | Self::ReleaseReviewUpgrade => {
+                "CEMM is checking a modpack's files. Wait for it to finish, then try again."
             }
             _ => "CEMM is busy with another operation. Wait for it to finish, then try again.",
         }
     }
 
     /// Every method, for tests that assert the wire mapping is a bijection.
-    pub const ALL: [Method; 16] = [
+    pub const ALL: [Method; 24] = [
         Self::Ping,
         Self::FileRead,
         Self::FileWrite,
@@ -177,6 +229,14 @@ impl Method {
         Self::InstallApplyUpdate,
         Self::LibraryScan,
         Self::LibraryCacheIcons,
+        Self::ReleaseReadSpec,
+        Self::ReleaseCapture,
+        Self::ReleasePublish,
+        Self::ReleaseReviewUpgrade,
+        Self::ReleaseFetch,
+        Self::ReleasePlan,
+        Self::ReleaseApply,
+        Self::ReleaseStatus,
     ];
 }
 
@@ -244,6 +304,12 @@ mod tests {
                 "github.download_manifest",
                 "github.download_config_files",
                 "install.apply_update",
+                "release.capture",
+                "release.publish",
+                "release.review_upgrade",
+                "release.fetch",
+                "release.plan",
+                "release.apply",
             ]
         );
     }

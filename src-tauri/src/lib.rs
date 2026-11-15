@@ -63,7 +63,15 @@ pub fn run() {
             service_commands::is_binary_file,
             service_commands::validate_path,
             service_commands::scan_pack_library,
-            service_commands::cache_pack_icons
+            service_commands::cache_pack_icons,
+            service_commands::read_release_spec,
+            service_commands::capture_release,
+            service_commands::publish_release,
+            service_commands::review_upgrade,
+            service_commands::fetch_update,
+            service_commands::plan_release,
+            service_commands::apply_release,
+            service_commands::profile_release_status
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

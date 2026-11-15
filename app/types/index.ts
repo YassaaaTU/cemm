@@ -8,6 +8,23 @@ export type { CustomDatapackWithContent } from './generated/CustomDatapackWithCo
 export type { InstallBaseline } from './generated/InstallBaseline'
 export type { UpdateDiff } from './generated/UpdateDiff'
 
+// The release contract (schema 2) and everything a release install reports.
+export type { AddonAction } from './generated/AddonAction'
+export type { AppliedState } from './generated/AppliedState'
+export type { ApplyReport } from './generated/ApplyReport'
+export type { CaptureSummary } from './generated/CaptureSummary'
+export type { FetchedUpdate } from './generated/FetchedUpdate'
+export type { FileAction } from './generated/FileAction'
+export type { InstallPlan } from './generated/InstallPlan'
+export type { PlanConflict } from './generated/PlanConflict'
+export type { PublishReceipt } from './generated/PublishReceipt'
+export type { Release } from './generated/Release'
+export type { ReleaseDraft } from './generated/ReleaseDraft'
+export type { ReleaseSpec } from './generated/ReleaseSpec'
+export type { SettingAction } from './generated/SettingAction'
+export type { ThreeWayItem } from './generated/ThreeWayItem'
+export type { ThreeWayReport } from './generated/ThreeWayReport'
+
 /**
  * Everything under `./generated` is written from the Rust structs by ts-rs
  * (`bun run types:generate`) and checked in CI, so these shapes cannot drift

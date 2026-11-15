@@ -237,3 +237,165 @@ pub async fn install_update(
         )
         .await
 }
+
+/// The pack's release description, or `None` when it has none and publishing
+/// stays the legacy flow.
+#[tauri::command]
+pub async fn read_release_spec(
+    service: State<'_, ServiceClient>,
+    modpack_path: String,
+) -> Result<Option<crate::composables::release_capture::ReleaseSpec>, String> {
+    service
+        .call_typed(
+            Method::ReleaseReadSpec,
+            json!({ "modpackPath": modpack_path }),
+        )
+        .await
+}
+
+/// Reads the profile into a release draft and reports what blocks publishing.
+#[tauri::command]
+pub async fn capture_release(
+    service: State<'_, ServiceClient>,
+    modpack_path: String,
+    release_id: String,
+    notes: String,
+    previous: Option<crate::composables::release::Release>,
+) -> Result<crate::composables::release_capture::ReleaseDraft, String> {
+    service
+        .call_typed(
+            Method::ReleaseCapture,
+            json!({
+                "modpackPath": modpack_path,
+                "releaseId": release_id,
+                "notes": notes,
+                "previous": previous
+            }),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn publish_release(
+    service: State<'_, ServiceClient>,
+    operation_id: String,
+    repo: String,
+    token: String,
+    modpack_path: String,
+    release: crate::composables::release::Release,
+) -> Result<crate::composables::github::PublishReceipt, String> {
+    service
+        .call_typed(
+            Method::ReleasePublish,
+            json!({
+                "operationId": operation_id,
+                "repo": repo,
+                "token": token,
+                "modpackPath": modpack_path,
+                "release": release
+            }),
+        )
+        .await
+}
+
+/// The three-way comparison behind an official base upgrade. Read-only.
+#[tauri::command]
+pub async fn review_upgrade(
+    service: State<'_, ServiceClient>,
+    base_path: String,
+    custom_path: String,
+    upstream_path: String,
+) -> Result<crate::composables::release::ThreeWayReport, String> {
+    service
+        .call_typed(
+            Method::ReleaseReviewUpgrade,
+            json!({
+                "basePath": base_path,
+                "customPath": custom_path,
+                "upstreamPath": upstream_path
+            }),
+        )
+        .await
+}
+
+/// Resolves an update code of either format.
+#[tauri::command]
+pub async fn fetch_update(
+    service: State<'_, ServiceClient>,
+    repo: String,
+    code: String,
+    modpack_key: Option<String>,
+) -> Result<crate::composables::github::FetchedUpdate, String> {
+    service
+        .call_typed(
+            Method::ReleaseFetch,
+            json!({ "repo": repo, "code": code, "modpackKey": modpack_key }),
+        )
+        .await
+}
+
+/// What applying a release to a profile would do. Read-only.
+#[tauri::command]
+pub async fn plan_release(
+    service: State<'_, ServiceClient>,
+    modpack_path: String,
+    release: crate::composables::release::Release,
+    release_digest: String,
+) -> Result<crate::release_install::InstallPlan, String> {
+    service
+        .call_typed(
+            Method::ReleasePlan,
+            json!({
+                "modpackPath": modpack_path,
+                "release": release,
+                "releaseDigest": release_digest
+            }),
+        )
+        .await
+}
+
+#[tauri::command]
+// Named arguments map straight onto the frontend payload, as with
+// `upload_update` above.
+#[allow(clippy::too_many_arguments)]
+pub async fn apply_release(
+    service: State<'_, ServiceClient>,
+    operation_id: String,
+    modpack_path: String,
+    repo: String,
+    release: crate::composables::release::Release,
+    release_digest: String,
+    revision: String,
+    plan_fingerprint: String,
+    approved: Vec<String>,
+) -> Result<crate::release_install::ApplyReport, String> {
+    service
+        .call_typed(
+            Method::ReleaseApply,
+            json!({
+                "operationId": operation_id,
+                "modpackPath": modpack_path,
+                "repo": repo,
+                "release": release,
+                "releaseDigest": release_digest,
+                "revision": revision,
+                "planFingerprint": plan_fingerprint,
+                "approved": approved
+            }),
+        )
+        .await
+}
+
+/// Which release a profile follows, when CEMM has adopted it.
+#[tauri::command]
+pub async fn profile_release_status(
+    service: State<'_, ServiceClient>,
+    modpack_path: String,
+) -> Result<Option<crate::release_install::AppliedState>, String> {
+    service
+        .call_typed(
+            Method::ReleaseStatus,
+            json!({ "modpackPath": modpack_path }),
+        )
+        .await
+}

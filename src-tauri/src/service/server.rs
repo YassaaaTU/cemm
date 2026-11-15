@@ -196,6 +196,95 @@ async fn dispatch(
                 .await,
             )
         }
+        Method::ReleaseReadSpec => {
+            let params: ModpackPathParams = decode_params(request)?;
+            encode_result(crate::composables::release_capture::read_release_spec(
+                params.modpack_path,
+            ))
+        }
+        Method::ReleaseCapture => {
+            let params: crate::composables::release_capture::CaptureRequest =
+                decode_params(request)?;
+            encode_result(crate::composables::release_capture::capture_release(params))
+        }
+        Method::ReleaseReviewUpgrade => {
+            let params: crate::composables::release_capture::ReviewRequest =
+                decode_params(request)?;
+            encode_result(crate::composables::release_capture::review_upgrade(params))
+        }
+        Method::ReleasePublish => {
+            let params: PublishReleaseParams = decode_params(request)?;
+            let events = Arc::clone(event_callback);
+            let operation_id = params.operation_id.clone();
+            let progress_callback = Arc::new(
+                move |progress: crate::composables::github::UploadProgress| {
+                    events(
+                        "upload_progress",
+                        serde_json::json!({
+                            "operationId": operation_id,
+                            "progress": progress.progress,
+                            "message": progress.message
+                        }),
+                    );
+                },
+            );
+            encode_result(
+                crate::composables::github::publish_release(
+                    params.repo,
+                    params.token,
+                    params.modpack_path,
+                    params.release,
+                    progress_callback,
+                )
+                .await,
+            )
+        }
+        Method::ReleaseFetch => {
+            let params: FetchUpdateParams = decode_params(request)?;
+            encode_result(
+                crate::composables::github::fetch_update(
+                    params.repo,
+                    params.code,
+                    params.modpack_key,
+                )
+                .await,
+            )
+        }
+        Method::ReleasePlan => {
+            let params: PlanReleaseParams = decode_params(request)?;
+            encode_result(
+                crate::release_install::plan_release(
+                    params.modpack_path,
+                    params.release,
+                    params.release_digest,
+                )
+                .await,
+            )
+        }
+        Method::ReleaseApply => {
+            let params: ApplyReleaseParams = decode_params(request)?;
+            let events = Arc::clone(event_callback);
+            let operation_id = params.operation_id.clone();
+            let progress_callback = Arc::new(move |progress: crate::installer::InstallProgress| {
+                events(
+                    "install-progress",
+                    serde_json::json!({
+                        "operationId": operation_id,
+                        "progress": progress.progress,
+                        "message": progress.message
+                    }),
+                );
+            });
+            encode_result(
+                crate::release_install::apply_release(params.request, progress_callback).await,
+            )
+        }
+        Method::ReleaseStatus => {
+            let params: ModpackPathParams = decode_params(request)?;
+            encode_result(crate::release_install::profile_release_status(
+                params.modpack_path,
+            ))
+        }
     }
 }
 
@@ -275,6 +364,40 @@ struct DownloadConfigFilesParams {
     uuid: String,
     modpack_key: Option<String>,
     manifest: crate::composables::manifest::Manifest,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PublishReleaseParams {
+    operation_id: String,
+    repo: String,
+    token: String,
+    modpack_path: String,
+    release: crate::composables::release::Release,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FetchUpdateParams {
+    repo: String,
+    code: String,
+    modpack_key: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlanReleaseParams {
+    modpack_path: String,
+    release: crate::composables::release::Release,
+    release_digest: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApplyReleaseParams {
+    operation_id: String,
+    #[serde(flatten)]
+    request: crate::release_install::ApplyRequest,
 }
 
 #[derive(Deserialize)]
