@@ -5,11 +5,19 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use crate::composables::manifest::{
     ConfigFile, ConfigFileWithContent, Manifest, BINARY_CONTENT_PREFIX,
 };
+use crate::composables::release::{
+    self, is_commit_sha, is_sha256_hex, is_valid_lineage, object_path, parse_release,
+    parse_update_code, Release, ServerRelease, RELEASE_FILE_NAME,
+};
 
 const MAX_REMOTE_CONFIG_FILES: usize = 1_000;
 const MAX_REMOTE_CONFIG_FILE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_REMOTE_CONFIG_TOTAL_BYTES: usize = 512 * 1024 * 1024;
 const MAX_REMOTE_MANIFEST_BYTES: usize = 8 * 1024 * 1024;
+/// A release lists every managed file with its hash, so it runs larger than a
+/// legacy manifest: about 250 bytes an entry, and a big pack has tens of
+/// thousands of entries.
+const MAX_REMOTE_RELEASE_BYTES: usize = 48 * 1024 * 1024;
 
 /// The manifest's name inside an update folder. Published under this name by
 /// `upload_update_with_progress` and fetched under it by `download_manifest`,
@@ -270,24 +278,76 @@ fn raw_update_file_url(
     base_path: &str,
     relative_path: &str,
 ) -> Result<String, String> {
-    let mut url = url::Url::parse("https://raw.githubusercontent.com/")
-        .map_err(|error| format!("Could not build a download URL: {error}"))?;
-    {
-        let mut segments = url
-            .path_segments_mut()
-            .map_err(|_| "Could not build a download URL".to_string())?;
-        segments.push(owner);
-        segments.push(repo_name);
-        segments.push(PUBLISH_BRANCH);
-        for segment in base_path
-            .split('/')
-            .chain(relative_path.split('/'))
-            .filter(|segment| !segment.is_empty())
-        {
-            segments.push(segment);
+    GithubEndpoints::resolve().raw_file_url(
+        owner,
+        repo_name,
+        PUBLISH_BRANCH,
+        base_path,
+        relative_path,
+    )
+}
+
+/// The two GitHub hosts CEMM talks to.
+///
+/// A type rather than two string literals so the transport can be exercised
+/// end to end against local test storage. Only a development build can be
+/// pointed anywhere else: `cfg!(debug_assertions)` is false in every shipped
+/// binary, where the override variables are never read and both hosts are
+/// exactly what they have always been.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GithubEndpoints {
+    pub api: String,
+    pub raw: String,
+}
+
+impl GithubEndpoints {
+    pub fn resolve() -> Self {
+        let dev = |name: &str| {
+            if !cfg!(debug_assertions) {
+                return None;
+            }
+            std::env::var(name)
+                .ok()
+                .map(|value| value.trim_end_matches('/').to_string())
+                .filter(|value| !value.is_empty())
+        };
+        Self {
+            api: dev("CEMM_DEV_GITHUB_API").unwrap_or_else(|| "https://api.github.com".to_string()),
+            raw: dev("CEMM_DEV_GITHUB_RAW")
+                .unwrap_or_else(|| "https://raw.githubusercontent.com".to_string()),
         }
     }
-    Ok(url.to_string())
+
+    /// A directly fetchable URL for one file at one reference — a branch name,
+    /// or a commit, which is what makes a release immutable to its readers.
+    pub fn raw_file_url(
+        &self,
+        owner: &str,
+        repo_name: &str,
+        reference: &str,
+        base_path: &str,
+        relative_path: &str,
+    ) -> Result<String, String> {
+        let mut url = url::Url::parse(&format!("{}/", self.raw))
+            .map_err(|error| format!("Could not build a download URL: {error}"))?;
+        {
+            let mut segments = url
+                .path_segments_mut()
+                .map_err(|_| "Could not build a download URL".to_string())?;
+            segments.pop_if_empty();
+            segments.push(owner);
+            segments.push(repo_name);
+            segments.push(reference);
+            for segment in base_path
+                .split('/')
+                .chain(relative_path.split('/'))
+                .filter(|segment| !segment.is_empty())
+            {
+                segments.push(segment);
+            }
+        }
+        Ok(url.to_string())
+    }
 }
 
 fn push_unique_candidate(candidates: &mut Vec<String>, s: String) {
@@ -394,11 +454,21 @@ pub async fn upload_update_with_progress(
         .build()
         .map_err(|e| e.to_string())?;
     let user_agent = "cemm-app-tauri";
+    let api = GithubEndpoints::resolve().api;
+
+    // A code names one update for good. The tree API would happily replace the
+    // files of an existing one, and everyone holding the old code would then
+    // install something its admin never showed them.
+    let update_base_path = primary_update_base_path(modpack_key.as_deref(), &uuid);
+    if update_path_exists(&client, &api, owner, repo_name, &token, &update_base_path).await? {
+        return Err(format!(
+            "An update already exists at '{update_base_path}'. Update codes are never reused; publish again to get a new one."
+        ));
+    }
 
     // Step 1: Get the current commit SHA of main branch
     emit_progress(&progress_callback, 10, "Getting branch reference...");
-    let refs_url =
-        format!("https://api.github.com/repos/{owner}/{repo_name}/git/refs/heads/{PUBLISH_BRANCH}");
+    let refs_url = format!("{api}/repos/{owner}/{repo_name}/git/refs/heads/{PUBLISH_BRANCH}");
     let refs_response = client
         .get(&refs_url)
         .header("Authorization", format!("token {}", token))
@@ -415,8 +485,7 @@ pub async fn upload_update_with_progress(
 
     // Step 2: Get the base tree SHA
     emit_progress(&progress_callback, 15, "Getting tree structure...");
-    let commit_url =
-        format!("https://api.github.com/repos/{owner}/{repo_name}/git/commits/{base_commit_sha}");
+    let commit_url = format!("{api}/repos/{owner}/{repo_name}/git/commits/{base_commit_sha}");
     let commit_response = client
         .get(&commit_url)
         .header("Authorization", format!("token {}", token))
@@ -436,7 +505,7 @@ pub async fn upload_update_with_progress(
     let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
 
     // Create blob for manifest
-    let manifest_blob_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/blobs");
+    let manifest_blob_url = format!("{api}/repos/{owner}/{repo_name}/git/blobs");
     let manifest_blob_response = client
         .post(&manifest_blob_url)
         .header("Authorization", format!("token {}", token))
@@ -505,8 +574,6 @@ pub async fn upload_update_with_progress(
         config_blob_shas.push(config_blob_sha);
     }
 
-    let update_base_path = primary_update_base_path(modpack_key.as_deref(), &uuid);
-
     // Step 4: Create a new tree with all files
     emit_progress(&progress_callback, 75, "Creating file tree...");
     // Note: This will automatically overwrite any existing files at the same paths
@@ -528,7 +595,7 @@ pub async fn upload_update_with_progress(
         }));
     }
 
-    let tree_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/trees");
+    let tree_url = format!("{api}/repos/{owner}/{repo_name}/git/trees");
     let tree_response = client
         .post(&tree_url)
         .header("Authorization", format!("token {}", token))
@@ -559,7 +626,7 @@ pub async fn upload_update_with_progress(
         format!("Upload update {} (manifest only)", uuid)
     };
 
-    let commit_url = format!("https://api.github.com/repos/{owner}/{repo_name}/git/commits");
+    let commit_url = format!("{api}/repos/{owner}/{repo_name}/git/commits");
     let commit_response = client
         .post(&commit_url)
         .header("Authorization", format!("token {}", token))
@@ -620,47 +687,688 @@ pub async fn download_manifest(
     let user_agent = "cemm-app-tauri";
     let mut last_error = String::new();
 
+    let endpoints = GithubEndpoints::resolve();
     for base_path in base_paths {
-        // Straight to the file. The listing this used to do existed only to
-        // find a name we already know, and cost an API call per candidate.
-        let manifest_url = raw_update_file_url(owner, repo_name, &base_path, MANIFEST_FILE_NAME)?;
-        log::debug!("download_manifest: trying {manifest_url}");
-
-        let manifest_res = client
-            .get(&manifest_url)
-            .header("User-Agent", user_agent)
-            .send()
-            .await
-            .map_err(|e| {
-                log::warn!("download_manifest: request to {manifest_url} failed: {e}");
-                e.to_string()
-            })?;
-
-        if !manifest_res.status().is_success() {
-            last_error = format!(
-                "Failed to download {MANIFEST_FILE_NAME} (status {})",
-                manifest_res.status()
-            );
-            continue;
+        match fetch_legacy_manifest(
+            &client,
+            &endpoints,
+            owner,
+            repo_name,
+            PUBLISH_BRANCH,
+            &base_path,
+        )
+        .await?
+        {
+            Ok(manifest) => return Ok(manifest),
+            Err(not_found) => last_error = not_found,
         }
+    }
+    let _ = user_agent;
 
-        let manifest_json =
-            read_response_limited(manifest_res, MAX_REMOTE_MANIFEST_BYTES, "CEMM manifest").await?;
+    Err(manifest_not_found(&last_error))
+}
 
-        let manifest: Manifest = serde_json::from_slice(&manifest_json).map_err(|e| {
-            log::warn!("download_manifest: {MANIFEST_FILE_NAME} did not parse: {e}");
+const NOT_FOUND_HINT: &str = "\n\nIf GitHub returned 404: confirm the folder exists under the repo (often `modpack-folder/update-id`). You can paste that full path from the repo root in the update field, or pick a modpack folder whose name matches the folder used when the update was published.";
+
+fn manifest_not_found(last_error: &str) -> String {
+    if last_error.is_empty() {
+        format!("Failed to find manifest in update path.{NOT_FOUND_HINT}")
+    } else {
+        format!("{last_error}{NOT_FOUND_HINT}")
+    }
+}
+
+/// Fetches the legacy manifest for one candidate path at one reference.
+///
+/// The outer `Result` is a failure worth stopping for — the request itself, or
+/// a manifest that is there but does not parse. The inner one is "not at this
+/// path", which the caller answers by trying the next candidate.
+async fn fetch_legacy_manifest(
+    client: &reqwest::Client,
+    endpoints: &GithubEndpoints,
+    owner: &str,
+    repo_name: &str,
+    reference: &str,
+    base_path: &str,
+) -> Result<Result<Manifest, String>, String> {
+    // Straight to the file. The listing this used to do existed only to find a
+    // name we already know, and cost an API call per candidate.
+    let manifest_url =
+        endpoints.raw_file_url(owner, repo_name, reference, base_path, MANIFEST_FILE_NAME)?;
+    log::debug!("download_manifest: trying {manifest_url}");
+
+    let manifest_res = client
+        .get(&manifest_url)
+        .header("User-Agent", "cemm-app-tauri")
+        .send()
+        .await
+        .map_err(|e| {
+            log::warn!("download_manifest: request to {manifest_url} failed: {e}");
             e.to_string()
         })?;
 
-        return Ok(manifest);
+    if !manifest_res.status().is_success() {
+        return Ok(Err(format!(
+            "Failed to download {MANIFEST_FILE_NAME} (status {})",
+            manifest_res.status()
+        )));
     }
 
-    let hint = "\n\nIf GitHub returned 404: confirm the folder exists under the repo (often `modpack-folder/update-id`). You can paste that full path from the repo root in the update field, or pick a modpack folder whose name matches the folder used when the update was published.";
+    let manifest_json =
+        read_response_limited(manifest_res, MAX_REMOTE_MANIFEST_BYTES, "CEMM manifest").await?;
 
-    Err(if last_error.is_empty() {
-        format!("Failed to find manifest in update path.{hint}")
-    } else {
-        format!("{last_error}{hint}")
+    let manifest: Manifest = serde_json::from_slice(&manifest_json).map_err(|e| {
+        log::warn!("download_manifest: {MANIFEST_FILE_NAME} did not parse: {e}");
+        e.to_string()
+    })?;
+
+    Ok(Ok(manifest))
+}
+
+/// Whether anything is already published under an update's folder.
+async fn update_path_exists(
+    client: &reqwest::Client,
+    api: &str,
+    owner: &str,
+    repo_name: &str,
+    token: &str,
+    base_path: &str,
+) -> Result<bool, String> {
+    let mut url = url::Url::parse(&format!("{api}/repos/{owner}/{repo_name}/contents"))
+        .map_err(|error| format!("Could not build a GitHub URL: {error}"))?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| "Could not build a GitHub URL".to_string())?;
+        for segment in base_path.split('/').filter(|segment| !segment.is_empty()) {
+            segments.push(segment);
+        }
+    }
+    url.query_pairs_mut().append_pair("ref", PUBLISH_BRANCH);
+
+    let response = client
+        .get(url)
+        .header("Authorization", format!("token {token}"))
+        .header("User-Agent", "cemm-app-tauri")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    match response.status() {
+        status if status.is_success() => Ok(true),
+        reqwest::StatusCode::NOT_FOUND => Ok(false),
+        status => {
+            let body = response.text().await.unwrap_or_default();
+            Err(format_github_api_error(
+                "check for an existing update",
+                status,
+                &body,
+            ))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Releases
+// ---------------------------------------------------------------------------
+
+/// What an update code resolved to.
+///
+/// One fetch for both formats, so the player pastes a code without having to
+/// know which kind it is and the screen branches on the answer.
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+#[ts(export, export_to = "generated/")]
+pub enum FetchedUpdate {
+    Legacy {
+        manifest: Manifest,
+    },
+    Release {
+        release: Box<Release>,
+        /// SHA-256 of the release document as published.
+        digest: String,
+        /// The commit the document was read at. Every payload is read at the
+        /// same one, so a release cannot be assembled from two states of `main`.
+        revision: String,
+        /// The full, pinned code — worth showing back, since it is the one
+        /// that names this exact content for good.
+        code: String,
+    },
+}
+
+/// Asks which commit the publish branch points at, once.
+async fn resolve_branch_head(
+    client: &reqwest::Client,
+    endpoints: &GithubEndpoints,
+    owner: &str,
+    repo_name: &str,
+) -> Result<String, String> {
+    let url = format!(
+        "{}/repos/{owner}/{repo_name}/commits/{PUBLISH_BRANCH}",
+        endpoints.api
+    );
+    let unpinned = |detail: String| {
+        format!(
+            "Could not pin this update to a revision ({detail}). GitHub limits how often that can be asked without signing in. Wait a few minutes, or paste the full code including the part after '@'."
+        )
+    };
+    let response = client
+        .get(&url)
+        .header("Accept", "application/vnd.github.sha")
+        .header("User-Agent", "cemm-app-tauri")
+        .send()
+        .await
+        .map_err(|error| unpinned(error.to_string()))?;
+    if !response.status().is_success() {
+        return Err(unpinned(format!("status {}", response.status())));
+    }
+    let bytes = read_response_limited(response, 256, "branch revision").await?;
+    let revision = String::from_utf8_lossy(&bytes).trim().to_lowercase();
+    if !is_commit_sha(&revision) {
+        return Err(unpinned("unexpected answer".to_string()));
+    }
+    Ok(revision)
+}
+
+/// Resolves an update code to a release or a legacy manifest.
+pub async fn fetch_update(
+    repo: String,
+    code: String,
+    modpack_key: Option<String>,
+) -> Result<FetchedUpdate, String> {
+    let code = parse_update_code(&code)?;
+    let (owner, repo_name) = parse_and_validate_repo(&repo)?;
+    let endpoints = GithubEndpoints::resolve();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let reference = code
+        .revision
+        .clone()
+        .unwrap_or_else(|| PUBLISH_BRANCH.to_string());
+    let mut last_error = String::new();
+
+    for base_path in update_base_path_candidates(modpack_key.as_deref(), &code.path) {
+        let release_url =
+            endpoints.raw_file_url(owner, repo_name, &reference, &base_path, RELEASE_FILE_NAME)?;
+        let response = client
+            .get(&release_url)
+            .header("User-Agent", "cemm-app-tauri")
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if response.status().is_success() {
+            let mut bytes =
+                read_response_limited(response, MAX_REMOTE_RELEASE_BYTES, "CEMM release").await?;
+            let revision = match code.revision.clone() {
+                Some(revision) => revision,
+                None => {
+                    // A short code names a path on a moving branch. Pin it now
+                    // and read the document again at that commit, so it and
+                    // every payload after it come from one tree.
+                    let head = resolve_branch_head(&client, &endpoints, owner, repo_name).await?;
+                    let pinned_url = endpoints.raw_file_url(
+                        owner,
+                        repo_name,
+                        &head,
+                        &base_path,
+                        RELEASE_FILE_NAME,
+                    )?;
+                    let pinned = client
+                        .get(&pinned_url)
+                        .header("User-Agent", "cemm-app-tauri")
+                        .send()
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    if !pinned.status().is_success() {
+                        return Err(format!(
+                            "The release could not be read at its pinned revision (status {}). Try again in a moment.",
+                            pinned.status()
+                        ));
+                    }
+                    bytes = read_response_limited(pinned, MAX_REMOTE_RELEASE_BYTES, "CEMM release")
+                        .await?;
+                    head
+                }
+            };
+
+            let release = parse_release(&bytes)?;
+            if release.code_path() != base_path {
+                return Err(format!(
+                    "The release published at '{base_path}' describes '{}'. A release is only valid under its own code, so CEMM will not apply this one.",
+                    release.code_path()
+                ));
+            }
+            let code = format!("{}@{revision}", release.code_path());
+            return Ok(FetchedUpdate::Release {
+                digest: release::sha256_hex(&bytes),
+                release: Box::new(release),
+                revision,
+                code,
+            });
+        }
+
+        match fetch_legacy_manifest(
+            &client, &endpoints, owner, repo_name, &reference, &base_path,
+        )
+        .await?
+        {
+            Ok(manifest) => return Ok(FetchedUpdate::Legacy { manifest }),
+            Err(not_found) => last_error = not_found,
+        }
+    }
+
+    Err(manifest_not_found(&last_error))
+}
+
+/// Downloads one hosted payload at the release's pinned revision.
+///
+/// The caller verifies the hash; this only refuses to read more than the
+/// release says the object holds.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn download_object(
+    client: &reqwest::Client,
+    endpoints: &GithubEndpoints,
+    repo: &str,
+    revision: &str,
+    lineage: &str,
+    sha256: &str,
+    size: u64,
+    destination: &std::path::Path,
+) -> Result<(), String> {
+    let (owner, repo_name) = parse_and_validate_repo(repo)?;
+    if !is_commit_sha(revision) {
+        return Err("This release is not pinned to a revision, so its files cannot be fetched safely. Fetch the update again.".to_string());
+    }
+    if !is_valid_lineage(lineage) || !is_sha256_hex(sha256) {
+        return Err("Refusing to fetch a release file with a malformed address".to_string());
+    }
+    let url = endpoints.raw_file_url(
+        owner,
+        repo_name,
+        revision,
+        "",
+        &object_path(lineage, sha256),
+    )?;
+    crate::installer::download_and_save(client, &url, destination, size).await
+}
+
+/// Proof of one publication, for the admin to keep outside the profile.
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "generated/")]
+pub struct PublishReceipt {
+    /// The pinned code to hand out: `lineage/release@commit`.
+    pub code: String,
+    pub repo: String,
+    pub lineage: String,
+    pub release_id: String,
+    #[ts(type = "number")]
+    pub sequence: u64,
+    /// The commit that introduced the release.
+    pub revision: String,
+    pub release_digest: String,
+    pub uploaded_objects: u32,
+    pub reused_objects: u32,
+    #[ts(type = "number")]
+    pub published_unix: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub server_release: Option<ServerRelease>,
+}
+
+async fn github_send(
+    operation: &str,
+    request: reqwest::RequestBuilder,
+    token: &str,
+) -> Result<serde_json::Value, String> {
+    let response = request
+        .header("Authorization", format!("token {token}"))
+        .header("User-Agent", "cemm-app-tauri")
+        .send()
+        .await
+        .map_err(|error| format!("GitHub {operation} failed: {error}"))?;
+    decode_github_response(operation, response).await
+}
+
+/// How many times one upload waits out a rate limit before the publish gives up.
+const MAX_RATE_LIMIT_WAITS: u32 = 8;
+/// The longest single wait. A primary limit can ask for most of an hour; this
+/// keeps the progress line moving and the total bounded at roughly forty minutes.
+const MAX_RATE_LIMIT_WAIT_SECS: u64 = 300;
+
+/// Whether a failed response is GitHub asking for patience, and for how long.
+///
+/// A first release of a large pack is thousands of blob uploads in a row, which
+/// is exactly what GitHub's secondary limits exist to slow down. Those arrive
+/// as 429, or as 403 with a `retry-after` header or a message saying so; the
+/// primary limit arrives as 403 with `x-ratelimit-remaining: 0` and the time it
+/// resets. Anything else — a bad token, a missing repository — is a real
+/// failure and is not waited on.
+fn rate_limit_wait(
+    status: reqwest::StatusCode,
+    headers: &reqwest::header::HeaderMap,
+    body: &str,
+    attempt: u32,
+    now_unix: u64,
+) -> Option<u64> {
+    let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
+    let retry_after = header("retry-after").and_then(|value| value.trim().parse::<u64>().ok());
+    let exhausted = header("x-ratelimit-remaining").map(str::trim) == Some("0");
+    let says_so = {
+        let lowered = body.to_lowercase();
+        lowered.contains("rate limit") || lowered.contains("abuse detection")
+    };
+
+    let limited = status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || (status == reqwest::StatusCode::FORBIDDEN
+            && (retry_after.is_some() || exhausted || says_so));
+    if !limited {
+        return None;
+    }
+
+    let until_reset = header("x-ratelimit-reset")
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|_| exhausted)
+        .map(|reset| reset.saturating_sub(now_unix) + 1);
+    let backoff = 10u64.saturating_mul(1 << attempt.min(5));
+    Some(
+        retry_after
+            .or(until_reset)
+            .unwrap_or(backoff)
+            .min(MAX_RATE_LIMIT_WAIT_SECS),
+    )
+}
+
+/// Sends a request that is safe to repeat, waiting out rate limits.
+///
+/// Only for idempotent calls. Creating a blob is one: the same bytes always
+/// produce the same object, so sending them twice changes nothing.
+async fn github_send_patiently(
+    operation: &str,
+    build: impl Fn() -> reqwest::RequestBuilder,
+    token: &str,
+    on_wait: impl Fn(u64),
+) -> Result<serde_json::Value, String> {
+    let mut attempt = 0u32;
+    loop {
+        let response = build()
+            .header("Authorization", format!("token {token}"))
+            .header("User-Agent", "cemm-app-tauri")
+            .send()
+            .await
+            .map_err(|error| format!("GitHub {operation} failed: {error}"))?;
+        let status = response.status();
+        let headers = response.headers().clone();
+        let body = response
+            .text()
+            .await
+            .map_err(|error| format!("Failed to read GitHub response for {operation}: {error}"))?;
+
+        if status.is_success() {
+            return serde_json::from_str(&body).map_err(|error| {
+                format!("Failed to decode GitHub response for {operation}: {error}")
+            });
+        }
+        match rate_limit_wait(
+            status,
+            &headers,
+            &body,
+            attempt,
+            crate::installer::unix_now(),
+        ) {
+            Some(wait) if attempt < MAX_RATE_LIMIT_WAITS => {
+                log::warn!("github: {operation} rate limited, waiting {wait}s (attempt {attempt})");
+                on_wait(wait);
+                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                attempt += 1;
+            }
+            Some(_) => {
+                return Err(format!(
+                    "GitHub kept limiting uploads ({}). Nothing was published. Wait an hour, then publish again.",
+                    format_github_api_error(operation, status, &body)
+                ));
+            }
+            None => return Err(format_github_api_error(operation, status, &body)),
+        }
+    }
+}
+
+/// Publishes a release: its hosted payloads, its document and the legacy
+/// tombstone, as one commit.
+///
+/// Atomic the same way a legacy publish is — blobs and a tree are invisible
+/// until the branch moves, and it moves once, without force. Either the whole
+/// release appears or none of it does.
+///
+/// Payloads are read from `modpack_path` here, in the sidecar, and hashed again
+/// as they are read. The release document was captured a moment ago by a
+/// separate call; a file edited in between would otherwise be uploaded under a
+/// hash it no longer has.
+pub async fn publish_release(
+    repo: String,
+    token: String,
+    modpack_path: String,
+    release: Release,
+    progress_callback: UploadProgressCallback,
+) -> Result<PublishReceipt, String> {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    use serde_json::json;
+
+    emit_progress(&progress_callback, 2, "Checking the release...");
+    release::validate_release(&release)?;
+    let (owner, repo_name) = parse_and_validate_repo(&repo)?;
+    let api = GithubEndpoints::resolve().api;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let release_dir = release.code_path();
+
+    emit_progress(&progress_callback, 5, "Reading the repository...");
+    let refs_url = format!("{api}/repos/{owner}/{repo_name}/git/refs/heads/{PUBLISH_BRANCH}");
+    let refs = github_send("get main branch reference", client.get(&refs_url), &token).await?;
+    let base_commit = refs["object"]["sha"]
+        .as_str()
+        .ok_or("Could not find main branch SHA")?
+        .to_string();
+    let commit = github_send(
+        "get base commit",
+        client.get(format!(
+            "{api}/repos/{owner}/{repo_name}/git/commits/{base_commit}"
+        )),
+        &token,
+    )
+    .await?;
+    let base_tree = commit["tree"]["sha"]
+        .as_str()
+        .ok_or("Could not find base tree SHA")?
+        .to_string();
+
+    // What is already there: the release folder must not be, and any object
+    // that is does not need sending again.
+    let tree = github_send(
+        "list repository tree",
+        client.get(format!(
+            "{api}/repos/{owner}/{repo_name}/git/trees/{base_tree}?recursive=1"
+        )),
+        &token,
+    )
+    .await?;
+    let listed: std::collections::HashSet<String> = tree["tree"]
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry["path"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let complete_listing = tree["truncated"].as_bool() != Some(true);
+    let prefix = format!("{release_dir}/");
+    let already_published = listed
+        .iter()
+        .any(|path| path == &release_dir || path.starts_with(&prefix))
+        || (!complete_listing
+            && update_path_exists(&client, &api, owner, repo_name, &token, &release_dir).await?);
+    if already_published {
+        return Err(format!(
+            "Release '{}' of '{}' is already published. A release never changes once it has a code; give this one a new release id.",
+            release.release_id, release.lineage
+        ));
+    }
+
+    // ---- Payloads ----------------------------------------------------------------
+    let root = std::path::Path::new(&modpack_path);
+    let blobs_url = format!("{api}/repos/{owner}/{repo_name}/git/blobs");
+    let mut wanted: Vec<&release::ReleaseFile> =
+        release.files.iter().filter(|file| file.hosted).collect();
+    wanted.sort_by(|a, b| a.sha256.cmp(&b.sha256));
+    wanted.dedup_by(|a, b| a.sha256 == b.sha256);
+
+    let mut tree_items = Vec::new();
+    let mut uploaded = 0u32;
+    let mut reused = 0u32;
+    let total = wanted.len().max(1);
+    for (index, file) in wanted.iter().enumerate() {
+        let repository_path = object_path(&release.lineage, &file.sha256);
+        if complete_listing && listed.contains(&repository_path) {
+            reused += 1;
+            continue;
+        }
+        let local = crate::installer::validate_path_within_base(root, &file.path)?;
+        let bytes = tokio::fs::read(&local)
+            .await
+            .map_err(|error| format!("Failed to read {}: {error}", local.display()))?;
+        if release::sha256_hex(&bytes) != file.sha256 {
+            return Err(format!(
+                "{} changed after the release was checked. Check the release again before publishing. Nothing was published.",
+                file.path
+            ));
+        }
+        emit_progress(
+            &progress_callback,
+            10 + ((index + 1) as f32 / total as f32 * 70.0) as u8,
+            &format!(
+                "Uploading {} ({}/{})...",
+                file.path,
+                index + 1,
+                wanted.len()
+            ),
+        );
+        let payload = json!({
+            "content": STANDARD.encode(&bytes),
+            "encoding": "base64"
+        });
+        let upload_progress = 10 + ((index + 1) as f32 / total as f32 * 70.0) as u8;
+        let blob = github_send_patiently(
+            "create release file blob",
+            || client.post(&blobs_url).json(&payload),
+            &token,
+            |wait| {
+                emit_progress(
+                    &progress_callback,
+                    upload_progress,
+                    &format!(
+                        "GitHub asked CEMM to slow down. Continuing in {wait}s ({}/{} uploaded)...",
+                        index,
+                        wanted.len()
+                    ),
+                );
+            },
+        )
+        .await?;
+        tree_items.push(json!({
+            "path": repository_path,
+            "mode": "100644",
+            "type": "blob",
+            "sha": blob["sha"].as_str().ok_or("Could not get release file blob SHA")?
+        }));
+        uploaded += 1;
+    }
+
+    // ---- The document, and what old clients will read instead of it ---------------
+    emit_progress(&progress_callback, 85, "Uploading the release document...");
+    let document = serde_json::to_vec_pretty(&release).map_err(|e| e.to_string())?;
+    let tombstone = serde_json::to_vec_pretty(&release::legacy_tombstone(&release))
+        .map_err(|e| e.to_string())?;
+    for (name, bytes) in [
+        (RELEASE_FILE_NAME, &document),
+        (MANIFEST_FILE_NAME, &tombstone),
+    ] {
+        let blob = github_send(
+            "create release document blob",
+            client.post(&blobs_url).json(&json!({
+                "content": STANDARD.encode(bytes),
+                "encoding": "base64"
+            })),
+            &token,
+        )
+        .await?;
+        tree_items.push(json!({
+            "path": format!("{release_dir}/{name}"),
+            "mode": "100644",
+            "type": "blob",
+            "sha": blob["sha"].as_str().ok_or("Could not get release document blob SHA")?
+        }));
+    }
+
+    emit_progress(&progress_callback, 90, "Creating commit...");
+    let new_tree = github_send(
+        "create file tree",
+        client
+            .post(format!("{api}/repos/{owner}/{repo_name}/git/trees"))
+            .json(&json!({ "base_tree": base_tree, "tree": tree_items })),
+        &token,
+    )
+    .await?;
+    let new_commit = github_send(
+        "create commit",
+        client
+            .post(format!("{api}/repos/{owner}/{repo_name}/git/commits"))
+            .json(&json!({
+                "message": format!(
+                    "Publish {} release {} ({} new file(s))",
+                    release.lineage, release.release_id, uploaded
+                ),
+                "tree": new_tree["sha"].as_str().ok_or("Could not get new tree SHA")?,
+                "parents": [base_commit]
+            })),
+        &token,
+    )
+    .await?;
+    let revision = new_commit["sha"]
+        .as_str()
+        .ok_or("Could not get new commit SHA")?
+        .to_lowercase();
+
+    emit_progress(&progress_callback, 96, "Finalizing...");
+    github_send(
+        "update main branch reference",
+        client
+            .patch(&refs_url)
+            .json(&json!({ "sha": revision, "force": false })),
+        &token,
+    )
+    .await
+    .map_err(|error| {
+        format!("{error}. Nothing was published; the repository is unchanged. Try again.")
+    })?;
+
+    emit_progress(&progress_callback, 100, "Release published");
+    Ok(PublishReceipt {
+        code: format!("{release_dir}@{revision}"),
+        repo,
+        lineage: release.lineage.clone(),
+        release_id: release.release_id.clone(),
+        sequence: release.sequence,
+        revision,
+        release_digest: release::sha256_hex(&document),
+        uploaded_objects: uploaded,
+        reused_objects: reused,
+        published_unix: crate::installer::unix_now(),
+        server_release: release.server_release.clone(),
     })
 }
 
@@ -832,6 +1540,218 @@ mod tests {
         };
 
         assert!(validate_remote_config_manifest(&manifest).is_err());
+    }
+
+    #[test]
+    fn only_a_rate_limit_is_waited_on_and_for_as_long_as_github_says() {
+        use reqwest::header::{HeaderMap, HeaderValue};
+        use reqwest::StatusCode;
+        let headers = |pairs: &[(&'static str, &'static str)]| {
+            let mut map = HeaderMap::new();
+            for (name, value) in pairs {
+                map.insert(*name, HeaderValue::from_static(value));
+            }
+            map
+        };
+        let none = HeaderMap::new();
+
+        // A secondary limit, with and without a stated wait.
+        assert_eq!(
+            rate_limit_wait(
+                StatusCode::TOO_MANY_REQUESTS,
+                &headers(&[("retry-after", "42")]),
+                "",
+                0,
+                0
+            ),
+            Some(42)
+        );
+        assert_eq!(
+            rate_limit_wait(StatusCode::TOO_MANY_REQUESTS, &none, "", 0, 0),
+            Some(10)
+        );
+        assert_eq!(
+            rate_limit_wait(StatusCode::TOO_MANY_REQUESTS, &none, "", 2, 0),
+            Some(40)
+        );
+        assert_eq!(
+            rate_limit_wait(
+                StatusCode::FORBIDDEN,
+                &none,
+                r#"{"message":"You have exceeded a secondary rate limit."}"#,
+                1,
+                0
+            ),
+            Some(20)
+        );
+        // The primary limit says when it resets.
+        assert_eq!(
+            rate_limit_wait(
+                StatusCode::FORBIDDEN,
+                &headers(&[
+                    ("x-ratelimit-remaining", "0"),
+                    ("x-ratelimit-reset", "1060")
+                ]),
+                "",
+                0,
+                1000
+            ),
+            Some(61)
+        );
+        // A long wait is taken in bounded steps, so progress keeps reporting.
+        assert_eq!(
+            rate_limit_wait(
+                StatusCode::TOO_MANY_REQUESTS,
+                &headers(&[("retry-after", "3600")]),
+                "",
+                0,
+                0
+            ),
+            Some(MAX_RATE_LIMIT_WAIT_SECS)
+        );
+
+        // Real failures are not waited on: a bad token, a missing repository,
+        // a plain permission error.
+        assert_eq!(
+            rate_limit_wait(
+                StatusCode::UNAUTHORIZED,
+                &none,
+                r#"{"message":"Bad credentials"}"#,
+                0,
+                0
+            ),
+            None
+        );
+        assert_eq!(
+            rate_limit_wait(StatusCode::NOT_FOUND, &none, "", 0, 0),
+            None
+        );
+        assert_eq!(
+            rate_limit_wait(
+                StatusCode::FORBIDDEN,
+                &none,
+                r#"{"message":"Resource not accessible by personal access token"}"#,
+                0,
+                0
+            ),
+            None
+        );
+    }
+
+    /// Read-only questions put to the real GitHub, about a long-lived public
+    /// repository that is nobody's in particular. Ignored by default: CI should
+    /// not depend on the network, and unauthenticated calls are rationed.
+    ///
+    /// Everything the release transport reads rests on four behaviours that
+    /// the stand-in storage in the roundtrip test merely imitates. This asks
+    /// the real service whether it behaves that way.
+    #[tokio::test]
+    #[ignore = "talks to api.github.com and raw.githubusercontent.com"]
+    async fn the_real_github_answers_the_way_the_release_transport_assumes() {
+        let endpoints = GithubEndpoints {
+            api: "https://api.github.com".to_string(),
+            raw: "https://raw.githubusercontent.com".to_string(),
+        };
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("client");
+        let (owner, repo) = ("github", "gitignore");
+        let get = |url: String| {
+            let client = client.clone();
+            async move {
+                client
+                    .get(&url)
+                    .header("User-Agent", "cemm-app-tauri")
+                    .send()
+                    .await
+                    .unwrap_or_else(|error| panic!("GET {url}: {error}"))
+            }
+        };
+
+        // 1. A branch name resolves to one full commit id, as plain text.
+        let head = resolve_branch_head(&client, &endpoints, owner, repo)
+            .await
+            .expect("the branch head should resolve without signing in");
+        assert!(is_commit_sha(&head), "got: {head}");
+
+        // 2. A file is readable at that commit, and is the same file the
+        //    branch serves: a commit is a fixed view of the tree.
+        let at_commit = get(endpoints
+            .raw_file_url(owner, repo, &head, "", "README.md")
+            .unwrap())
+        .await;
+        assert!(at_commit.status().is_success(), "{}", at_commit.status());
+        let pinned = at_commit.bytes().await.unwrap();
+        assert!(!pinned.is_empty());
+
+        // 3. A path that is not there is a 404, at a commit as on a branch.
+        //    That is how "no release at this code" is told apart from an error.
+        let missing = get(endpoints
+            .raw_file_url(
+                owner,
+                repo,
+                &head,
+                "no-such-pack/no-such-release",
+                RELEASE_FILE_NAME,
+            )
+            .unwrap())
+        .await;
+        assert_eq!(missing.status(), reqwest::StatusCode::NOT_FOUND);
+
+        // 4. The whole tree of a commit can be listed in one call, with paths
+        //    and a flag saying whether the listing is complete.
+        let commit: serde_json::Value = get(format!(
+            "{}/repos/{owner}/{repo}/git/commits/{head}",
+            endpoints.api
+        ))
+        .await
+        .json()
+        .await
+        .expect("commit json");
+        let tree_id = commit["tree"]["sha"].as_str().expect("tree id");
+        let tree: serde_json::Value = get(format!(
+            "{}/repos/{owner}/{repo}/git/trees/{tree_id}?recursive=1",
+            endpoints.api
+        ))
+        .await
+        .json()
+        .await
+        .expect("tree json");
+        assert!(tree["truncated"].is_boolean(), "got: {}", tree["truncated"]);
+        let paths: Vec<&str> = tree["tree"]
+            .as_array()
+            .expect("tree entries")
+            .iter()
+            .filter_map(|entry| entry["path"].as_str())
+            .collect();
+        assert!(paths.contains(&"README.md"));
+        assert!(
+            paths.iter().any(|path| path.contains('/')),
+            "a recursive listing names files below the top level"
+        );
+
+        // 5. The contents API answers 200 for a folder that exists and 404 for
+        //    one that does not: the check that a release id is still free.
+        let existing = get(format!(
+            "{}/repos/{owner}/{repo}/contents/Global?ref={PUBLISH_BRANCH}",
+            endpoints.api
+        ))
+        .await;
+        assert!(existing.status().is_success(), "{}", existing.status());
+        let absent = get(format!(
+            "{}/repos/{owner}/{repo}/contents/no-such-pack/no-such-release?ref={PUBLISH_BRANCH}",
+            endpoints.api
+        ))
+        .await;
+        assert_eq!(absent.status(), reqwest::StatusCode::NOT_FOUND);
+
+        println!(
+            "head {head}; {} bytes at that commit; {} tree entries, truncated={}",
+            pinned.len(),
+            paths.len(),
+            tree["truncated"]
+        );
     }
 
     #[test]
