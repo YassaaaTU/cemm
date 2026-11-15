@@ -1,0 +1,65 @@
+{
+  "lineage": "atmons-fusion",
+  "name": "All the Mons Fusion",
+  "role": "client",
+  "base": {
+    "project_id": 1356598,
+    "file_id": 9571494,
+    "name": "All the Mons 2.0.1"
+  },
+  "minecraft": "1.21.1",
+  "loader": "neoforge-21.1.265",
+  "server_release": {
+    "name": "ATMonsFusion-Server-2.0.1-update-5",
+    "sha256": "530377970ed2cb7bdf20610fe3081305e06762404ef084120d6a0ff465332b62",
+    "notes": "Includes 5 custom mod updates, Graveless, Northstar habitats, paid Waystones + refund fix, and Villager Currency."
+  },
+  "adoption": {
+    "min_project_overlap_percent": 90,
+    "allow_official_profile": false
+  },
+  "pins": [
+    {
+      "project_id": 1530014,
+      "file_id": 8420412,
+      "reason": "Aeronautics/FTB Chunks bridge stays on 1.1.1. Do not take 1.2.0."
+    },
+    {
+      "project_id": 245755,
+      "file_id": 8969751,
+      "reason": "Waystones stays on 21.1.46 for fusion_waystones_fix-1.0.0.jar compatibility."
+    }
+  ],
+  "content": [
+    { "path": "mods/atmons-ore-hammer-fix-1.0.0.jar" },
+    { "path": "mods/fusion_waystones_fix-1.0.0.jar" },
+    { "path": "kubejs" },
+    { "path": "config/ftbquests/quests" },
+    { "path": "defaultconfigs" },
+    { "path": "config/attributefix/irons_artifice" },
+    { "path": "config/apotheosis/enchantments.cfg" },
+    { "path": "config/graveless-server.toml" },
+    { "path": "config/graveless-client.toml", "policy": "default" },
+    { "path": "config/waystones-common.toml" },
+    { "path": "config/irons_artifice-server.toml" },
+    { "path": "config/scguns-common.toml" },
+    { "path": "config/tacz-common.toml" },
+    { "path": "config/tacz-client.toml", "policy": "default" },
+    { "path": "config/tacztweaks.json", "policy": "default" }
+  ],
+  "settings": [
+    {
+      "path": "config/tacztweaks.json",
+      "pointer": "/general/compatibility/sableCompat",
+      "value": false,
+      "reason": "TaCZ's own Sable support replaces the TaCZ Tweaks one; running both overlaps."
+    }
+  ],
+  "manual_steps": [
+    "Back up your world before the first launch on a new release.",
+    "Recover any existing Epitaphs graves before opening an old singleplayer world (Epitaphs was replaced by Graveless)."
+  ],
+  "known_issues": [
+    "Scorched Guns: the per-round reload/unload casing exploit is not fixed. Avoid unloading during a per-round reload."
+  ]
+}

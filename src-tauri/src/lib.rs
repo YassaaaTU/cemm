@@ -25,6 +25,7 @@ mod composables {
     pub mod instances;
     pub mod manifest;
     pub mod release;
+    pub mod release_capture;
 }
 
 pub use composables::github::{download_config_files, download_manifest};
