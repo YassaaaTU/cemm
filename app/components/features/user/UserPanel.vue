@@ -908,7 +908,12 @@ async function confirmInstall()
 		fetchedUpdateCode.value !== null
 		&& downloadedConfigUpdateCode.value !== fetchedUpdateCode.value
 		&& manifest.value !== null
-		&& manifest.value.config_files.length > 0
+		// Either kind of payload. Testing config_files alone meant an update that
+		// carried only custom data packs installed none of their files.
+		&& (
+			manifest.value.config_files.length > 0
+			|| (manifest.value.custom_datapacks ?? []).length > 0
+		)
 	)
 	{
 		try
