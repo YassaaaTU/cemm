@@ -22,7 +22,9 @@ path = "src/main.rs"
 tauri-build = { version = "2.5.6", features = [] }
 
 [dependencies]
-serde_json = "1.0"
+# preserve_order keeps the key order of documents CEMM rewrites in place
+# (minecraftinstance.json, mixed JSON configs) so a patch stays a patch.
+serde_json = { version = "1.0", features = ["preserve_order"] }
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.11.5", features = [] }
@@ -38,6 +40,9 @@ tauri-plugin-keyring = "0.1.0"
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-process = "2.3.1"
 url = "2.5"
+# SHA-256 for release payload integrity. Already in the lockfile through the
+# updater plugin, so this adds no new crate to the build.
+sha2 = "0.10"
 
 # Generates app/types/generated.ts from the structs below, so the TypeScript
 # view of a manifest cannot drift from the Rust one. Bindings are written by
