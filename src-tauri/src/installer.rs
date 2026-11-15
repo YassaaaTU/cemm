@@ -106,7 +106,7 @@ fn is_config_only_update(manifest: &Manifest) -> bool {
 /// separator or dot-segment closes the path-traversal / absolute-path escape
 /// entirely, since a single ordinary path component joined onto a directory can
 /// never leave that directory.
-fn is_safe_addon_file_name(name: &str) -> bool {
+pub(crate) fn is_safe_addon_file_name(name: &str) -> bool {
     if name.is_empty() || name.contains('/') || name.contains('\\') {
         return false;
     }
@@ -129,7 +129,29 @@ fn validate_addon_file_name(addon_name: &str, file_name: &str) -> Result<(), Str
 
 const MAX_ADDON_FILE_BYTES: u64 = 500 * 1024 * 1024;
 
-fn is_trusted_addon_url(url: &reqwest::Url) -> bool {
+/// A stand-in for the CurseForge CDN, for development builds only.
+///
+/// The acceptance tests drive the compiled sidecar against local test storage,
+/// and an addon download is the one request that cannot otherwise be pointed
+/// anywhere but `forgecdn.net`. `cfg!(debug_assertions)` is false in every
+/// shipped build, so a release binary has no way to widen this — the variable
+/// is not even read.
+fn dev_addon_origin() -> Option<String> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    std::env::var("CEMM_DEV_ADDON_ORIGIN")
+        .ok()
+        .map(|origin| origin.trim_end_matches('/').to_string())
+        .filter(|origin| !origin.is_empty())
+}
+
+pub(crate) fn is_trusted_addon_url(url: &reqwest::Url) -> bool {
+    if let Some(origin) = dev_addon_origin() {
+        if url.origin().ascii_serialization() == origin {
+            return true;
+        }
+    }
     url.scheme() == "https"
         && url
             .host_str()
@@ -138,7 +160,7 @@ fn is_trusted_addon_url(url: &reqwest::Url) -> bool {
 
 /// Addon files are executable content once Minecraft loads them. Only accept
 /// encrypted CurseForge CDN URLs, and apply the same rule to redirects below.
-fn validate_addon_download_url(addon_name: &str, url: &str) -> Result<(), String> {
+pub(crate) fn validate_addon_download_url(addon_name: &str, url: &str) -> Result<(), String> {
     let parsed = reqwest::Url::parse(url).map_err(|error| {
         format!(
             "Refusing to install addon '{}': cdn_download_url '{}' is invalid: {}",
@@ -156,7 +178,7 @@ fn validate_addon_download_url(addon_name: &str, url: &str) -> Result<(), String
     }
 }
 
-async fn download_and_save(
+pub(crate) async fn download_and_save(
     client: &Client,
     url: &str,
     dest_path: &Path,
@@ -280,12 +302,12 @@ pub struct InstallProgress {
 
 pub type InstallProgressCallback = Arc<dyn Fn(InstallProgress) + Send + Sync>;
 
-const INSTALL_TRANSACTION_DIR: &str = ".cemm-transaction";
+pub(crate) const INSTALL_TRANSACTION_DIR: &str = ".cemm-transaction";
 pub(crate) const INSTALLED_MANIFEST_FILE: &str = "cemm-manifest.json";
 const INSTALL_JOURNAL_FILE: &str = "journal.json";
 const INSTALL_COMMITTED_FILE: &str = "committed";
 
-fn targets_reserved_install_path(relative_path: &str) -> bool {
+pub(crate) fn targets_reserved_install_path(relative_path: &str) -> bool {
     Path::new(relative_path)
         .components()
         .find_map(|component| match component {
@@ -296,6 +318,7 @@ fn targets_reserved_install_path(relative_path: &str) -> bool {
         .is_some_and(|component| {
             component.eq_ignore_ascii_case(INSTALL_TRANSACTION_DIR)
                 || component.eq_ignore_ascii_case(INSTALLED_MANIFEST_FILE)
+                || component.eq_ignore_ascii_case(crate::composables::release::STATE_DIR)
         })
 }
 
