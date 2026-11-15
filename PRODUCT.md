@@ -73,6 +73,18 @@ infrastructure the group already has, with no CEMM-operated server.
    unchanged addons, plus incoming config files.
 5. Confirm — explicitly acknowledging destructive changes — and install.
 
+**Release workflow** (a pack with a `cemm-pack.json`; see `docs/releases.md`)
+1. The admin describes the pack once: its permanent identity, the exact
+   official pack file it is built on, its content paths, pins and required
+   settings.
+2. Publish checks the whole profile against that description and produces a
+   release: every addon by CurseForge file and SHA-256, every pack file by
+   SHA-256. Anything on disk the description does not account for blocks it.
+3. The code is `pack/release@revision`, pinned to one immutable publication.
+4. A player applies it to the profile they imported once. The backend plans
+   against that profile — what is already right, fetched, retired, theirs to
+   decide — and installs exactly the plan that was reviewed.
+
 **Environment:** a desktop app running beside the Minecraft launcher and a chat
 client. Sessions are short and goal-directed. Filesystem access, GitHub HTTP
 calls, and the install itself run in Rust via Tauri commands; install progress

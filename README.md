@@ -15,6 +15,7 @@ CEMM opens on your CurseForge pack library. Picking what to do with a pack is wh
 - **GitHub Integration**: Secure distribution via GitHub repositories
 - **Automatic Installation**: Users can install modifications with a single update code
 - **Recoverable Installation**: Add-ons, configs, and manifests finalize through a journaled transaction that rolls back interrupted or failed updates
+- **Releases**: A pack with a `cemm-pack.json` publishes complete, hash-verified releases instead of hand-picked updates. Players import the pack once and keep that one profile current: skipped releases, retired files, required settings and CurseForge pins are handled, and personal settings are left alone. See [docs/releases.md](docs/releases.md)
 - **Cross-Platform**: Developed and used on Windows. macOS and Linux builds are produced by CI, and the compiled sidecar's lifecycle is tested on all three, but the full app has never been run on macOS or Linux — treat those as untested.
 
 ## AI assistance
@@ -54,6 +55,11 @@ architecture decisions, and decide what ships.
 3. Enter the update code provided by the admin (`modpack-key/uuid`, or just the UUID for older updates).
 4. Preview exactly what will be added, updated and deleted before anything is written.
 5. Install. Nothing touches the pack until you confirm, and an interrupted install rolls back rather than leaving it half-written.
+
+### Releases
+A modpack that is maintained over time can publish **releases** rather than one-off updates. The admin describes the pack once in a `cemm-pack.json` at the profile root; **Publish** then checks the whole profile against that description and refuses to publish anything it cannot account for. Players paste the code into **Install** exactly as before. The full workflow, including upgrading to a new official pack release and recovering from a bad update, is in [docs/releases.md](docs/releases.md).
+
+Release codes need CEMM 2.2.0 or newer. An older CEMM stops with a message saying so, before anything is written. Codes published the old way keep working.
 
 ### Settings
 - GitHub repository the update code resolves against — the one an admin publishes to and a user downloads from.
