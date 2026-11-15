@@ -51,7 +51,13 @@
           </button>
         </div>
 
-        <div class="mt-2.5 flex flex-wrap items-center gap-2 text-xs text-base-content/60">
+        <!-- The name a legacy update is published under. A release takes its
+             identity from cemm-pack.json instead, so on that pane this row
+             would be describing a code it has no part in. -->
+        <div
+          v-if="activePane !== 'release'"
+          class="mt-2.5 flex flex-wrap items-center gap-2 text-xs text-base-content/60"
+        >
           <span>Published as</span>
           <span class="inline-flex items-center gap-1.5 rounded-full border border-base-300 bg-base-100 px-2.5 py-1 font-mono text-[0.6875rem]">
             {{ customModpackName.trim().length > 0 ? customModpackName.trim() : 'no name set' }}
@@ -68,7 +74,7 @@
         </div>
 
         <div
-          v-if="editingName"
+          v-if="editingName && activePane !== 'release'"
           class="mt-3 border-t border-base-300 pt-3"
         >
           <label class="input w-full max-w-sm border-base-300 bg-base-100 font-mono text-xs input-sm">
@@ -139,8 +145,19 @@
           size="md"
         />
 
+        <!-- A pack with a cemm-pack.json publishes releases: a complete,
+             checked target rather than a hand-picked list. Its own pane, so the
+             legacy panes beside it keep working exactly as they did. -->
+        <ReleasePublishSection
+          v-if="activePane === 'release' && releaseSpec !== null"
+          :instance-dir="instanceDir"
+          :spec="releaseSpec"
+          @status="handleStatus"
+          @published="handleReleasePublished"
+        />
+
         <ConfigFilesSection
-          v-if="activePane === 'config'"
+          v-else-if="activePane === 'config'"
           v-model="selectedConfigFiles"
           @status="handleStatus"
         />
@@ -192,7 +209,14 @@
           </template>
         </AddonTable>
 
-        <p class="shrink-0 text-[0.8125rem] leading-relaxed text-base-content/55">
+        <p
+          v-if="activePane !== 'release'"
+          class="shrink-0 text-[0.8125rem] leading-relaxed text-base-content/55"
+        >
+          <template v-if="releaseSpec !== null">
+            These panes publish a legacy update. This pack has a release line —
+            use the Release pane for anything your players should install.
+          </template>
           Excluded addons stay installed on your machine — they are simply left out
           of what you publish. Use this for server-side or private mods.
           <template v-if="disabledExcludedCount > 0">
@@ -205,7 +229,7 @@
     <!-- Publishing is the action bar, and the resulting code lands here in
          place rather than on a separate screen. -->
     <template
-      v-if="manifest !== null || selectedConfigFiles.length > 0"
+      v-if="(manifest !== null || selectedConfigFiles.length > 0) && activePane !== 'release'"
       #actions
     >
       <template v-if="latestUpdateReference.length > 0">
@@ -285,11 +309,11 @@
 
 <script setup lang="ts">
 import type { AddonRow } from '~/components/domains/addons/AddonTable.vue'
-import type { Addon, ConfigFileWithContent, CustomDatapackWithContent } from '~/types'
+import type { Addon, ConfigFileWithContent, CustomDatapackWithContent, ReleaseSpec } from '~/types'
 import { ADDON_CATEGORIES, categoryLabel } from '~/utils/addonCategories'
 
 const { loadInstance, saveManifest, uploadToGithub } = useAdminApi()
-const { collectCustomDatapacks } = useTauri()
+const { collectCustomDatapacks, readReleaseSpec } = useTauri()
 const { notify } = useNotify()
 const { paneTransition } = useMotion()
 const manifestStore = useManifestStore()
@@ -337,6 +361,13 @@ const toggleDatapack = (name: string) =>
 const shippingDatapacks = computed(() =>
 	customDatapacks.value.filter((datapack) => !isDatapackExcluded(datapack.name))
 )
+/**
+ * The pack's `cemm-pack.json`, when it has one. Its presence is the whole
+ * switch between the two ways of publishing: without it this panel is exactly
+ * what it always was.
+ */
+const releaseSpec = ref<ReleaseSpec | null>(null)
+
 const customModpackName = ref('')
 const latestUpdateReference = ref('')
 const copied = ref(false)
@@ -508,6 +539,7 @@ const activeCategory = computed(
 
 /** Categories plus config files, which is a peer choice rather than a section. */
 const panes = computed(() => [
+	...(releaseSpec.value !== null ? [{ value: 'release', label: 'Release' }] : []),
 	...categories.value.map((category) => ({
 		value: category.key,
 		label: category.label,
@@ -573,7 +605,23 @@ watch(instanceDir, async (directory) =>
 	// exclusion made against a different pack means nothing here.
 	customDatapacks.value = []
 	excludedDatapacks.value = []
+	releaseSpec.value = null
+	if (activePane.value === 'release') activePane.value = 'mods'
 	if (directory.trim().length === 0) return
+
+	const spec = await readReleaseSpec(directory)
+	if (!spec.ok)
+	{
+		// A spec that is there but wrong must not quietly fall back to a legacy
+		// publish of a pack that was meant to ship releases.
+		logger.error({ error: spec.message, directory }, 'cemm-pack.json could not be read')
+		setStatus(`This pack's cemm-pack.json could not be used: ${spec.message}`, 'error')
+	}
+	else if (spec.value !== null)
+	{
+		releaseSpec.value = spec.value
+		activePane.value = 'release'
+	}
 
 	const collected = await collectCustomDatapacks(directory)
 	if (!collected.ok)
@@ -598,7 +646,16 @@ async function handleLoadInstance()
 	{
 		// A freshly loaded instance invalidates the previous publish.
 		latestUpdateReference.value = ''
-		activePane.value = 'mods'
+		activePane.value = releaseSpec.value !== null ? 'release' : 'mods'
+	}
+}
+
+function handleReleasePublished()
+{
+	// The pack library sorts on this, and shows it as "Published 3d ago".
+	if (instanceDir.value.length > 0)
+	{
+		packsStore.recordPublished(instanceDir.value)
 	}
 }
 
