@@ -4,7 +4,7 @@
       <template v-if="updateApplied">
         This update has been applied. Paste another code to install a new one.
       </template>
-      <template v-else-if="manifest !== null">
+      <template v-else-if="loaded">
         Nothing is written to your modpack until you confirm.
       </template>
       <template v-else>
@@ -18,7 +18,7 @@
     <template #context>
       <div
         class="overflow-hidden rounded-box border bg-base-200 transition-colors duration-150 ease-(--ease-standard)"
-        :class="manifest !== null ? 'border-primary/50' : 'border-base-300'"
+        :class="loaded ? 'border-primary/50' : 'border-base-300'"
       >
         <!-- Destination first, and stated in full. This is the folder that gets
              written to and deleted from, so it cannot be a footnote. Showing
@@ -92,7 +92,7 @@
                 name="mdi:key-variant"
                 size="1rem"
                 class="shrink-0"
-                :class="manifest !== null ? 'text-primary' : 'text-base-content/40'"
+                :class="loaded ? 'text-primary' : 'text-base-content/40'"
                 aria-hidden="true"
               />
               <input
@@ -100,7 +100,7 @@
                 v-model="uuid"
                 type="text"
                 class="grow"
-                :disabled="busy || manifest !== null"
+                :disabled="busy || loaded"
                 placeholder="paste update code…"
                 spellcheck="false"
                 autocomplete="off"
@@ -109,7 +109,7 @@
             </label>
 
             <button
-              v-if="manifest === null"
+              v-if="!loaded"
               type="button"
               class="btn gap-1.5 btn-md btn-primary"
               :disabled="!canFetch"
@@ -189,6 +189,43 @@
         />
       </div>
 
+      <!-- A release: a complete target state, planned by the backend against
+           this profile. Same screen, same place, a different statement — so
+           it gets its own preview rather than being bent into the addon diff. -->
+      <div
+        v-else-if="releaseStore.fetched !== null && releaseStore.plan !== null"
+        class="space-y-4"
+      >
+        <div
+          v-if="updateApplied"
+          role="status"
+          class="flex items-start gap-3 rounded-box border border-success/50 bg-success/10 px-4 py-3.5"
+        >
+          <Icon
+            name="mdi:check-circle-outline"
+            size="1.25rem"
+            class="mt-px shrink-0 text-success"
+            aria-hidden="true"
+          />
+          <div>
+            <p class="text-sm font-semibold text-success">
+              Update installed
+            </p>
+            <p class="mt-0.5 text-xs text-base-content/65">
+              This profile is now on {{ releaseStore.fetched.release.release_id }}. Below is what was done.
+            </p>
+          </div>
+        </div>
+
+        <ReleasePreview
+          v-model:approved="approvedConflicts"
+          :release="releaseStore.fetched.release"
+          :plan="releaseStore.plan"
+          :report="releaseStore.report"
+          :locked="installing || updateApplied"
+        />
+      </div>
+
       <!-- Resting state -->
       <EmptyState
         v-else
@@ -224,8 +261,69 @@
     />
 
     <template #actions>
+      <template v-if="showReleaseActions">
+        <label
+          v-if="releaseRemovalCount > 0 && !releaseBlocked"
+          class="flex cursor-pointer items-center gap-2.5 text-sm text-base-content/75"
+        >
+          <input
+            v-model="acknowledged"
+            type="checkbox"
+            class="checkbox border-error checkbox-sm"
+          />
+          I understand {{ releaseRemovalCount }} {{ releaseRemovalCount === 1 ? 'file' : 'files' }}
+          will be removed or replaced (a backup is kept)
+        </label>
+        <p
+          v-else-if="releaseBlocked"
+          class="text-sm text-base-content/60"
+        >
+          Fix what is listed above, then check again.
+        </p>
+        <p
+          v-else
+          class="text-sm text-base-content/60"
+        >
+          Close Minecraft before installing. Nothing will be deleted.
+        </p>
+
+        <div class="flex-1" />
+
+        <span
+          v-if="appStore.modpackPath.length > 0"
+          class="flex min-w-0 items-center gap-1.5 text-xs text-base-content/55"
+          :title="appStore.modpackPath"
+        >
+          <Icon
+            name="mdi:folder-outline"
+            size="0.875rem"
+            class="shrink-0"
+            aria-hidden="true"
+          />
+          <span class="max-w-[18rem] truncate">{{ modpackLabel }}</span>
+        </span>
+
+        <button
+          type="button"
+          class="btn btn-sm"
+          :disabled="busy"
+          @click="handleRecheck"
+        >
+          Check again
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          :class="releaseRemovalCount > 0 ? 'btn-error' : 'btn-primary'"
+          :disabled="!canApplyRelease"
+          @click="handleApply"
+        >
+          {{ releaseStore.plan?.change_count === 0 ? 'Install' : 'Install update' }}
+        </button>
+      </template>
+
       <label
-        v-if="showDiffActions && hasDestructiveChanges"
+        v-else-if="showDiffActions && hasDestructiveChanges"
         class="flex cursor-pointer items-center gap-2.5 text-sm text-base-content/75"
       >
         <input
@@ -297,13 +395,15 @@
 import type { AddonRow } from '~/components/domains/addons/AddonTable.vue'
 import type { Addon, ConfigFileWithContent, Manifest, UpdateDiff } from '~/types'
 import { ADDON_CATEGORIES } from '~/utils/addonCategories'
+import { isSameInstance } from '~/utils/instancePath'
 
-const { downloadFromGithub, downloadConfigFiles, installUpdate } = useUserApi()
+const { downloadFromGithub, downloadConfigFiles, installUpdate, replanRelease, installRelease } = useUserApi()
 const { getUpdateDiff } = useTauri()
 const { trackOperation } = useInstallProgress()
 const { notify } = useNotify()
 const { paneTransition } = useMotion()
 const manifestStore = useManifestStore()
+const releaseStore = useReleaseStore()
 const appStore = useAppStore()
 const packsStore = usePacksStore()
 const { $logger: logger } = useNuxtApp()
@@ -332,7 +432,9 @@ const downloadedConfigFiles = ref<ConfigFileWithContent[]>([])
 const downloadedConfigUpdateCode = ref<string | null>(null)
 /** Immutable identity of the code that produced the visible preview. */
 const fetchedUpdateCode = ref<string | null>(
-	manifestStore.manifest === null ? null : manifestStore.updateCode.trim() || null
+	manifestStore.manifest === null && releaseStore.fetched === null
+		? null
+		: manifestStore.updateCode.trim() || null
 )
 const acknowledged = ref(false)
 const editingDestination = ref(false)
@@ -365,6 +467,49 @@ const updateApplied = ref(false)
 
 const manifest = computed(() => manifestStore.manifest)
 const previousManifest = computed(() => manifestStore.previousManifest)
+
+/**
+ * A code resolves to one of two things: a legacy manifest, diffed here against
+ * a baseline, or a release, planned by the backend against the profile. Either
+ * one being present means "an update is loaded".
+ */
+const releaseLoaded = computed(() => releaseStore.fetched !== null && releaseStore.plan !== null)
+const loaded = computed(() => manifest.value !== null || releaseLoaded.value)
+
+/** Conflict ids the player has ticked. Reset with every fetch, like consent. */
+const approvedConflicts = ref<string[]>([])
+
+const showReleaseActions = computed(
+	() => releaseLoaded.value && !installing.value && !updateApplied.value
+)
+
+const releaseBlocked = computed(() => (releaseStore.plan?.blockers.length ?? 0) > 0)
+
+/** Files this release takes away or overwrites, given what has been ticked. */
+const releaseRemovalCount = computed(() =>
+{
+	const plan = releaseStore.plan
+	if (plan === null) return 0
+	const retiredAddons = plan.addons.filter((action) => action.op === 'retire').length
+	const retiredFiles = plan.files.filter((file) => file.op === 'retire').length
+	const approvedCount = plan.conflicts.filter((conflict) => approvedConflicts.value.includes(conflict.id)).length
+	return retiredAddons + retiredFiles + approvedCount
+})
+
+const canApplyRelease = computed(() =>
+{
+	const plan = releaseStore.plan
+	if (plan === null || !releaseLoaded.value) return false
+	const undecided = plan.conflicts.some(
+		(conflict) => conflict.required && !approvedConflicts.value.includes(conflict.id)
+	)
+	if (plan.blockers.length > 0 || undecided) return false
+	// The plan on screen has to be about this folder and this code.
+	if (!isSameInstance(releaseStore.sourcePath, appStore.modpackPath)) return false
+	if (fetchedUpdateCode.value === null || fetchedUpdateCode.value !== uuid.value.trim()) return false
+	if (installing.value || downloading.value) return false
+	return releaseRemovalCount.value === 0 || acknowledged.value
+})
 
 /** Just the folder name — the full path is in the title attribute. */
 const modpackLabel = computed(() =>
@@ -743,11 +888,32 @@ const progressLabel = computed(() =>
 })
 
 /** The three figures the dialog reports back once the write has finished. */
-const installSummary = computed(() => ({
-	added: addedRows.value.length,
-	updated: updatedRows.value.length,
-	removed: removedRows.value.length
-}))
+const installSummary = computed(() =>
+{
+	const plan = releaseStore.plan
+	if (releaseLoaded.value && plan !== null)
+	{
+		const count = (ops: string[]) =>
+			plan.addons.filter((action) => ops.includes(action.op)).length
+			+ plan.files.filter((file) => ops.includes(file.op)).length
+		// A file the player approved replacing was updated like any other; one
+		// left undecided was not touched and is not counted.
+		const repaired = plan.files.filter(
+			(file) => file.op === 'repair' && approvedConflicts.value.includes(file.path)
+		).length
+		const settings = plan.settings.filter((setting) => setting.op === 'apply').length
+		return {
+			added: count(['install', 'enable', 'add']),
+			updated: count(['replace']) + repaired + settings,
+			removed: count(['retire', 'disable'])
+		}
+	}
+	return {
+		added: addedRows.value.length,
+		updated: updatedRows.value.length,
+		removed: removedRows.value.length
+	}
+})
 
 const clearStatus = () =>
 {
@@ -787,6 +953,7 @@ const resetFetchedState = (clearUpdateCode: boolean) =>
 	if (!clearUpdateCode) uuid.value = preservedCode
 	fetchedUpdateCode.value = null
 	acknowledged.value = false
+	approvedConflicts.value = []
 	removeExtras.value = false
 	downloadedConfigFiles.value = []
 	downloadedConfigUpdateCode.value = null
@@ -802,7 +969,10 @@ const updateModpackPath = (newPath: string | string[] | null) =>
 	const singlePath = Array.isArray(newPath) ? newPath[0] : newPath
 	if (singlePath !== null && singlePath !== undefined && singlePath.trim().length > 0)
 	{
-		const invalidatesPreview = manifest.value !== null && !manifestStore.belongsTo(singlePath)
+		// A plan is about one folder exactly as much as a diff baseline is.
+		const legacyStale = manifest.value !== null && !manifestStore.belongsTo(singlePath)
+		const releaseStale = releaseLoaded.value && !isSameInstance(releaseStore.sourcePath, singlePath)
+		const invalidatesPreview = legacyStale || releaseStale
 		appStore.modpackPath = singlePath
 		logger.info({ path: singlePath }, 'Modpack path updated via PathSelector')
 		if (invalidatesPreview)
@@ -813,7 +983,7 @@ const updateModpackPath = (newPath: string | string[] | null) =>
 	}
 	else
 	{
-		const invalidatesPreview = manifest.value !== null
+		const invalidatesPreview = loaded.value
 		appStore.modpackPath = ''
 		if (invalidatesPreview) resetFetchedState(false)
 	}
@@ -867,6 +1037,7 @@ async function handleFetch()
 			// freshly fetched diff would inherit the previous one's "installed"
 			// banner and claim to already be on disk.
 			acknowledged.value = false
+			approvedConflicts.value = []
 			removeExtras.value = false
 			updateApplied.value = false
 			editingDestination.value = false
@@ -896,10 +1067,72 @@ const dismissInstallDialog = () =>
 
 async function handleApply()
 {
+	if (releaseLoaded.value)
+	{
+		if (!canApplyRelease.value) return
+		installError.value = null
+		installPhase.value = 'running'
+		await performReleaseInstall()
+		return
+	}
 	if (!canApply.value) return
 	installError.value = null
 	installPhase.value = 'running'
 	await confirmInstall()
+}
+
+/**
+ * Reads the profile against the release again — after closing the game,
+ * putting a missing file in place, or anything else a blocker asked for.
+ */
+async function handleRecheck()
+{
+	if (busy.value) return
+	downloading.value = true
+	try
+	{
+		const replanned = await replanRelease(setStatus)
+		if (replanned)
+		{
+			// Decisions were made about the previous reading of the profile.
+			acknowledged.value = false
+			approvedConflicts.value = []
+		}
+	}
+	finally
+	{
+		downloading.value = false
+	}
+}
+
+async function performReleaseInstall()
+{
+	installing.value = true
+	updateApplied.value = false
+	progress.value = 0
+	try
+	{
+		const installed = await trackOperation(
+			(payload) =>
+			{
+				if (typeof payload.progress === 'number') progress.value = payload.progress
+				if (typeof payload.message === 'string') progressMessage.value = payload.message
+			},
+			(operationId) => installRelease(operationId, [...approvedConflicts.value], setStatus)
+		)
+		updateApplied.value = installed
+		installPhase.value = installed ? 'done' : 'failed'
+		if (installed)
+		{
+			packsStore.recordInstalled(appStore.modpackPath)
+		}
+	}
+	finally
+	{
+		installing.value = false
+		if (updateApplied.value) progress.value = 100
+		if (installPhase.value === 'running') installPhase.value = 'failed'
+	}
 }
 
 async function confirmInstall()

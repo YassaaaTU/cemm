@@ -135,6 +135,10 @@ export const useManifestStore = defineStore('manifest', () =>
 		excludedAddons.value = []
 		sourcePath.value = ''
 		updateCode.value = ''
+		// A fetched release is the other thing a code can resolve to, and it is
+		// just as bound to the pack and counter it was fetched for. Every caller
+		// that drops the manifest means "nothing is loaded", so it goes too.
+		useReleaseStore().clear()
 	}
 
 	return {

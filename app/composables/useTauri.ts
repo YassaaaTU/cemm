@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { CachedIcon, ConfigFileWithContent, CustomDatapackWithContent, InstallBaseline, Manifest, PackLibrary, TauriOutcome, UpdateDiff } from '~/types'
+import type { AppliedState, ApplyReport, CachedIcon, ConfigFileWithContent, CustomDatapackWithContent, FetchedUpdate, InstallBaseline, InstallPlan, Manifest, PackLibrary, PublishReceipt, Release, ReleaseDraft, ReleaseSpec, TauriOutcome, ThreeWayReport, UpdateDiff } from '~/types'
 import { getErrorMessage } from '~/utils/errorHandler'
 
 export const useTauri = () =>
@@ -368,7 +368,95 @@ export const useTauri = () =>
 		}
 	}
 
+	/**
+	 * Wraps a backend call whose failure message is the thing to show.
+	 *
+	 * Every release operation refuses in words meant for the person at the
+	 * keyboard — "close Minecraft", "this code is for another pack" — so none of
+	 * them may be collapsed to null the way the cosmetic calls above are.
+	 */
+	const outcome = async <T>(what: string, call: () => Promise<T>): Promise<TauriOutcome<T>> =>
+	{
+		try
+		{
+			return { ok: true, value: await call() }
+		}
+		catch (error)
+		{
+			logger.error({ error }, `[useTauri] ${what} failed`)
+			// Deliberately not getErrorMessage: its keyword rewrites turn a precise
+			// refusal into "check your internet connection".
+			return {
+				ok: false,
+				message: typeof error === 'string'
+					? error
+					: error instanceof Error ? error.message : `Could not ${what}.`
+			}
+		}
+	}
+
+	/**
+	 * Resolves an update code of either kind.
+	 *
+	 * Throws rather than returning an outcome, because the caller wraps it in
+	 * the same network retry the legacy manifest download always had.
+	 */
+	const fetchUpdate = async (repo: string, code: string, modpackKey?: string): Promise<FetchedUpdate> =>
+	{
+		return await invoke<FetchedUpdate>('fetch_update', { repo, code, modpackKey: modpackKey ?? null })
+	}
+
+	/** What applying a release to a profile would do. Changes nothing. */
+	const planRelease = (modpackPath: string, release: Release, releaseDigest: string) =>
+		outcome('plan the update', () =>
+			invoke<InstallPlan>('plan_release', { modpackPath, release, releaseDigest }))
+
+	const applyRelease = (params: {
+		operationId: string
+		modpackPath: string
+		repo: string
+		release: Release
+		releaseDigest: string
+		revision: string
+		planFingerprint: string
+		approved: string[]
+	}) => outcome('install the update', () => invoke<ApplyReport>('apply_release', params))
+
+	/** Which release a profile follows, or null when CEMM has not adopted it. */
+	const profileReleaseStatus = (modpackPath: string) =>
+		outcome('read the profile', () =>
+			invoke<AppliedState | null>('profile_release_status', { modpackPath }))
+
+	/** The pack's `cemm-pack.json`, or null when it publishes legacy updates. */
+	const readReleaseSpec = (modpackPath: string) =>
+		outcome('read cemm-pack.json', () =>
+			invoke<ReleaseSpec | null>('read_release_spec', { modpackPath }))
+
+	const captureRelease = (modpackPath: string, releaseId: string, notes: string, previous: Release | null) =>
+		outcome('check the release', () =>
+			invoke<ReleaseDraft>('capture_release', { modpackPath, releaseId, notes, previous }))
+
+	const publishRelease = (params: {
+		operationId: string
+		repo: string
+		token: string
+		modpackPath: string
+		release: Release
+	}) => outcome('publish the release', () => invoke<PublishReceipt>('publish_release', params))
+
+	const reviewUpgrade = (basePath: string, customPath: string, upstreamPath: string) =>
+		outcome('compare the three packs', () =>
+			invoke<ThreeWayReport>('review_upgrade', { basePath, customPath, upstreamPath }))
+
 	return {
+		fetchUpdate,
+		planRelease,
+		applyRelease,
+		profileReleaseStatus,
+		readReleaseSpec,
+		captureRelease,
+		publishRelease,
+		reviewUpgrade,
 		selectDirectory,
 		selectFile,
 		selectSaveFile,

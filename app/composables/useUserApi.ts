@@ -1,4 +1,4 @@
-import type { ConfigFileWithContent, Manifest } from '~/types'
+import type { ConfigFileWithContent, FetchedUpdate, Manifest } from '~/types'
 import { getErrorMessage, withNetworkRetry } from '~/utils/errorHandler'
 import { resolveModpackKey } from '~/utils/modpackKey'
 
@@ -8,10 +8,18 @@ import { resolveModpackKey } from '~/utils/modpackKey'
  */
 export function useUserApi()
 {
-	const { downloadManifest, downloadConfigFiles: apiDownloadConfigFiles } = useGithubApi()
+	const { downloadConfigFiles: apiDownloadConfigFiles } = useGithubApi()
 	const appStore = useAppStore()
 	const manifestStore = useManifestStore()
-	const { readFile, resolveInstallBaseline, installUpdate: installUpdateTauri } = useTauri()
+	const releaseStore = useReleaseStore()
+	const {
+		readFile,
+		resolveInstallBaseline,
+		installUpdate: installUpdateTauri,
+		fetchUpdate,
+		planRelease,
+		applyRelease
+	} = useTauri()
 	const { $logger: logger } = useNuxtApp()
 
 	/**
@@ -21,7 +29,7 @@ export function useUserApi()
 		updateInput: string,
 		onProgress: (progress: number, message?: string) => void,
 		setStatus: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void
-	): Promise<{ success: boolean, manifest?: Manifest }>
+	): Promise<{ success: boolean, manifest?: Manifest, kind?: 'legacy' | 'release' }>
 	{
 		const repo = appStore.githubRepo
 		if (repo.trim().length === 0)
@@ -36,20 +44,22 @@ export function useUserApi()
 
 			onProgress(10, 'Downloading manifest...')
 
-			const downloadedManifest = await withNetworkRetry(
-				async () => await downloadManifest({
-					repo,
-					uuid: resolvedQuery.updateId,
-					modpackKey: resolvedQuery.modpackKey,
-					onProgress: (p, msg) =>
-					{
-						onProgress(Math.min(p / 2, 50), msg)
-					}
-				}),
+			// One fetch for both kinds of code: the backend looks for a release
+			// first and falls back to the legacy manifest, so the player never has
+			// to know which they were handed.
+			const fetched = await withNetworkRetry(
+				async () => await fetchUpdate(repo, resolvedQuery.updateId, resolvedQuery.modpackKey),
 				3, // maxRetries
 				1000 // backoffMs
 			)
 
+			if (fetched.kind === 'release')
+			{
+				return await reviewRelease(fetched, onProgress, setStatus)
+			}
+
+			const downloadedManifest = fetched.manifest
+			releaseStore.clear()
 			manifestStore.setManifest(downloadedManifest)
 			onProgress(50, 'Manifest downloaded. Ready to preview update.')
 
@@ -73,14 +83,15 @@ export function useUserApi()
 			}
 
 			setStatus('Manifest ready for preview. Config files will be downloaded after confirmation.', 'success')
-			return { success: true, manifest: downloadedManifest }
+			return { success: true, manifest: downloadedManifest, kind: 'legacy' }
 		}
 		catch (err)
 		{
 			const preservedUpdateCode = manifestStore.updateCode
 			manifestStore.clearManifest()
 			manifestStore.updateCode = preservedUpdateCode
-			setStatus(getErrorMessage(err, 'download'), 'error')
+			releaseStore.clear()
+			setStatus(releaseErrorMessage(err) ?? getErrorMessage(err, 'download'), 'error')
 			logger.error({ error: err }, 'Download failed')
 			return { success: false }
 		}
@@ -135,12 +146,131 @@ export function useUserApi()
 		}
 	}
 
+	/**
+	 * A refusal the backend worded for the player, passed through untouched.
+	 *
+	 * `getErrorMessage` rewrites anything mentioning a network, a file or JSON
+	 * into a generic sentence. That is right for a failed socket and wrong for
+	 * "this update was published for a newer CEMM", which is the whole answer.
+	 */
+	function releaseErrorMessage(error: unknown): string | null
+	{
+		const message = typeof error === 'string' ? error : error instanceof Error ? error.message : ''
+		return /Nothing was changed|will not apply|Update CEMM|update code/i.test(message) ? message : null
+	}
+
+	/**
+	 * Works out what a fetched release would do to the chosen profile.
+	 *
+	 * Nothing is written by this — with the one exception the backend makes for
+	 * a profile left half-updated by a crash, which it puts back first and
+	 * reports in the plan.
+	 */
+	async function reviewRelease(
+		fetched: Extract<FetchedUpdate, { kind: 'release' }>,
+		onProgress: (progress: number, message?: string) => void,
+		setStatus: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void
+	): Promise<{ success: boolean, kind: 'release' }>
+	{
+		const modpackPath = appStore.modpackPath
+		onProgress(50, 'Checking this profile against the release…')
+
+		const planned = await planRelease(modpackPath, fetched.release, fetched.digest)
+		if (!planned.ok)
+		{
+			releaseStore.clear()
+			setStatus(planned.message, 'error')
+			return { success: false, kind: 'release' }
+		}
+
+		const preservedUpdateCode = manifestStore.updateCode
+		manifestStore.clearManifest()
+		manifestStore.updateCode = preservedUpdateCode
+		releaseStore.setFetched(
+			{
+				release: fetched.release,
+				digest: fetched.digest,
+				revision: fetched.revision,
+				code: fetched.code
+			},
+			modpackPath,
+			planned.value
+		)
+		onProgress(100, 'Release checked.')
+		setStatus(
+			planned.value.blockers.length > 0
+				? 'This update cannot be installed on this profile yet. See why below.'
+				: 'Release ready to review. Nothing is written until you confirm.',
+			planned.value.blockers.length > 0 ? 'warning' : 'success'
+		)
+		return { success: true, kind: 'release' }
+	}
+
+	/** Re-reads the profile against the release already on screen. */
+	async function replanRelease(
+		setStatus: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void
+	): Promise<boolean>
+	{
+		const current = releaseStore.fetched
+		if (current === null) return false
+
+		const planned = await planRelease(appStore.modpackPath, current.release, current.digest)
+		if (!planned.ok)
+		{
+			setStatus(planned.message, 'error')
+			return false
+		}
+		releaseStore.setFetched(current, appStore.modpackPath, planned.value)
+		return true
+	}
+
+	/**
+	 * Installs the release on screen, against the plan on screen.
+	 *
+	 * The plan's fingerprint goes with the request. The backend plans again
+	 * from fresh reads and stops if it gets a different one, so what is
+	 * installed is what was reviewed — not what the profile turned into while
+	 * the dialog was open.
+	 */
+	async function installRelease(
+		operationId: string,
+		approved: string[],
+		setStatus: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void
+	): Promise<boolean>
+	{
+		const current = releaseStore.fetched
+		const plan = releaseStore.plan
+		if (current === null || plan === null) return false
+
+		const applied = await applyRelease({
+			operationId,
+			modpackPath: appStore.modpackPath,
+			repo: appStore.githubRepo,
+			release: current.release,
+			releaseDigest: current.digest,
+			revision: current.revision,
+			planFingerprint: plan.fingerprint,
+			approved
+		})
+		if (!applied.ok)
+		{
+			setStatus(applied.message, 'error')
+			logger.error({ error: applied.message }, 'Release installation failed')
+			return false
+		}
+
+		releaseStore.report = applied.value
+		setStatus('Update installation complete!', 'success')
+		return true
+	}
+
 	async function resolveUpdateQuery(updateInput: string): Promise<{ updateId: string, modpackKey?: string }>
 	{
 		const trimmed = updateInput.trim().replace(/\\/g, '/')
 		if (trimmed.includes('/'))
 		{
-			// Full repo-relative update reference: modpackKey/uuid
+			// Full repo-relative update reference: modpackKey/uuid, optionally
+			// pinned with @revision. The backend splits the revision off.
 			return { updateId: trimmed }
 		}
 
@@ -289,6 +419,8 @@ export function useUserApi()
 		downloadFromGithub,
 		downloadConfigFiles,
 		installUpdate,
-		generatePreviousManifest
+		generatePreviousManifest,
+		replanRelease,
+		installRelease
 	}
 }
