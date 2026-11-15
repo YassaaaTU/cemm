@@ -33,6 +33,7 @@ pub use composables::manifest::{
     open_url, parse_minecraft_instance, resolve_install_baseline, Addon, InstallBaseline, Manifest,
 };
 mod installer;
+mod release_install;
 pub use installer::InstallOptions;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

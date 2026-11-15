@@ -1086,6 +1086,20 @@ pub async fn install_update_with_progress(
     let transaction_dir = modpack_path_buf.join(INSTALL_TRANSACTION_DIR);
     let staging_dir = transaction_dir.join("staging");
 
+    // A profile that follows a release line has a record of exactly what CEMM
+    // owns in it. A legacy full update is an addon list that knows nothing of
+    // that record: applied here it would remove managed addons it never heard
+    // of and leave the record describing a pack that no longer exists. A
+    // config-only one is still fine -- it touches no addons -- but it is noted,
+    // so the profile does not go on claiming to be exactly its release.
+    let release_state = crate::release_install::read_applied_state(&modpack_path_buf)?;
+    if let (Some(state), false) = (release_state.as_ref(), is_config_only) {
+        return Err(format!(
+            "This profile follows the '{}' release line (currently on {}). A legacy full update would replace that with an addon list that does not know what the release installed, so CEMM will not apply one here. Ask for a release code for this pack instead. Nothing was changed.",
+            state.lineage, state.release_id
+        ));
+    }
+
     // Config destinations and binary payloads are also attacker-controlled.
     // Resolve and decode every one before addon cleanup or promotion begins so
     // a malformed final config cannot fail only after destructive work.
@@ -1293,6 +1307,31 @@ pub async fn install_update_with_progress(
     staged_moves.push((staged_manifest_path, manifest_path));
     // The manifest is the `+ 1` in the denominator above.
     current += 1;
+
+    if let Some(mut state) = release_state {
+        state
+            .legacy_overlays
+            .push(crate::release_install::LegacyOverlay {
+                applied_unix: unix_now(),
+                paths: manifest
+                    .config_files
+                    .iter()
+                    .map(|file| file.relative_path.clone())
+                    .collect(),
+            });
+        let staged_state_path = staging_dir.join("release-state.json");
+        async_fs::write(
+            &staged_state_path,
+            serde_json::to_vec_pretty(&state)
+                .map_err(|error| format!("Failed to encode the release state: {error}"))?,
+        )
+        .await
+        .map_err(|error| format!("Failed to stage the release state: {error}"))?;
+        staged_moves.push((
+            staged_state_path,
+            modpack_path_buf.join(crate::release_install::state_relative_path()),
+        ));
+    }
 
     let cleanup_paths = if options.cleanup_old {
         if let (Some(old_manifest), Some(ref diff)) = (options.old_manifest.as_ref(), &diff) {
