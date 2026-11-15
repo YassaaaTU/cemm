@@ -1419,6 +1419,35 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn the_app_declares_one_version_and_can_apply_the_releases_it_publishes() {
+        let version = env!("CARGO_PKG_VERSION");
+        let package: serde_json::Value =
+            serde_json::from_str(include_str!("../../../package.json")).expect("package.json");
+        let tauri: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).expect("tauri.conf.json");
+        assert_eq!(
+            package["version"], version,
+            "package.json disagrees with Cargo.toml"
+        );
+        assert_eq!(
+            tauri["version"], version,
+            "tauri.conf.json disagrees with Cargo.toml"
+        );
+
+        // Every release says which CEMM it needs. A build older than that
+        // number would publish releases its own players are told to update for.
+        let parts = |text: &str| -> Vec<u64> {
+            text.split('.')
+                .map(|part| part.parse().expect("a numeric version part"))
+                .collect()
+        };
+        assert!(
+            parts(version) >= parts(RELEASE_MIN_CEMM),
+            "this build is {version} but tells players releases need {RELEASE_MIN_CEMM}"
+        );
+    }
+
+    #[test]
     fn sha256_matches_the_published_test_vector() {
         assert_eq!(
             sha256_hex(b"abc"),
