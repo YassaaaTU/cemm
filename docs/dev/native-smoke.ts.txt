@@ -1,0 +1,482 @@
+/**
+ * Native smoke for the release workflow: the real Tauri window, its real IPC
+ * and its real sidecar, against throwaway profiles and a stand-in for GitHub.
+ *
+ * Kept as a .txt file on purpose: it is a Bun-only automation script, not app
+ * code, and must not be picked up by the app's lint or typecheck. To run it:
+ *
+ *   1. cargo build --manifest-path src-tauri/Cargo.toml     (debug cemm binary)
+ *   2. bun run dev                                          (must serve http://localhost:3000)
+ *   3. copy this file to a scratch folder as native-smoke.ts, then
+ *      bun native-smoke.ts <path to src-tauri/target/debug/cemm.exe> <empty work dir>
+ *
+ * What keeps it safe:
+ *   - WEBVIEW2_USER_DATA_FOLDER points the window at a throwaway browser
+ *     profile; the script aborts if it finds existing CEMM settings there.
+ *   - Every profile it touches is created inside the work dir.
+ *   - Publishing goes through a separate sidecar with a dummy token. Publish is
+ *     never clicked in the window, because that reads the real GitHub token
+ *     from the OS keyring. The stand-in records every credential it is sent.
+ *   - CEMM_DEV_* overrides are honoured by debug builds only.
+ *
+ * It saves player-review.png, player-done.png and admin-check.png into the
+ * work dir. The work dir is deleted and recreated on every run.
+ */
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+
+const [exe, workDir] = process.argv.slice(2)
+if (!exe || !workDir) throw new Error('usage: bun native_smoke.ts <cemm.exe> <work dir>')
+rmSync(workDir, { recursive: true, force: true })
+mkdirSync(workDir, { recursive: true })
+
+const sha256 = (data: string | Uint8Array) => createHash('sha256').update(data).digest('hex')
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+const steps: Array<{ step: string, ok: boolean, detail?: unknown }> = []
+const record = (step: string, ok: boolean, detail?: unknown) =>
+{
+	steps.push({ step, ok, detail })
+	console.log(`${ok ? 'PASS' : 'FAIL'}  ${step}${detail === undefined ? '' : `  ${JSON.stringify(detail)}`}`)
+	if (!ok) throw new Error(`step failed: ${step}`)
+}
+
+// ---------------------------------------------------------------------------
+// Stand-in for GitHub's Git Data API, raw host, and the addon CDN
+// ---------------------------------------------------------------------------
+const blobs = new Map<string, Uint8Array>()
+const trees = new Map<string, Record<string, string>>()
+const commits = new Map<string, string>()
+const cdn = new Map<string, string>()
+const id = (kind: string, data: string | Uint8Array) => sha256(Buffer.concat([Buffer.from(kind), Buffer.from(data)])).slice(0, 40)
+const commitTree = (tree: Record<string, string>, parent: string) =>
+{
+	const treeId = id('tree', JSON.stringify(Object.entries(tree).sort()))
+	trees.set(treeId, tree)
+	const commitId = id('commit', treeId + parent)
+	commits.set(commitId, treeId)
+	return commitId
+}
+blobs.set(id('blob', '# updates'), Buffer.from('# updates'))
+let head = commitTree({ 'README.md': id('blob', '# updates') }, 'root')
+const treeAt = (reference: string) => trees.get(commits.get(reference === 'main' ? head : reference) ?? '')
+const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
+
+/** Every Authorization header the stand-in was ever sent. */
+const authorizations = new Set<string>()
+const server = Bun.serve({
+	port: 0,
+	hostname: '127.0.0.1',
+	async fetch(request)
+	{
+		authorizations.add(request.headers.get('authorization') ?? '(none)')
+		const url = new URL(request.url)
+		const path = decodeURIComponent(url.pathname)
+		const api = '/api/repos/o/r/'
+		if (path.startsWith('/raw/o/r/'))
+		{
+			const [reference, ...rest] = path.slice('/raw/o/r/'.length).split('/')
+			const blob = blobs.get(treeAt(reference ?? '')?.[rest.join('/')] ?? '')
+			return blob ? new Response(blob) : new Response('404: Not Found', { status: 404 })
+		}
+		if (path.startsWith('/cdn/'))
+		{
+			const file = cdn.get(path.slice('/cdn/'.length))
+			return file === undefined ? new Response('missing', { status: 404 }) : new Response(file)
+		}
+		if (!path.startsWith(api)) return new Response('unknown route', { status: 404 })
+		const rest = path.slice(api.length)
+		const body = request.method === 'GET' ? null : await request.json().catch(() => null) as any
+
+		if (request.method === 'GET' && rest === 'git/refs/heads/main') return json({ object: { sha: head } })
+		if (request.method === 'GET' && rest === 'commits/main') return new Response(head)
+		if (request.method === 'POST' && rest === 'git/blobs')
+		{
+			const bytes = Buffer.from(body.content, 'base64')
+			const blobId = id('blob', bytes)
+			blobs.set(blobId, bytes)
+			return json({ sha: blobId }, 201)
+		}
+		if (request.method === 'POST' && rest === 'git/trees')
+		{
+			const tree = { ...(trees.get(body.base_tree) ?? {}) }
+			for (const item of body.tree) tree[item.path] = item.sha
+			const treeId = id('tree', JSON.stringify(Object.entries(tree).sort()))
+			trees.set(treeId, tree)
+			return json({ sha: treeId }, 201)
+		}
+		if (request.method === 'POST' && rest === 'git/commits')
+		{
+			const commitId = id('commit', body.tree + body.parents[0])
+			commits.set(commitId, body.tree)
+			return json({ sha: commitId }, 201)
+		}
+		if (request.method === 'PATCH' && rest === 'git/refs/heads/main')
+		{
+			head = body.sha
+			return json({ object: { sha: head } })
+		}
+		if (request.method === 'GET' && rest.startsWith('git/commits/'))
+		{
+			const tree = commits.get(rest.slice('git/commits/'.length))
+			return tree ? json({ tree: { sha: tree } }) : json({ message: 'Not Found' }, 404)
+		}
+		if (request.method === 'GET' && rest.startsWith('git/trees/'))
+		{
+			const tree = trees.get(rest.slice('git/trees/'.length)) ?? {}
+			return json({ tree: Object.entries(tree).map(([entryPath, sha]) => ({ path: entryPath, type: 'blob', sha })), truncated: false })
+		}
+		if (request.method === 'GET' && rest.startsWith('contents/'))
+		{
+			const wanted = rest.slice('contents/'.length)
+			const exists = Object.keys(treeAt('main') ?? {}).some((entry) => entry === wanted || entry.startsWith(`${wanted}/`))
+			return exists ? json([{ name: 'something' }]) : json({ message: 'Not Found' }, 404)
+		}
+		return json({ message: 'Not Found' }, 404)
+	}
+})
+const origin = `http://127.0.0.1:${server.port}`
+const devEnv = {
+	...process.env,
+	CEMM_DEV_GITHUB_API: `${origin}/api`,
+	CEMM_DEV_GITHUB_RAW: `${origin}/raw`,
+	CEMM_DEV_ADDON_ORIGIN: origin
+}
+
+// ---------------------------------------------------------------------------
+// Throwaway profiles
+// ---------------------------------------------------------------------------
+const BRIDGE = 1530014
+const write = (root: string, relative: string, content: string) =>
+{
+	const path = join(root, relative)
+	mkdirSync(dirname(path), { recursive: true })
+	writeFileSync(path, content)
+}
+const read = (root: string, relative: string) => readFileSync(join(root, relative), 'utf8')
+const recordOf = (root: string, project: number, file: number, name: string) => ({
+	addonID: project,
+	name: `Addon ${project}`,
+	modFolderPath: `${root}\\mods`,
+	fileNameOnDisk: name,
+	filePaths: [`${root}\\mods\\${name}`],
+	isEnabled: true,
+	isLocked: false,
+	launcherOnly: { left: 'alone' },
+	installedFile: { id: file, fileName: name, downloadUrl: `${origin}/cdn/${name}` }
+})
+const setInstance = (root: string, name: string, addons: unknown[]) =>
+	write(root, 'minecraftinstance.json', JSON.stringify({
+		baseModLoader: { name: 'neoforge-21.1.265' },
+		gameVersion: '1.21.1',
+		name,
+		allocatedMemory: 8192,
+		installedAddons: addons
+	}, null, 2))
+const tweaks = (flag: boolean, keys: object) => `${JSON.stringify({ general: { compatibility: { sableCompat: flag } }, keyActions: keys }, null, 2)}\n`
+const firstContent = (root: string, tweaksText: string) =>
+{
+	write(root, 'mods/alpha-1.jar', 'alpha one')
+	write(root, 'mods/beta-1.jar', 'beta one')
+	write(root, 'mods/bridge-1.1.1.jar', 'bridge 1.1.1')
+	write(root, 'mods/atmons-ore-hammer-fix-1.0.0.jar', 'hammer fix')
+	write(root, 'kubejs/server_scripts/recipes.js', 'recipes v1')
+	write(root, 'kubejs/server_scripts/old.js', 'old v1')
+	write(root, 'config/tacztweaks.json', tweaksText)
+}
+const firstRecords = (root: string) => [
+	recordOf(root, 1, 10, 'alpha-1.jar'),
+	recordOf(root, 2, 20, 'beta-1.jar'),
+	recordOf(root, BRIDGE, 8420412, 'bridge-1.1.1.jar')
+]
+const spec = (withSetting: boolean) => JSON.stringify({
+	lineage: 'smoke-pack',
+	name: 'Native Smoke Pack',
+	base: { project_id: 1356598, file_id: 9571494, name: 'All the Mons 2.0.1' },
+	server_release: { name: 'SmokePack-Server-1' },
+	pins: [{ project_id: BRIDGE, file_id: 8420412, reason: 'stay on 1.1.1' }],
+	content: [
+		{ path: 'kubejs' },
+		{ path: 'mods/atmons-ore-hammer-fix-1.0.0.jar' },
+		{ path: 'config/tacztweaks.json', policy: 'default' }
+	],
+	settings: withSetting
+		? [{ path: 'config/tacztweaks.json', pointer: '/general/compatibility/sableCompat', value: false, reason: 'native support replaces it' }]
+		: [],
+	manual_steps: ['Back up your world before the first launch.']
+}, null, 2)
+
+const admin = join(workDir, 'Smoke Pack (admin)')
+const friend = join(workDir, 'Smoke Pack (friend)')
+firstContent(admin, tweaks(true, { reload: 'key.keyboard.r' }))
+setInstance(admin, 'Smoke Pack (admin)', firstRecords(admin))
+write(admin, 'cemm-pack.json', spec(false))
+write(admin, 'options.txt', 'the admin options, never published')
+
+const friendTweaks = tweaks(true, { reload: 'key.mouse.5', melee: 'key.keyboard.v' })
+firstContent(friend, friendTweaks)
+write(friend, 'mods/friends-own-minimap.jar', 'added by the friend')
+write(friend, 'options.txt', 'fov:95\n')
+write(friend, 'saves/Our World/level.dat', 'the friend world')
+setInstance(friend, 'Smoke Pack (friend)', [...firstRecords(friend), recordOf(friend, 4242, 1, 'friends-own-minimap.jar')])
+for (const name of ['alpha-1.jar', 'beta-1.jar', 'bridge-1.1.1.jar']) cdn.set(name, 'unused')
+cdn.set('alpha-2.jar', 'alpha two')
+
+// ---------------------------------------------------------------------------
+// Publishing goes through a sidecar, with a dummy token. The window is never
+// asked to publish: that path reads the real token from the OS keyring.
+// ---------------------------------------------------------------------------
+const sidecar = Bun.spawn([exe, '--cemm-sidecar-service'], { stdin: 'pipe', stdout: 'pipe', stderr: 'ignore', env: devEnv })
+const lines: string[] = []
+const waiters: Array<() => void> = []
+;(async () =>
+{
+	const decoder = new TextDecoder()
+	let buffered = ''
+	for await (const chunk of sidecar.stdout)
+	{
+		buffered += decoder.decode(chunk, { stream: true })
+		let newline: number
+		while ((newline = buffered.indexOf('\n')) >= 0)
+		{
+			lines.push(buffered.slice(0, newline))
+			buffered = buffered.slice(newline + 1)
+			waiters.splice(0).forEach((wake) => wake())
+		}
+	}
+})()
+const nextLine = async (): Promise<any> =>
+{
+	while (lines.length === 0) await new Promise<void>((resolve) => waiters.push(resolve))
+	return JSON.parse(lines.shift() as string)
+}
+let requestId = 0
+const call = async (method: string, params: unknown): Promise<any> =>
+{
+	const requestNumber = ++requestId
+	sidecar.stdin.write(`${JSON.stringify({ id: requestNumber, method, params })}\n`)
+	sidecar.stdin.flush()
+	for (;;)
+	{
+		const message = await nextLine()
+		if (message.id !== requestNumber) continue
+		if (message.type === 'response') return message.result
+		if (message.type === 'error') throw new Error(`${method}: ${message.error}`)
+	}
+}
+record('sidecar is ready', (await nextLine()).type === 'ready')
+
+const publish = async (releaseId: string, previous: unknown) =>
+{
+	const draft = await call('release.capture', { modpackPath: admin, releaseId, notes: `Notes for ${releaseId}`, previous })
+	if (draft.errors.length > 0) throw new Error(`capture errors: ${draft.errors.join(' | ')}`)
+	return await call('release.publish', { operationId: `publish-${releaseId}`, repo: 'o/r', token: 'dummy-token-for-the-stand-in', modpackPath: admin, release: draft.release })
+}
+const first = await publish('r1', null)
+// The admin moves on: alpha updated, beta dropped, a script changed, one removed, the flag required.
+rmSync(join(admin, 'mods/alpha-1.jar'))
+rmSync(join(admin, 'mods/beta-1.jar'))
+rmSync(join(admin, 'kubejs/server_scripts/old.js'))
+write(admin, 'mods/alpha-2.jar', 'alpha two')
+write(admin, 'kubejs/server_scripts/recipes.js', 'recipes v2')
+write(admin, 'config/tacztweaks.json', tweaks(false, { reload: 'key.keyboard.r' }))
+write(admin, 'cemm-pack.json', spec(true))
+setInstance(admin, 'Smoke Pack (admin)', [recordOf(admin, 1, 11, 'alpha-2.jar'), recordOf(admin, BRIDGE, 8420412, 'bridge-1.1.1.jar')])
+const firstFetched = await call('release.fetch', { repo: 'o/r', code: first.code, modpackKey: null })
+const second = await publish('r2', firstFetched.release)
+record('two releases published through the sidecar', second.sequence === 2, { r1: first.code, r2: second.code })
+
+// ---------------------------------------------------------------------------
+// The real window
+// ---------------------------------------------------------------------------
+const cdpPort = 9300 + Math.floor(Math.random() * 400)
+const webviewData = join(workDir, 'webview-data')
+const app = Bun.spawn([exe], {
+	stdout: 'ignore',
+	stderr: 'ignore',
+	env: {
+		...devEnv,
+		WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${cdpPort}`,
+		WEBVIEW2_USER_DATA_FOLDER: webviewData
+	}
+})
+
+let socket: WebSocket | null = null
+let commandId = 0
+const pending = new Map<number, (value: any) => void>()
+const cdp = (method: string, params: object = {}): Promise<any> => new Promise((resolve) =>
+{
+	const number = ++commandId
+	pending.set(number, resolve)
+	socket?.send(JSON.stringify({ id: number, method, params }))
+})
+const evaluate = async (expression: string): Promise<any> =>
+{
+	const response = await cdp('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
+	if (response.result?.exceptionDetails) throw new Error(`page threw: ${JSON.stringify(response.result.exceptionDetails.exception?.description ?? response.result.exceptionDetails)}`)
+	return response.result?.result?.value
+}
+const until = async (what: string, expression: string, timeoutMs = 30_000) =>
+{
+	const deadline = Date.now() + timeoutMs
+	for (;;)
+	{
+		const value = await evaluate(expression).catch(() => null)
+		if (value) return value
+		if (Date.now() > deadline) throw new Error(`timed out waiting for: ${what}`)
+		await sleep(250)
+	}
+}
+const screenshot = async (name: string) =>
+{
+	const shot = await cdp('Page.captureScreenshot', { format: 'png' })
+	const file = join(workDir, `${name}.png`)
+	writeFileSync(file, Buffer.from(shot.result.data, 'base64'))
+	return file
+}
+
+const cleanup = () =>
+{
+	try { socket?.close() } catch { /* already closed */ }
+	try { app.kill() } catch { /* already gone */ }
+	try { sidecar.kill() } catch { /* already gone */ }
+	server.stop(true)
+}
+
+try
+{
+	let target: any = null
+	for (let attempt = 0; attempt < 120 && target === null; attempt++)
+	{
+		await sleep(500)
+		const targets = await fetch(`http://127.0.0.1:${cdpPort}/json/list`).then((response) => response.json()).catch(() => []) as any[]
+		target = targets.find((entry) => entry.type === 'page' && String(entry.url).startsWith('http://localhost:3000')) ?? null
+	}
+	record('the Tauri window opened and loaded the app', target !== null, { url: target?.url })
+
+	socket = new WebSocket(target.webSocketDebuggerUrl)
+	socket.onmessage = (event) =>
+	{
+		const message = JSON.parse(String(event.data))
+		const resolve = pending.get(message.id)
+		if (resolve) { pending.delete(message.id); resolve(message) }
+	}
+	await new Promise<void>((resolve, reject) => { socket!.onopen = () => resolve(); socket!.onerror = () => reject(new Error('CDP socket failed')) })
+	await cdp('Runtime.enable')
+	await cdp('Page.enable')
+
+	await until('a loaded document', `document.readyState === 'complete' && location.origin === 'http://localhost:3000' && document.querySelector('#__nuxt') !== null`, 60_000)
+	console.log('page:', JSON.stringify(await evaluate(`({ href: location.href, ready: document.readyState, secure: window.isSecureContext, storage: (() => { try { return typeof localStorage.length } catch (error) { return String(error) } })() })`)))
+
+	// The window must be running on its own throwaway browser profile.
+	const isolated = existsSync(webviewData) && readdirSync(webviewData).length > 0
+	const existingSettings = await evaluate(`localStorage.getItem('cemm-app-store')`)
+	record('the window uses an isolated browser profile', isolated && existingSettings === null, { isolated, existingSettings })
+	record('real Tauri IPC is present', await evaluate(`typeof window.__TAURI_INTERNALS__?.invoke === 'function'`) === true)
+
+	const helpers = `
+		window.__smoke = {
+			button: (label) => [...document.querySelectorAll('button')].find((b) => b.textContent.trim().startsWith(label)),
+			// The action bar's button, by its exact label: the navigation rail has
+			// an "Install" of its own earlier in the document.
+			install: () => [...document.querySelectorAll('main button, [class*="border-t"] button, button')].filter((b) => ['Install', 'Install update'].includes(b.textContent.trim())).pop(),
+			setValue: (el, value) => {
+				const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+				Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value)
+				el.dispatchEvent(new Event('input', { bubbles: true }))
+			},
+			text: () => document.querySelector('main')?.innerText ?? document.body.innerText,
+			pinia: () => document.querySelector('#__nuxt').__vue_app__.config.globalProperties.$pinia
+		}; true`
+
+	// ---- Player: fetch, review, install -------------------------------------------
+	await evaluate(`localStorage.setItem('cemm-app-store', ${JSON.stringify(JSON.stringify({ mode: 'user', setupCompleted: true, githubRepo: 'o/r', modpackPath: friend, railExpanded: false }))}); location.href = '/dashboard'; true`)
+	await sleep(1500)
+	await until('the install screen', `document.querySelector('#user-update-code') !== null`)
+	await evaluate(helpers)
+	// The friend adopts r1 first, then updates to r2: both through the window.
+	for (const [label, code, expectsChanges] of [['adopt r1', 'smoke-pack/r1', false], ['update to r2', second.code, true]] as const)
+	{
+		await until('an empty code field', `!document.querySelector('#user-update-code').disabled`)
+		await evaluate(`window.__smoke.setValue(document.querySelector('#user-update-code'), ${JSON.stringify(code)}); true`)
+		await evaluate(`window.__smoke.button('Fetch').click(); true`)
+		await until(`${label}: the review`, `window.__smoke.text().includes('Native Smoke Pack') && !!window.__smoke.install()`)
+		const review = await evaluate(`window.__smoke.text()`)
+		record(`${label}: review shown, no blockers`, !review.includes('cannot be installed here yet'), {
+			mode: /First update|Check & repair|Update/.exec(review)?.[0],
+			mentionsExtras: review.includes('not part of this pack')
+		})
+		if (expectsChanges)
+		{
+			record('update to r2: the review names the changes', review.includes('alpha-2.jar') && review.includes('sableCompat') && review.includes('true → false'))
+			await screenshot('player-review')
+			record('update to r2: install is gated on the acknowledgement', await evaluate(`window.__smoke.install().textContent.trim() === 'Install update' && window.__smoke.install().disabled`) === true)
+			await evaluate(`[...document.querySelectorAll('label')].find((l) => l.textContent.includes('I understand')).querySelector('input').click(); true`)
+			await sleep(200)
+		}
+		await until(`${label}: an enabled install button`, `!window.__smoke.install().disabled`)
+		await evaluate(`window.__smoke.install().click(); true`)
+		await until(`${label}: the completion dialog`, `document.querySelector('dialog[open]')?.innerText.includes('Update installed')`, 60_000)
+		if (expectsChanges) await screenshot('player-done')
+		await evaluate(`[...document.querySelectorAll('dialog[open] button')].find((b) => /Done|Close/.test(b.textContent)).click(); true`)
+		await sleep(600)
+		const state = JSON.parse(read(friend, '.cemm/state.json'))
+		record(`${label}: the profile records the release`, state.release_id === (expectsChanges ? 'r2' : 'r1'), { release: state.release_id, revision: state.revision.slice(0, 12) })
+		await evaluate(`window.__smoke.button('Install another').click(); true`)
+		await sleep(500)
+	}
+
+	const instance = JSON.parse(read(friend, 'minecraftinstance.json'))
+	const alphaRecord = instance.installedAddons.find((addon: any) => addon.addonID === 1)
+	const bridgeRecord = instance.installedAddons.find((addon: any) => addon.addonID === BRIDGE)
+	const friendConfig = JSON.parse(read(friend, 'config/tacztweaks.json'))
+	record('disk: the update is installed', read(friend, 'mods/alpha-2.jar') === 'alpha two' && !existsSync(join(friend, 'mods/alpha-1.jar')) && !existsSync(join(friend, 'mods/beta-1.jar')) && read(friend, 'kubejs/server_scripts/recipes.js') === 'recipes v2' && !existsSync(join(friend, 'kubejs/server_scripts/old.js')))
+	record('disk: the required flag is set and the keybinds are the friend\'s', friendConfig.general.compatibility.sableCompat === false && JSON.stringify(friendConfig.keyActions) === JSON.stringify({ reload: 'key.mouse.5', melee: 'key.keyboard.v' }))
+	record('disk: personal data and the friend\'s own mod are untouched', read(friend, 'options.txt') === 'fov:95\n' && read(friend, 'saves/Our World/level.dat') === 'the friend world' && read(friend, 'mods/friends-own-minimap.jar') === 'added by the friend')
+	record('disk: the launcher record follows, the pin is locked, its own fields survive', alphaRecord.installedFile.id === 11 && alphaRecord.fileNameOnDisk === 'alpha-2.jar' && alphaRecord.launcherOnly.left === 'alone' && bridgeRecord.isLocked === true && instance.name === 'Smoke Pack (friend)' && instance.allocatedMemory === 8192)
+	record('disk: a backup of what was replaced is kept', readdirSync(join(friend, '.cemm/backups')).some((entry) => existsSync(join(friend, '.cemm/backups', entry, 'files/mods/alpha-1.jar'))))
+
+	// ---- Admin: load the pack, open the Release pane, check a release -----------------
+	await evaluate(`(async () => {
+		const pinia = window.__smoke.pinia()
+		const manifest = pinia._s.get('manifest')
+		manifest.clearManifest()
+		manifest.setManifest(await window.__TAURI_INTERNALS__.invoke('parse_minecraft_instance', { path: ${JSON.stringify(join(admin, 'minecraftinstance.json'))} }))
+		manifest.sourcePath = ${JSON.stringify(admin)}
+		pinia._s.get('app').setMode('admin')
+		return true
+	})()`)
+	await until('the release pane', `window.__smoke.text().includes('Publish update') && !!window.__smoke.button('Check release')`)
+	record('admin: the pack is recognised as a release line', (await evaluate(`window.__smoke.text()`)).includes('smoke-pack'))
+	await evaluate(`window.__smoke.setValue(document.querySelector('input[placeholder="2026.11.15-1"]'), 'r3'); window.__smoke.setValue(document.querySelector('input[placeholder="leave empty for the first release"]'), ${JSON.stringify(second.code)}); true`)
+	await sleep(200)
+	await evaluate(`window.__smoke.button('Check release').click(); true`)
+	await until('the check result', `/Nothing blocks this release|blocks? this release/.test(window.__smoke.text())`, 60_000)
+	const checked = await evaluate(`window.__smoke.text()`)
+	record('admin: the real profile was checked and nothing blocks it', checked.includes('Nothing blocks this release'), { publishEnabled: await evaluate(`!window.__smoke.button('Publish release').disabled`) })
+	await screenshot('admin-check')
+
+	// An unaccounted jar must block, through the same window.
+	write(admin, 'mods/forgotten-local.jar', 'nobody listed this')
+	await evaluate(`window.__smoke.button('Check release').click(); true`)
+	await until('the blocked check', `window.__smoke.text().includes('forgotten-local.jar')`, 60_000)
+	record('admin: an unlisted jar blocks the release and disables publishing', await evaluate(`window.__smoke.button('Publish release').disabled`) === true)
+
+	// The only credential the stand-in ever saw is the dummy one the script
+	// itself sent: the window was never asked to publish, so the real token in
+	// the OS keyring was never read or transmitted.
+	const foreign = [...authorizations].filter((value) => value !== '(none)' && value !== 'token dummy-token-for-the-stand-in')
+	record('no real credential was ever sent', foreign.length === 0, { seen: authorizations.size })
+	writeFileSync(join(workDir, 'result.json'), JSON.stringify({ ok: true, steps, release: second.code }, null, 2))
+	console.log(`ALL ${steps.length} STEPS PASSED`)
+}
+catch (error)
+{
+	console.log(`SMOKE FAILED: ${error instanceof Error ? error.message : String(error)}`)
+	try { await screenshot('failure') } catch { /* no page to capture */ }
+	process.exitCode = 1
+}
+finally
+{
+	cleanup()
+}
