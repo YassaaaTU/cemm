@@ -37,11 +37,17 @@ base64 = "0.23"
 cap-fs-ext = "4.0.2"
 cap-primitives = "4.0.2"
 tauri-plugin-keyring = "0.1.0"
-tauri-plugin-updater = "2.10.1"
+# Default features minus `zip`. That feature only unpacks Tauri v1 updater
+# bundles (.msi.zip, .nsis.zip, .AppImage.tar.gz). CEMM ships v2 bundles
+# (`createUpdaterArtifacts: true`): a raw .exe/.msi/.AppImage, plus a
+# .app.tar.gz on macOS, which the plugin unpacks without this feature. Leaving
+# it on compiled zip 4.6.1 into the app for nothing, with four open
+# advisories against `ZipArchive::extract`.
+tauri-plugin-updater = { version = "2.10.1", default-features = false, features = ["rustls-tls"] }
 tauri-plugin-process = "2.3.1"
 url = "2.5"
-# SHA-256 for release payload integrity. Already in the lockfile through the
-# updater plugin, so this adds no new crate to the build.
+# SHA-256 for release payload integrity. Already in the lockfile through
+# Tauri itself (tauri-codegen, wry), so this adds no new crate to the build.
 sha2 = "0.10"
 
 # Generates app/types/generated.ts from the structs below, so the TypeScript
