@@ -39,6 +39,8 @@ architecture decisions, and decide what ships.
 ## Usage
 
 ### Admin Mode
+These steps publish a one-off update. For a pack you maintain over time, see [Releases](#releases).
+
 1. Open the pack library and choose **Publish** on the modpack you want to distribute. CEMM reads its `minecraftinstance.json` and loads the addons it contains. (A pack outside the CurseForge library can be pointed at by hand instead.)
 2. Review the addons by category — mods, resourcepacks, shaderpacks, datapacks.
 3. **Exclude addons (optional)**: switch off the toggle on any row to keep it out of the published update.
@@ -52,12 +54,26 @@ architecture decisions, and decide what ships.
 ### User Mode
 1. Set your GitHub repository, either during first-run setup or in **Settings**.
 2. Open the pack library and choose **Install** on the modpack you want to update. That sets the destination for you. (A pack outside the CurseForge library can be pointed at by hand instead.)
-3. Enter the update code provided by the admin (`modpack-key/uuid`, or just the UUID for older updates).
+3. Enter the update code provided by the admin (`modpack-key/uuid`, or just the UUID for older updates; a release code looks like `pack/release@revision`). The same field takes every kind.
 4. Preview exactly what will be added, updated and deleted before anything is written.
 5. Install. Nothing touches the pack until you confirm, and an interrupted install rolls back rather than leaving it half-written.
 
 ### Releases
-A modpack that is maintained over time can publish **releases** rather than one-off updates. The admin describes the pack once in a `cemm-pack.json` at the profile root; **Publish** then checks the whole profile against that description and refuses to publish anything it cannot account for. Players paste the code into **Install** exactly as before. The full workflow, including upgrading to a new official pack release and recovering from a bad update, is in [docs/releases.md](docs/releases.md).
+A modpack that is maintained over time can publish **releases** instead of one-off updates. A release describes the whole pack — every addon by exact CurseForge file and hash, every pack file by hash, the settings it requires — so players import the pack once and keep that one profile current.
+
+**Admin**
+1. Put a `cemm-pack.json` in the profile root (start from [docs/examples/cemm-pack.fusion.json](docs/examples/cemm-pack.fusion.json)). It names the pack, the official pack file it is built on, its content paths, pins and required settings.
+2. Choose **Publish** on the pack. It opens on a **Release** pane.
+3. Enter a release id, the previous release's code and notes, then **Check release**. Anything the description does not account for — a jar CurseForge has no record of, a pin that does not match, a dropped dependency — is listed and blocks publishing.
+4. **Publish release** and share the code.
+
+**Player**
+1. Import the pack's export into CurseForge once, as its own profile.
+2. Close Minecraft, choose **Install** on that profile and paste the code.
+3. Read the review: what is added, replaced and removed, which required settings change, and what is yours and stays. Tick any file that needs your decision.
+4. **Install update**, then restart CurseForge if it was open.
+
+Skipping releases is fine, applying the same code twice does nothing, mods you added yourself are left alone, and whatever an update replaces is kept in a backup inside the profile. The full workflow — upgrading to a new official pack release, recovery, what CEMM never touches — is in [docs/releases.md](docs/releases.md).
 
 Release codes need CEMM 2.2.0 or newer. An older CEMM stops with a message saying so, before anything is written. Codes published the old way keep working.
 
